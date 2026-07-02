@@ -5,6 +5,7 @@ export interface BoardData {
   generatedAt: string;
   mode: "live" | "static";
   focus: string | null;
+  gate?: { component: string; proposedVersion: number }; // sign-off gate mode
   project: { name: string; root?: string };
   git: {
     available: boolean;

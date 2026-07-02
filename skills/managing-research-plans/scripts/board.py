@@ -27,7 +27,12 @@ from pathlib import Path
 
 SLOT = '<script id="board-data" type="application/json">{}</script>'
 SLOT_OPEN = '<script id="board-data" type="application/json">'
-GITIGNORE_LINES = ["/.board-feedback.md", "/.board.lock", "/execution/*/.draft-v*.md"]
+GITIGNORE_LINES = [
+    "/.board-feedback.md",
+    "/.board.lock",
+    "/execution/*/.draft-v*.md",
+    "/execution/*/.gate-*.md",
+]
 
 
 def die(msg, code=1):
@@ -244,6 +249,7 @@ def serve(root, payload, args):
     ensure_gitignore(plans_dir)
     lock = acquire_lock(plans_dir, args.force)
 
+    gate_mode = payload.get("gate") is not None
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     html_bytes = html.encode("utf-8")
     done = threading.Event()
@@ -253,14 +259,17 @@ def serve(root, payload, args):
         def log_message(self, *a):  # quiet
             pass
 
+        def _json(self, code, obj):
+            blob = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(blob)))
+            self.end_headers()
+            self.wfile.write(blob)
+
         def do_GET(self):
             if self.path == "/api/health":
-                blob = json.dumps({"ok": True, "app": "research-plans-board"}).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(blob)))
-                self.end_headers()
-                self.wfile.write(blob)
+                self._json(200, {"ok": True, "app": "research-plans-board"})
                 return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -268,29 +277,59 @@ def serve(root, payload, args):
             self.end_headers()
             self.wfile.write(html_bytes)
 
+        def _read_body(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            return json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+
         def do_POST(self):
-            if self.path != "/api/feedback":
-                self.send_response(404)
-                self.end_headers()
+            if self.path == "/api/feedback" and not gate_mode:
+                try:
+                    body = self._read_body()
+                except Exception:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+                doc = build_feedback_document(body, payload)
+                # File FIRST (survives a dead parent bash call), then unblock.
+                (plans_dir / ".board-feedback.md").write_text(doc, encoding="utf-8")
+                result["doc"] = doc
+                result["exit"] = 0
+                self._json(200, {"ok": True})
+                done.set()
                 return
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
-            except Exception:
-                self.send_response(400)
-                self.end_headers()
+            if self.path == "/api/approve" and gate_mode:
+                try:
+                    body = self._read_body()
+                except Exception:
+                    body = {}
+                comment = (body.get("comment") or "").strip()
+                doc = "APPROVED: %s v%d" % (
+                    payload["gate"]["component"],
+                    payload["gate"]["proposedVersion"],
+                )
+                if comment:
+                    doc += "\nResearcher comment: %s" % comment
+                result["doc"] = doc
+                result["exit"] = 0
+                self._json(200, {"ok": True})
+                done.set()
                 return
-            doc = build_feedback_document(body, payload)
-            # File FIRST (survives a dead parent bash call), then unblock.
-            (plans_dir / ".board-feedback.md").write_text(doc, encoding="utf-8")
-            result["doc"] = doc
-            blob = json.dumps({"ok": True}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(blob)))
+            if self.path == "/api/deny" and gate_mode:
+                try:
+                    body = self._read_body()
+                except Exception:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+                doc = build_feedback_document(body, payload)
+                (plans_dir / ".board-feedback.md").write_text(doc, encoding="utf-8")
+                result["doc"] = doc
+                result["exit"] = 3
+                self._json(200, {"ok": True})
+                done.set()
+                return
+            self.send_response(404)
             self.end_headers()
-            self.wfile.write(blob)
-            done.set()
 
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     port = server.server_address[1]
@@ -314,7 +353,7 @@ def serve(root, payload, args):
             print("board: no feedback received within %ds" % args.timeout, file=sys.stderr)
             sys.exit(2)
         print(result["doc"])
-        sys.exit(0)
+        sys.exit(result.get("exit", 0))
     except KeyboardInterrupt:
         server.shutdown()
         sys.exit(130)
@@ -353,11 +392,42 @@ def collect_pending(root):
     sys.exit(0)
 
 
+def apply_gate(root, payload, gate_spec):
+    """gate_spec is '<slug>/vN'. Reads the proposal from .gate-vN.md (skipping
+    the reservation header comment) and injects it as the component's draft."""
+    m = re.fullmatch(r"(.+)/v(\d+)", gate_spec)
+    if not m:
+        die("--gate expects <component-slug>/vN")
+    slug, version = m.group(1), int(m.group(2))
+    gate_file = root / "plans" / "execution" / slug / (".gate-v%d.md" % version)
+    if not gate_file.is_file():
+        die("gate proposal missing at %s" % gate_file)
+    lines = gate_file.read_text(encoding="utf-8").split("\n")
+    if lines and lines[0].startswith("<!-- gate"):
+        lines = lines[1:]
+    content = "\n".join(lines)
+
+    payload["gate"] = {"component": slug, "proposedVersion": version}
+    payload["focus"] = slug
+    groups = payload["files"]["executionPlans"]
+    group = next((g for g in groups if g["component"] == slug), None)
+    if group is None:
+        group = {"component": slug, "versions": []}
+        groups.append(group)
+    group["draft"] = {
+        "proposedVersion": version,
+        "path": "plans/execution/%s/.gate-v%d.md" % (slug, version),
+        "content": content,
+    }
+    return payload
+
+
 def main():
     ap = argparse.ArgumentParser(description="research-plans board")
     ap.add_argument("--focus", default=None, metavar="NN-slug")
     ap.add_argument("--export", nargs="?", const="DEFAULT", default=None, metavar="PATH")
     ap.add_argument("--collect", action="store_true")
+    ap.add_argument("--gate", default=None, metavar="SLUG/vN")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, metavar="SECONDS")
@@ -378,6 +448,8 @@ def main():
         export(root, args)
     else:
         payload = collect_payload(root, "live", args.focus)
+        if args.gate:
+            payload = apply_gate(root, payload, args.gate)
         serve(root, payload, args)
 
 

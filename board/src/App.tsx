@@ -27,12 +27,15 @@ function nextId(): string {
 
 export default function App({ data }: { data: BoardData }) {
   const live = data.mode === "live";
+  const gate = data.gate ?? null;
   const payloadHash = useMemo(() => payloadContentHash(allFiles(data)), [data]);
   const storageKey = `rp-board:${data.project.name}:${payloadHash}`;
 
-  const [tab, setTab] = useState<Tab>(data.focus ? "plans" : "tracker");
+  const [tab, setTab] = useState<Tab>(
+    gate || data.focus ? "plans" : "tracker",
+  );
   const [selectedComponent, setSelectedComponent] = useState<string | null>(
-    data.focus,
+    gate?.component ?? data.focus,
   );
   const [annotations, setAnnotations] = useState<Annotation[]>(() => {
     if (!live) return [];
@@ -43,9 +46,9 @@ export default function App({ data }: { data: BoardData }) {
       return [];
     }
   });
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(gate !== null);
   const [submitState, setSubmitState] = useState<
-    "idle" | "sending" | "sent" | "failed"
+    "idle" | "sending" | "sent" | "approved" | "denied" | "failed"
   >("idle");
 
   useEffect(() => {
@@ -125,6 +128,36 @@ export default function App({ data }: { data: BoardData }) {
     }
   };
 
+  const gateApprove = async () => {
+    setSubmitState("sending");
+    try {
+      const res = await fetch("/api/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSubmitState("approved");
+    } catch {
+      setSubmitState("failed");
+    }
+  };
+
+  const gateDeny = async () => {
+    setSubmitState("sending");
+    try {
+      const res = await fetch("/api/deny", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ annotations, feedbackMarkdown, payloadHash }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSubmitState("denied");
+    } catch {
+      setSubmitState("failed");
+    }
+  };
+
   const copyFallback = async () => {
     try {
       await navigator.clipboard.writeText(feedbackMarkdown);
@@ -133,6 +166,28 @@ export default function App({ data }: { data: BoardData }) {
       window.prompt("Copy the feedback below:", feedbackMarkdown);
     }
   };
+
+  if (submitState === "approved" || submitState === "denied") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-stone-50">
+        <div className="max-w-md rounded-lg border border-stone-200 bg-white p-8 text-center shadow-sm">
+          <div className="text-3xl">
+            {submitState === "approved" ? "✓" : "✎"}
+          </div>
+          <h1 className="mt-2 text-lg font-semibold text-stone-800">
+            {submitState === "approved"
+              ? "Approved — the version is being written"
+              : "Changes requested — return to your session"}
+          </h1>
+          <p className="mt-2 text-sm text-stone-600">
+            {submitState === "approved"
+              ? `${gate?.component} v${gate?.proposedVersion} will land exactly as shown here, signed.`
+              : "Claude received your feedback and will revise the draft; the gate reopens on the next sign-off attempt."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (submitState === "sent") {
     return (
@@ -196,6 +251,12 @@ export default function App({ data }: { data: BoardData }) {
               ? ` at commit ${data.git.head}`
               : ""}{" "}
             — regenerate with /research-plans:board --export
+          </div>
+        )}
+        {gate && (
+          <div className="border-t border-stone-800 bg-stone-900 px-5 py-2 text-center text-sm font-semibold text-white">
+            Sign-off gate: {gate.component} v{gate.proposedVersion} — approve in
+            this window, or request changes with comments
           </div>
         )}
       </header>
@@ -301,13 +362,38 @@ export default function App({ data }: { data: BoardData }) {
                 and paste it into your session instead.
               </div>
             )}
-            <button
-              className="w-full rounded-md bg-stone-900 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
-              disabled={annotations.length === 0 || submitState === "sending"}
-              onClick={submit}
-            >
-              {submitState === "sending" ? "Sending…" : "Send to Claude"}
-            </button>
+            {gate ? (
+              <div className="space-y-2">
+                {annotations.length > 0 && (
+                  <p className="text-[11px] text-stone-500">
+                    You have unsent comments — send them as "Request changes",
+                    or delete them to approve.
+                  </p>
+                )}
+                <button
+                  className="w-full rounded-md bg-green-700 py-2 text-sm font-semibold text-white hover:bg-green-600 disabled:opacity-40"
+                  disabled={annotations.length > 0 || submitState === "sending"}
+                  onClick={gateApprove}
+                >
+                  Approve — write v{gate.proposedVersion} exactly as shown
+                </button>
+                <button
+                  className="w-full rounded-md border border-red-300 bg-red-50 py-2 text-sm font-semibold text-red-800 hover:bg-red-100 disabled:opacity-40"
+                  disabled={annotations.length === 0 || submitState === "sending"}
+                  onClick={gateDeny}
+                >
+                  Request changes ({annotations.length})
+                </button>
+              </div>
+            ) : (
+              <button
+                className="w-full rounded-md bg-stone-900 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+                disabled={annotations.length === 0 || submitState === "sending"}
+                onClick={submit}
+              >
+                {submitState === "sending" ? "Sending…" : "Send to Claude"}
+              </button>
+            )}
           </div>
         </aside>
       )}

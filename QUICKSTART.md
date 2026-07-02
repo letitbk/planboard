@@ -31,7 +31,7 @@ Claude will ask a few questions, starting with your research questions (they bec
 
 Claude proposes the next component (or name one: `/research-plans:plan data cleaning`). Expect a dialogue, not a generated document. It will walk through the substantive choices one dimension at a time and ask for your reason on each. That is deliberate: the reasons are what make the plan yours. If the data has not been explored yet, it will offer a short read-only look first, which makes for much better scope decisions.
 
-The result is `plans/execution/01-data-cleaning/v1.md` with your sign-off, and the tracker updated.
+When the plan is ready to sign, your browser opens automatically: this is the sign-off gate. The proposed version is rendered with its diff, and you either approve it (one click; the file is written exactly as shown) or request changes with comments (Claude revises and the gate reopens). The result is `plans/execution/01-data-cleaning/v1.md` with your sign-off, and the tracker updated.
 
 ## 4. Execute, then sync
 
@@ -82,6 +82,10 @@ This writes `plans/board.html`, one self-contained file that opens in any browse
 **What about sensitive material?** `plans/` is designed to be committed and eventually shared. Keep participant details, IRB specifics, and anything else sensitive out of the plans, or in a gitignored appendix.
 
 **Claude stopped logging decisions mid-session.** It happens; the CLAUDE.md section makes it likely but not guaranteed. `/research-plans:sync` exists exactly for this. Late captures are labeled so the log stays honest.
+
+**What is this hook the plugin installs?** One PreToolUse hook, the sign-off gate. It runs a small local python script on Claude's file writes; for anything that is not a plan-version write in an initialized project it does nothing (a few milliseconds). For plan-version writes it opens the browser approval described above, and it always denies edits to already-signed versions. The script is plain readable python in the plugin repo.
+
+**I work over SSH or run headless tests.** Set `RESEARCH_PLANS_NO_GATE=1` in that environment. The bypass prints a notice into the transcript so it is never silent. An unanswered gate times out and denies; nothing is written without approval.
 
 ## Feedback
 

@@ -38,7 +38,7 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 
 ## Conventions
 
-- **Versions are immutable.** `v1.md, v2.md, ...` are never overwritten or edited. Before writing any version, compute the next unused number and refuse to write over an existing file. Deviations are recorded, never hidden — especially the improvised ones.
+- **Versions are immutable — and mechanically enforced.** `v1.md, v2.md, ...` are never overwritten or edited; the plugin's sign-off gate (a PreToolUse hook) blocks edits to signed versions and opens a browser approval for every new version write. Approval happens on the board, not in the terminal. If the gate denies, read `plans/.board-feedback.md`, revise, and write again. Headless/CI sessions set `RESEARCH_PLANS_NO_GATE=1` (the bypass leaves a stderr trace). Deviations are recorded, never hidden — especially the improvised ones.
 - **The log is append-only and real-time.** Never backfill at the end of a session. Late captures happen only via `/research-plans:sync` and carry the `(late-captured at sync)` label.
 - **The master plan stays light.** One line of outcome per component; detail lives in execution plans and the log. Do not let sync bloat it.
 - **The plan is not a preregistration — it is a contract with a built-in amendment process.** A recorded revision is an amendment: legitimate, expected. A silent deviation is a breach. Preregistration freezes the contract; this workflow keeps it amendable and treats only undisclosed change as deviation.
