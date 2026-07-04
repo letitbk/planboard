@@ -11,9 +11,11 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+// breaks: true — research plans and reports are written line-oriented
+// (Serves:, Success:, sign-off lines); single newlines must render as breaks.
 const marked = new Marked({
   gfm: true,
-  breaks: false,
+  breaks: true,
   renderer: {
     html({ text }: { text: string }) {
       const t = text.trim();

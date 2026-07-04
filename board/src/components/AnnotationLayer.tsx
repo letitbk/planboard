@@ -34,7 +34,7 @@ export default function AnnotationLayer({
   onAdd: (
     a: Omit<PlanCommentAnnotation, "id" | "type" | "planPath" | "component" | "version" | "isDraft">,
   ) => void;
-  onPaintResult: (paintedIds: Set<string>) => void;
+  onPaintResult: (paintedIds: Set<string>, docKey: string) => void;
   docKey: string; // changes when the displayed document changes
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,7 +55,7 @@ export default function AnnotationLayer({
           occurrenceIndex: a.occurrenceIndex,
         })),
       );
-      onPaintResult(painted);
+      onPaintResult(painted, docKey);
     }, 0);
     return () => window.clearTimeout(t);
   }, [annotations, docKey, onPaintResult]);

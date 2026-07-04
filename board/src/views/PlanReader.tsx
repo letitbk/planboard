@@ -3,7 +3,7 @@ import Markdown from "../components/Markdown";
 import DiffView from "../components/DiffView";
 import AnnotationLayer from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
-import { parseExecutionPlan } from "../lib/parse";
+import { parseExecutionPlan, parseMasterPlan, parseServes } from "../lib/parse";
 import type {
   Annotation,
   BoardData,
@@ -37,7 +37,7 @@ export default function PlanReader({
   onAddPlanComment: (
     a: Omit<PlanCommentAnnotation, "id" | "type">,
   ) => void;
-  onPaintResult: (paintedIds: Set<string>) => void;
+  onPaintResult: (paintedIds: Set<string>, docKey: string) => void;
   onOpenResults: (slug: string) => void;
 }) {
   const groups = data.files.executionPlans;
@@ -235,13 +235,34 @@ export default function PlanReader({
           </div>
         )}
 
-        {parsed?.ok && parsed.serves && (
-          <div className="mb-2">
-            <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-semibold text-stone-700">
-              Serves: {parsed.serves}
-            </span>
-          </div>
-        )}
+        {parsed?.ok &&
+          parsed.serves &&
+          (() => {
+            const mp = parseMasterPlan(data.files.masterPlan.content);
+            const tokens = parseServes(parsed.serves).tokens;
+            const rqs = mp.ok
+              ? mp.researchQuestions.filter((q) => tokens.includes(`RQ${q.num}`))
+              : [];
+            return (
+              <div className="mb-2">
+                <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-semibold text-stone-700">
+                  Serves: {parsed.serves}
+                </span>
+                {rqs.length > 0 && (
+                  <ul className="mt-1 space-y-0.5">
+                    {rqs.map((q) => (
+                      <li key={q.num} className="text-[11px] leading-snug text-stone-500">
+                        <span className="font-semibold text-stone-600">
+                          RQ{q.num}
+                        </span>{" "}
+                        — {q.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
 
         {parsed && !parsed.ok && (
           <Notice text="This plan did not match the expected execution-plan format — showing it raw." />

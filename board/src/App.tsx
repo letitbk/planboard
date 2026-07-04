@@ -149,14 +149,16 @@ export default function App({ data }: { data: BoardData }) {
     setAnnotations((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
-  const onPaintResult = useCallback((painted: Set<string>) => {
+  const onPaintResult = useCallback((painted: Set<string>, docKey?: string) => {
     setAnnotations((prev) => {
       let changed = false;
       const next = prev.map((a) => {
         if (a.type !== "plan-comment") return a;
+        // A paint pass only covers ONE displayed document; comments on other
+        // documents (other plan versions, results reports) must not have
+        // their anchored flag clobbered by it.
+        if (docKey !== undefined && a.planPath !== docKey) return a;
         const anchored = painted.has(a.id);
-        // Only update annotations that were subject to this paint pass:
-        // painted set covers the currently displayed doc; leave others alone.
         if (painted.size === 0 || a.anchored === anchored) return a;
         changed = true;
         return { ...a, anchored };

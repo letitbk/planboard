@@ -4,6 +4,7 @@ import SafeTable from "../components/SafeTable";
 import ScriptViewer from "../components/ScriptViewer";
 import AnnotationLayer from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
+import { parseExecutionPlan } from "../lib/parse";
 import type {
   Annotation,
   BoardData,
@@ -56,7 +57,7 @@ export default function Results({
   annotations: Annotation[];
   onAddResultComment: (a: Omit<ResultCommentAnnotation, "id" | "type">) => void;
   onAddScriptComment: (a: Omit<ScriptCommentAnnotation, "id" | "type">) => void;
-  onPaintResult: (painted: Set<string>) => void;
+  onPaintResult: (painted: Set<string>, docKey: string) => void;
   onVerdict: (v: VerdictRequest) => void;
   focusResults: number | null;
 }) {
@@ -235,6 +236,64 @@ export default function Results({
         {!m && (
           <Notice text="This bundle's manifest.json did not parse — showing what can be shown." />
         )}
+
+        {/* provenance strip — everything here comes from data already in the
+            bundle/plan; collapsed by default so it informs without crowding */}
+        {m &&
+          (() => {
+            const planFile =
+              m.planVersion != null
+                ? group.versions.find((v) => v.version === m.planVersion)
+                : null;
+            const planGoal = planFile
+              ? parseExecutionPlan(planFile.content).goal
+              : null;
+            return (
+              <details className="mb-4 rounded-lg border border-stone-200 bg-white px-4 py-2 text-xs text-stone-600">
+                <summary className="cursor-pointer select-none text-stone-500">
+                  How these were produced — captured {m.capturedAt}
+                  {m.planVersion != null
+                    ? ` under plan v${m.planVersion}`
+                    : " · no governing plan (retrofit)"}
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {planGoal && (
+                    <div>
+                      <div className="font-semibold text-stone-700">
+                        Plan goal (v{m.planVersion})
+                      </div>
+                      <p className="mt-0.5 whitespace-pre-line">{planGoal}</p>
+                    </div>
+                  )}
+                  {m.artifacts.length > 0 && (
+                    <div>
+                      <div className="font-semibold text-stone-700">
+                        Sources and producing scripts
+                      </div>
+                      <ul className="mt-0.5 space-y-0.5">
+                        {m.artifacts.map((a) => (
+                          <li key={a.id}>
+                            <code>{a.source.path}</code>
+                            {a.producedBy ? (
+                              <>
+                                {" "}
+                                ← <code>{a.producedBy.sourcePath}</code>
+                              </>
+                            ) : (
+                              <span className="text-stone-400">
+                                {" "}
+                                (producing script unknown)
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </details>
+            );
+          })()}
 
         {/* metrics */}
         {m && m.metrics.length > 0 && (
