@@ -14,6 +14,14 @@ interface Pending {
   anchor: ReturnType<typeof anchorFromSelection>;
 }
 
+/** The minimal shape the paint pass needs; PlanCommentAnnotation and
+ * report-targeted result comments are both structurally assignable. */
+export interface PaintableAnnotation {
+  id: string;
+  quote: string;
+  occurrenceIndex: number;
+}
+
 export default function AnnotationLayer({
   children,
   annotations,
@@ -22,7 +30,7 @@ export default function AnnotationLayer({
   docKey,
 }: {
   children: ReactNode;
-  annotations: PlanCommentAnnotation[];
+  annotations: PaintableAnnotation[];
   onAdd: (
     a: Omit<PlanCommentAnnotation, "id" | "type" | "planPath" | "component" | "version" | "isDraft">,
   ) => void;
