@@ -1,7 +1,7 @@
 // Client-side feedback document assembly — the single source of the
 // markdown + ```json board-feedback``` fence format. Live mode POSTs the
 // assembled document; remote mode downloads it as a .txt file.
-import type { Annotation, BoardData } from "./types";
+import type { Annotation, BoardData, VerdictRequest } from "./types";
 
 export interface FeedbackMeta {
   sessionId: string;
@@ -12,6 +12,7 @@ export interface FeedbackMeta {
   payloadHash: string;
   shareHash: string | null;
   annotations: Annotation[];
+  verdict?: VerdictRequest | null;
 }
 
 export function newSessionId(): string {

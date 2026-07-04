@@ -5,6 +5,7 @@ export interface BoardData {
   generatedAt: string;
   mode: "live" | "static" | "remote";
   focus: string | null;
+  focusResults?: number | null; // --focus slug:rN opens the Results view on rN
   shareHash?: string; // remote mode: Python-computed, echoed back in feedback
   gate?: { component: string; proposedVersion: number }; // sign-off gate mode
   project: { name: string; root?: string };
@@ -31,6 +32,61 @@ export interface ExecutionPlanGroup {
   component: string; // NN-slug
   versions: PlanVersionFile[];
   draft?: DraftFile;
+  results?: ResultsBundle[];
+}
+
+// ---- results bundles ----
+
+export interface ResultsBundle {
+  resultsVersion: number;
+  dir: string;
+  manifest: ResultsManifest | null;
+  manifestRaw: BoardFile;
+  report: BoardFile | null;
+  verdict: ResultsVerdict | null;
+  verdictRaw: BoardFile | null;
+  scripts: BoardFile[];
+  assets: Record<string, string>;
+}
+
+export interface ResultsManifest {
+  schemaVersion: number;
+  component: string;
+  resultsVersion: number;
+  planVersion: number | null;
+  provenance: "planned" | "retrofit";
+  trigger: "initial" | "redo-after-review" | "plan-revision";
+  capturedAt: string;
+  summary?: string;
+  metrics: { label: string; value: string; note?: string }[];
+  artifacts: ResultArtifact[];
+}
+
+export interface ResultArtifact {
+  id: string;
+  kind: "figure" | "table" | "other";
+  title: string;
+  caption?: string;
+  file: string | null;
+  data?: string | null;
+  inlineText?: string;
+  source: { path: string; sha256: string; bytes: number; oversized: boolean };
+  producedBy: { script: string; sourcePath: string; lang?: string } | null;
+}
+
+export interface ResultsVerdict {
+  status: "accepted" | "changes-requested";
+  date: string;
+  planVersion: number | null;
+  reviewer: string;
+  comment?: string;
+}
+
+export interface VerdictRequest {
+  component: string;
+  resultsVersion: number;
+  status: "accepted" | "changes-requested";
+  comment: string;
 }
 
 export interface PlanVersionFile extends BoardFile {
@@ -64,6 +120,7 @@ export type TrackerStatus =
   | "planned"
   | "in progress"
   | "done"
+  | "done (verified)"
   | "dropped"
   | "unknown";
 
@@ -163,4 +220,35 @@ export interface GeneralAnnotation {
   comment: string;
 }
 
-export type Annotation = PlanCommentAnnotation | GeneralAnnotation;
+export interface ResultCommentAnnotation {
+  id: string;
+  type: "result-comment";
+  component: string;
+  resultsVersion: number;
+  target: {
+    kind: "artifact" | "report" | "metric";
+    artifactId?: string;
+    metricLabel?: string;
+    quote?: string;
+    occurrenceIndex?: number;
+  };
+  comment: string;
+}
+
+export interface ScriptCommentAnnotation {
+  id: string;
+  type: "script-comment";
+  component: string;
+  resultsVersion: number;
+  script: string; // payload path of the snapshot
+  lineStart: number;
+  lineEnd: number;
+  excerpt: string;
+  comment: string;
+}
+
+export type Annotation =
+  | PlanCommentAnnotation
+  | GeneralAnnotation
+  | ResultCommentAnnotation
+  | ScriptCommentAnnotation;

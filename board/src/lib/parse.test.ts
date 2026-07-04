@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  allFiles,
   parseDecisionLog,
   parseExecutionPlan,
   parseMasterPlan,
@@ -231,5 +232,51 @@ describe("payload content hash", () => {
       { path: "b.md", content: "two" },
     ]);
     expect(c).not.toBe(a);
+  });
+});
+
+describe("results layer", () => {
+  it("parses done (verified) tracker status", () => {
+    const mp = parseMasterPlan(
+      "# T\n\n## Components\n\n" +
+        "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n" +
+        "|---|---|---|---|---|---|\n" +
+        "| 1 | X | done (verified) | — | — | — |\n",
+    );
+    expect(mp.components[0].status).toBe("done (verified)");
+  });
+
+  it("allFiles includes results bundle text files", () => {
+    const data = {
+      files: {
+        masterPlan: { path: "plans/master-plan.md", content: "m" },
+        decisionLog: { path: "plans/decision-log.md", content: "d" },
+        executionPlans: [
+          {
+            component: "01-x",
+            versions: [{ path: "plans/execution/01-x/v1.md", content: "v", version: 1 }],
+            results: [
+              {
+                resultsVersion: 1,
+                dir: "plans/execution/01-x/results/r1",
+                manifest: null,
+                manifestRaw: { path: "plans/execution/01-x/results/r1/manifest.json", content: "{}" },
+                report: { path: "plans/execution/01-x/results/r1/report.md", content: "# R" },
+                verdict: null,
+                verdictRaw: { path: "plans/execution/01-x/results/r1/verdict.json", content: "{}" },
+                scripts: [{ path: "plans/execution/01-x/results/r1/scripts/a.R", content: "x" }],
+                assets: {},
+              },
+            ],
+          },
+        ],
+        reviews: [],
+      },
+    };
+    const paths = allFiles(data as never).map((f) => f.path);
+    expect(paths).toContain("plans/execution/01-x/results/r1/manifest.json");
+    expect(paths).toContain("plans/execution/01-x/results/r1/report.md");
+    expect(paths).toContain("plans/execution/01-x/results/r1/verdict.json");
+    expect(paths).toContain("plans/execution/01-x/results/r1/scripts/a.R");
   });
 });

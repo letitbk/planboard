@@ -18,6 +18,7 @@ const STATUSES: TrackerStatus[] = [
   "planned",
   "in progress",
   "done",
+  "done (verified)",
   "dropped",
 ];
 
@@ -293,6 +294,12 @@ export function allFiles(data: {
     executionPlans: {
       versions: { path: string; content: string }[];
       draft?: { path: string; content: string };
+      results?: {
+        manifestRaw: { path: string; content: string };
+        report: { path: string; content: string } | null;
+        verdictRaw: { path: string; content: string } | null;
+        scripts: { path: string; content: string }[];
+      }[];
     }[];
     reviews: { path: string; content: string }[];
   };
@@ -301,6 +308,12 @@ export function allFiles(data: {
   for (const g of data.files.executionPlans) {
     out.push(...g.versions);
     if (g.draft) out.push(g.draft);
+    for (const b of g.results ?? []) {
+      out.push(b.manifestRaw);
+      if (b.report) out.push(b.report);
+      if (b.verdictRaw) out.push(b.verdictRaw);
+      out.push(...b.scripts);
+    }
   }
   out.push(...data.files.reviews);
   return out;

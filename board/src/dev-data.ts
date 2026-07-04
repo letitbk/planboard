@@ -375,6 +375,163 @@ Split not assessable until it is a plan; on its face it also mixes main models a
 \`\`\`
 `;
 
+const FIG_SVG =
+  "data:image/svg+xml;base64," +
+  btoa(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="280"><rect width="480" height="280" fill="#fafaf9"/><g stroke="#a8a29e"><line x1="50" y1="240" x2="440" y2="240"/><line x1="50" y1="30" x2="50" y2="240"/></g><rect x="80" y="120" width="50" height="120" fill="#15803d"/><rect x="170" y="80" width="50" height="160" fill="#15803d"/><rect x="260" y="150" width="50" height="90" fill="#15803d"/><rect x="350" y="60" width="50" height="180" fill="#15803d"/><text x="240" y="20" font-size="13" text-anchor="middle" fill="#44403c">Support by wave (dev sample)</text></svg>',
+  );
+
+const cleaningReport = `# Results — Data cleaning (r1)
+
+The cleaning pipeline ran end to end under plan v2. The analytic sample is
+**66,864 rows** after the exclusion rules recorded in the plan; the duplicate
+rule (drop exact household duplicates only) removed 214 rows.
+
+Meets the plan's success criteria: row count within the expected range, all
+recode counts logged. One anomaly worth eyes: wave 3 has a higher refusal
+share (fig-support), consistent with the codebook note.
+`;
+
+const descriptivesReport = `# Results — Descriptives (r1, retrofit)
+
+These figures existed before the workflow was adopted; captured for
+verification. Weighted and unweighted means diverge most in waves 2-3.
+`;
+
+const cleaningResults = [
+  {
+    resultsVersion: 1,
+    dir: "plans/execution/02-data-cleaning/results/r1",
+    manifest: {
+      schemaVersion: 1,
+      component: "02-data-cleaning",
+      resultsVersion: 1,
+      planVersion: 2,
+      provenance: "planned" as const,
+      trigger: "initial" as const,
+      capturedAt: "2026-07-02 10:30",
+      summary: "Cleaning pipeline output under plan v2",
+      metrics: [
+        { label: "Rows", value: "66,864", note: "analytic sample" },
+        { label: "Dupes dropped", value: "214" },
+        { label: "Refusals → NA", value: "431" },
+      ],
+      artifacts: [
+        {
+          id: "fig-support",
+          kind: "figure" as const,
+          title: "Support by wave",
+          caption: "Weighted means; error bars omitted in dev sample.",
+          file: "artifacts/fig-support.svg",
+          source: {
+            path: "output/figures/fig-support.svg",
+            sha256: "d".repeat(64),
+            bytes: 4210,
+            oversized: false,
+          },
+          producedBy: {
+            script: "scripts/02_clean.R",
+            sourcePath: "code/02_clean.R",
+            lang: "r",
+          },
+        },
+        {
+          id: "tab-exclusions",
+          kind: "table" as const,
+          title: "Exclusion cascade",
+          caption: "Rows removed at each cleaning step.",
+          file: "artifacts/exclusions.csv",
+          inlineText:
+            "step,rows removed,rows remaining\nraw,0,67295\nmissing outcome,217,67078\nduplicates,214,66864\n",
+          source: {
+            path: "output/tables/exclusions.csv",
+            sha256: "e".repeat(64),
+            bytes: 96,
+            oversized: false,
+          },
+          producedBy: {
+            script: "scripts/02_clean.R",
+            sourcePath: "code/02_clean.R",
+            lang: "r",
+          },
+        },
+      ],
+    },
+    manifestRaw: {
+      path: "plans/execution/02-data-cleaning/results/r1/manifest.json",
+      content: "{}",
+    },
+    report: {
+      path: "plans/execution/02-data-cleaning/results/r1/report.md",
+      content: cleaningReport,
+    },
+    verdict: {
+      status: "accepted" as const,
+      date: "2026-07-02 11:05",
+      planVersion: 2,
+      reviewer: "BK",
+      comment: "Counts match the plan; ship it.",
+    },
+    verdictRaw: {
+      path: "plans/execution/02-data-cleaning/results/r1/verdict.json",
+      content: "{}",
+    },
+    scripts: [
+      {
+        path: "plans/execution/02-data-cleaning/results/r1/scripts/02_clean.R",
+        content:
+          "library(dplyr)\n\nraw <- read_issp('data/raw')\nclean <- raw |>\n  filter(!is.na(support)) |>\n  mutate(support = na_if(support, 97), support = na_if(support, 98)) |>\n  distinct(hh_id, .keep_all = TRUE)\n\nwrite_csv(count_exclusions(raw, clean), 'output/tables/exclusions.csv')\nggsave('output/figures/fig-support.svg', plot_support(clean))\n",
+      },
+    ],
+    assets: { "fig-support.svg": FIG_SVG },
+  },
+];
+
+const descriptivesResults = [
+  {
+    resultsVersion: 1,
+    dir: "plans/execution/03-descriptives/results/r1",
+    manifest: {
+      schemaVersion: 1,
+      component: "03-descriptives",
+      resultsVersion: 1,
+      planVersion: null,
+      provenance: "retrofit" as const,
+      trigger: "initial" as const,
+      capturedAt: "2026-07-02 14:00",
+      summary: "Pre-existing descriptive figures, adopted for verification",
+      metrics: [{ label: "Countries", value: "31" }],
+      artifacts: [
+        {
+          id: "fig-means",
+          kind: "figure" as const,
+          title: "Country means",
+          file: "artifacts/fig-means.svg",
+          source: {
+            path: "figures/fig-means.svg",
+            sha256: "f".repeat(64),
+            bytes: 3900,
+            oversized: false,
+          },
+          producedBy: null,
+        },
+      ],
+    },
+    manifestRaw: {
+      path: "plans/execution/03-descriptives/results/r1/manifest.json",
+      content: "{}",
+    },
+    report: {
+      path: "plans/execution/03-descriptives/results/r1/report.md",
+      content: descriptivesReport,
+    },
+    verdict: null,
+    verdictRaw: null,
+    scripts: [],
+    assets: { "fig-means.svg": FIG_SVG },
+  },
+];
+
 export const devData: BoardData = {
   schemaVersion: 1,
   generatedAt: "2026-07-02T12:00:00-04:00",
@@ -406,6 +563,7 @@ export const devData: BoardData = {
           { version: 1, path: "plans/execution/02-data-cleaning/v1.md", content: cleaningV1 },
           { version: 2, path: "plans/execution/02-data-cleaning/v2.md", content: cleaningV2 },
         ],
+        results: cleaningResults,
       },
       {
         component: "03-descriptives",
@@ -417,6 +575,7 @@ export const devData: BoardData = {
           path: "plans/execution/03-descriptives/.draft-v2.md",
           content: descriptivesDraft,
         },
+        results: descriptivesResults,
       },
     ],
     reviews: [
