@@ -11,7 +11,7 @@ In any Claude Code session:
 /plugin install research-plans@research-plans
 ```
 
-Restart Claude Code. Type `/research-plans` and the five commands should appear in the menu. Use the full namespaced names (`/research-plans:init`, not `/init`, which is a different built-in command).
+Restart Claude Code. Type `/research-plans` and the seven commands should appear in the menu. Use the full namespaced names (`/research-plans:init`, not `/init`, which is a different built-in command).
 
 ## 2. Initialize your project
 
@@ -43,7 +43,19 @@ Work normally under the plan in the same or later sessions. Claude should surfac
 
 This updates the tracker, asks you about any decisions that went unlogged (they get an explicit `late-captured` label), and, if the work genuinely deviated from the plan, drafts a `v2.md` for your approval. `v1.md` is never edited. Revising the plan is the process working, not a failure.
 
-## 5. Optional: review a plan before executing
+## 5. Capture and verify results
+
+When a component's analysis has run, capture what it produced:
+
+```
+/research-plans:results data cleaning
+```
+
+Claude proposes the artifacts (figures, tables, key numbers) it can trace to the work, you confirm titles and captions, and it writes an immutable bundle at `plans/execution/<component>/results/r1/` — a brief report, snapshot copies of the files, and the exact scripts that produced them. Then open the board on it: the Results view shows the report, the numbers as tiles, the figure/table gallery, and a click-through to each producing script. Press **Accept** and the verdict is recorded in the decision log and the tracker flips to `done (verified)`; press **Request changes** with comments and Claude fixes the scripts, re-runs, and captures `r2` — `r1` stays exactly as you reviewed it.
+
+Started using the plugin mid-project? `/research-plans:results --adopt` scans your output folders and brings existing figures and tables under verification, marked `retrofit`.
+
+## 6. Optional: review a plan before executing
 
 ```
 /research-plans:review
@@ -53,7 +65,7 @@ The review runs in two stages. First a threshold: is this a plan at all? Nine pa
 
 And `/research-plans:status` at any time shows the tracker and flags drift.
 
-## 6. See the whole project on the board
+## 7. See the whole project on the board
 
 ```
 /research-plans:board
@@ -67,7 +79,7 @@ To share the project state with someone who does not use Claude Code:
 /research-plans:board --export
 ```
 
-This writes `plans/board.html`, one self-contained file that opens in any browser, offline, read-only. One caution, same as committing plans: the file contains everything under `plans/`, so sharing it is publishing your plans.
+This writes `plans/board.html`, one self-contained file that opens in any browser, offline, read-only (result figures are embedded). One caution, same as committing plans: the file contains everything under `plans/` — including result figures, tables, and script snapshots — so sharing it is publishing your plans and results.
 
 ## FAQ
 
