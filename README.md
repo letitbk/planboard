@@ -47,6 +47,8 @@ On the board's Results view you review a bundle — report, stat tiles, figure/t
 
 Adopting the workflow mid-project? `/research-plans:results --adopt` scans your output folders, lets you pick which existing figures/tables matter, and files them as bundles marked `retrofit` — honest that no plan governed their production, reviewable and verifiable all the same.
 
+- **Share with collaborators**: `--share` exports an annotatable board file you can email; collaborators comment in their browser and send back a feedback file that `--collect <file>` routes with attribution.
+
 ## The sign-off gate
 
 Signing a plan is enforced, not offered. The plugin ships a PreToolUse hook: whenever Claude tries to write a signed version file (`plans/execution/<component>/vN.md`) in an initialized project, the write is blocked while the proposed plan opens in your browser — rendered, with the diff against the previous version. You either approve (the version is written exactly as shown) or request changes with comments (the write is denied, your feedback goes back to Claude, and the gate reopens on the next attempt). The same hook mechanically enforces immutability: edits to or overwrites of an existing signed version are always denied.

@@ -1,6 +1,6 @@
 ---
 description: Open the board — browser dashboard for the tracker, plans with version diffs, decision timeline, and rubric scorecards; annotate live or export a shareable snapshot
-argument-hint: [component name/number | --export]
+argument-hint: [component name/number | --export | --share [component] | --collect <file>]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
@@ -10,7 +10,7 @@ Open the project board, or export a shareable snapshot. Skill context: `${CLAUDE
 
 2. **Recover pending feedback first.** If `plans/.board-feedback.md` exists, a previous board session was interrupted before its feedback was routed. Run `python3 <script> --collect`, route what it prints (step 5), and only then consider opening a new board.
 
-3. **Resolve the mode.** If `$ARGUMENTS` contains `--export`, go to step 7. If it names a component (name or number), resolve it to its `NN-slug` from the master plan for `--focus`. A `NN-slug:rN` argument (from /research-plans:results) passes through to `--focus` verbatim — it opens the board directly on that results bundle.
+3. **Resolve the mode.** If `$ARGUMENTS` contains `--export`, go to step 7. If it contains `--share`, go to step 8. If it contains `--collect` with a file path, go to step 9. If it names a component (name or number), resolve it to its `NN-slug` from the master plan for `--focus`. A `NN-slug:rN` argument (from /research-plans:results) passes through to `--focus` verbatim — it opens the board directly on that results bundle.
 
 4. **Serve.** Run exactly:
    `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/scripts/board.py [--focus NN-slug]`
@@ -33,3 +33,7 @@ Open the project board, or export a shareable snapshot. Skill context: `${CLAUDE
 6. **Close the loop.** Offer to reopen the board to see the updated state. If artifacts changed, suggest a commit (do not run it without approval).
 
 7. **Export mode.** Run `python3 <script> --export`. Then state the privacy reminder in publishing terms: committing or sharing `plans/board.html` IS publishing everything under `plans/` verbatim — treat it exactly like publishing the plans themselves (participant details and IRB specifics stay out, or export to a non-committed path instead). Suggest a commit such as `plans: export board snapshot`.
+
+8. **Share mode.** Resolve any named component to its `NN-slug`, then run `python3 <script> --share [--focus NN-slug]`. Report the output path and state the privacy reminder in publishing terms: emailing this file IS publishing its embedded plan content to that person — an unfocused share embeds everything under `plans/`; a focused share embeds that component's plans plus the full master plan (always visible by design). Practical notes for the researcher: some mail providers flag `.html` attachments — zip the file or use a Dropbox/Drive link if delivery fails; the collaborator needs only a browser, and sends back a `board-feedback-*.txt` file.
+
+9. **Ingest mode.** Run `python3 <script> --collect <file>`. If stderr contains a `STALE` line, relay it to the researcher before routing anything — never route stale feedback silently; signed versions are immutable so anchors on a signed vN still resolve, but drafts may have moved on. Then route the printed document through step 5 unchanged, with one addition: when the JSON fence has `"mode": "remote"`, attribute decision-log entries as "Board feedback from <reviewer> (remote)" using the fence's `reviewer` field; never add "(remote)" otherwise. Multiple files route one at a time, in the order the researcher chooses. The source file is never deleted by the script; leave it where it is.

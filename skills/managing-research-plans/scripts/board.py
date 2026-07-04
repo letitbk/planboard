@@ -4,9 +4,13 @@
 Stdlib only, Python 3.9+. Modes:
   (default)          serve the live board; block until feedback; print it to stdout
   --export [PATH]    write a static read-only snapshot (default plans/board.html)
+  --share [PATH]     write an annotatable remote board for collaborators
+                     (default plans/board-share.html; --focus prunes to one component)
   --collect          print and delete pending feedback from an interrupted session
+  --collect FILE     print a collaborator's feedback file (never deletes it;
+                     stderr notes STALE if plans changed since the share)
 
-Exit codes: 0 feedback delivered / export written / pending collected;
+Exit codes: 0 feedback delivered / export or share written / feedback collected;
 1 usage or environment error; 2 timeout with no feedback; 3 nothing to collect;
 130 cancelled.
 """

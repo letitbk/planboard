@@ -3,3 +3,5 @@
 logs/
 board/node_modules/
 board/dist/
+.superpowers/
+__pycache__/
