@@ -13,6 +13,7 @@ Exit codes: 0 feedback delivered / export written / pending collected;
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -99,6 +100,31 @@ def git_info(root, paths):
 def read_file(root, rel):
     p = root / rel
     return {"path": rel, "content": p.read_text(encoding="utf-8", errors="replace")}
+
+
+def payload_files(payload):
+    """Every embedded plan file in the payload, mirroring the client's allFiles()."""
+    f = payload["files"]
+    out = [f["masterPlan"], f["decisionLog"]]
+    for g in f["executionPlans"]:
+        out.extend(g["versions"])
+        if g.get("draft"):
+            out.append(g["draft"])
+    out.extend(f["reviews"])
+    return out
+
+
+def share_hash(files):
+    """sha256 over sorted (path, content) pairs; first 16 hex chars.
+    Python-only contract: --share stamps it, --collect recomputes it.
+    The client never computes this hash, it only echoes it back."""
+    h = hashlib.sha256()
+    for f in sorted(files, key=lambda x: x["path"]):
+        h.update(f["path"].encode("utf-8"))
+        h.update(b"\x00")
+        h.update(f["content"].encode("utf-8"))
+        h.update(b"\x00")
+    return h.hexdigest()[:16]
 
 
 def collect_payload(root, mode, focus):
