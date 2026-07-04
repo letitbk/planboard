@@ -12,9 +12,11 @@ Exit codes: 0 feedback delivered / export written / pending collected;
 """
 
 import argparse
+import base64
 import datetime
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import signal
@@ -34,6 +36,7 @@ GITIGNORE_LINES = [
     "/board-share.html",
     "/execution/*/.draft-v*.md",
     "/execution/*/.gate-*.md",
+    "/execution/*/results/.staging-*/",
 ]
 
 FENCE_RE = re.compile(r"```json board-feedback\n(.*?)\n```", re.DOTALL)
@@ -113,6 +116,13 @@ def payload_files(payload):
         out.extend(g["versions"])
         if g.get("draft"):
             out.append(g["draft"])
+        for b in g.get("results", []):
+            out.append(b["manifestRaw"])
+            if b.get("report"):
+                out.append(b["report"])
+            if b.get("verdictRaw"):
+                out.append(b["verdictRaw"])
+            out.extend(b.get("scripts", []))
     out.extend(f["reviews"])
     return out
 
@@ -128,6 +138,112 @@ def share_hash(files):
         h.update(f["content"].encode("utf-8"))
         h.update(b"\x00")
     return h.hexdigest()[:16]
+
+
+def collect_results(root, comp_dir):
+    bundles = []
+    res_dir = comp_dir / "results"
+    if not res_dir.is_dir():
+        return bundles
+    for rdir in sorted(res_dir.iterdir()):
+        m = re.fullmatch(r"r(\d+)", rdir.name)
+        if not m or not rdir.is_dir():
+            continue
+        manifest_p = rdir / "manifest.json"
+        if not manifest_p.is_file():
+            continue
+        try:
+            manifest = json.loads(manifest_p.read_text(encoding="utf-8"))
+        except ValueError:
+            manifest = None
+        bundle = {
+            "resultsVersion": int(m.group(1)),
+            "dir": str(rdir.relative_to(root)),
+            "manifest": manifest,
+            "manifestRaw": read_file(root, str(manifest_p.relative_to(root))),
+            "report": None,
+            "verdict": None,
+            "verdictRaw": None,
+            "scripts": [],
+            "assets": {},
+        }
+        if (rdir / "report.md").is_file():
+            bundle["report"] = read_file(root, str((rdir / "report.md").relative_to(root)))
+        vp = rdir / "verdict.json"
+        if vp.is_file():
+            bundle["verdictRaw"] = read_file(root, str(vp.relative_to(root)))
+            try:
+                bundle["verdict"] = json.loads(bundle["verdictRaw"]["content"])
+            except ValueError:
+                bundle["verdict"] = None
+        sdir = rdir / "scripts"
+        if sdir.is_dir():
+            for sf in sorted(sdir.iterdir()):
+                if sf.is_file():
+                    bundle["scripts"].append(read_file(root, str(sf.relative_to(root))))
+        bundles.append(bundle)
+    bundles.sort(key=lambda b: b["resultsVersion"])
+    return bundles
+
+
+TEXT_INLINE_EXTS = {".csv", ".md", ".html", ".txt", ".tsv", ".tex", ".json"}
+TEXT_INLINE_MAX = 200 * 1024
+
+
+def iter_bundles(payload):
+    for g in payload["files"]["executionPlans"]:
+        for b in g.get("results", []):
+            yield g["component"], b
+
+
+def build_assets(root, payload):
+    """Fill bundle['assets'] (basename -> URL) and artifact inlineText."""
+    live = payload["mode"] == "live"
+    for component, b in iter_bundles(payload):
+        adir = root / b["dir"] / "artifacts"
+        if not adir.is_dir():
+            continue
+        for f in sorted(adir.iterdir()):
+            if not f.is_file():
+                continue
+            if live:
+                b["assets"][f.name] = "/artifact/%s/r%d/%s" % (
+                    component, b["resultsVersion"], f.name)
+            else:
+                mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                data = base64.b64encode(f.read_bytes()).decode("ascii")
+                b["assets"][f.name] = "data:%s;base64,%s" % (mime, data)
+        if b.get("manifest") and isinstance(b["manifest"].get("artifacts"), list):
+            for art in b["manifest"]["artifacts"]:
+                fp = art.get("file")
+                if not fp:
+                    continue
+                p = root / b["dir"] / fp
+                if (p.is_file() and p.suffix.lower() in TEXT_INLINE_EXTS
+                        and p.stat().st_size <= TEXT_INLINE_MAX):
+                    art["inlineText"] = p.read_text(encoding="utf-8", errors="replace")
+
+
+def artifact_map(root, payload):
+    """Route path -> absolute file path, built ONLY from files on disk."""
+    amap = {}
+    for component, b in iter_bundles(payload):
+        adir = root / b["dir"] / "artifacts"
+        if not adir.is_dir():
+            continue
+        for f in sorted(adir.iterdir()):
+            if f.is_file():
+                amap["/artifact/%s/r%d/%s" % (component, b["resultsVersion"], f.name)] = f
+    return amap
+
+
+def split_focus(focus):
+    if not focus:
+        return None, None
+    m = re.fullmatch(r"(.+):r(\d+)", focus)
+    if m:
+        return m.group(1), int(m.group(2))
+    return focus, None
 
 
 def collect_payload(root, mode, focus):
@@ -159,7 +275,8 @@ def collect_payload(root, mode, focus):
                         (versions[-1]["version"] + 1) if versions else 1
                     )
                     group["draft"] = entry
-            if versions or group.get("draft"):
+            group["results"] = collect_results(root, comp_dir)
+            if versions or group.get("draft") or group["results"]:
                 exec_groups.append(group)
 
     reviews = []
@@ -187,10 +304,11 @@ def collect_payload(root, mode, focus):
     all_paths = ["plans/master-plan.md", "plans/decision-log.md"]
     for g in exec_groups:
         all_paths.extend(v["path"] for v in g["versions"])
+        all_paths.extend(b["manifestRaw"]["path"] for b in g.get("results", []))
     all_paths.extend(r["path"] for r in reviews)
 
     payload = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "mode": mode,
         "focus": focus,
@@ -301,6 +419,7 @@ def serve(root, payload, args):
     lock = acquire_lock(plans_dir, args.force)
 
     gate_mode = payload.get("gate") is not None
+    amap = artifact_map(root, payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     html_bytes = html.encode("utf-8")
     done = threading.Event()
@@ -321,6 +440,20 @@ def serve(root, payload, args):
         def do_GET(self):
             if self.path == "/api/health":
                 self._json(200, {"ok": True, "app": "research-plans-board"})
+                return
+            if self.path.startswith("/artifact/"):
+                f = amap.get(self.path)
+                if f is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                data = f.read_bytes()
+                mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -416,7 +549,10 @@ def serve(root, payload, args):
 
 
 def export(root, args):
-    payload = collect_payload(root, "static", args.focus)
+    slug, focus_results = split_focus(args.focus)
+    payload = collect_payload(root, "static", slug)
+    payload["focusResults"] = focus_results
+    build_assets(root, payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     out = Path(args.export) if args.export != "DEFAULT" else root / "plans" / "board.html"
     if not out.is_absolute():
@@ -434,7 +570,10 @@ def export(root, args):
 
 
 def share(root, args):
-    payload = collect_payload(root, "remote", args.focus)
+    slug, focus_results = split_focus(args.focus)
+    payload = collect_payload(root, "remote", slug)
+    payload["focusResults"] = focus_results
+    build_assets(root, payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     out = (
         Path(args.share) if args.share != "DEFAULT"
@@ -574,7 +713,10 @@ def main():
     elif args.export is not None:
         export(root, args)
     else:
-        payload = collect_payload(root, "live", args.focus)
+        slug, focus_results = split_focus(args.focus)
+        payload = collect_payload(root, "live", slug)
+        payload["focusResults"] = focus_results
+        build_assets(root, payload)
         if args.gate:
             payload = apply_gate(root, payload, args.gate)
         serve(root, payload, args)

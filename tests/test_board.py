@@ -43,6 +43,38 @@ def make_project(root: Path):
         "# Other v1\n\nSecret other plan.\n", encoding="utf-8")
     (plans / "reviews" / "review-01.md").write_text(
         "# Review\n\nSecret review.\n", encoding="utf-8")
+    r1 = plans / "execution" / "01-data-prep" / "results" / "r1"
+    (r1 / "artifacts").mkdir(parents=True)
+    (r1 / "scripts").mkdir()
+    (r1 / "artifacts" / "fig1.png").write_bytes(b"\x89PNG r1 fig")
+    (r1 / "scripts" / "clean.R").write_text("x <- 1\n", encoding="utf-8")
+    (r1 / "report.md").write_text("# Results r1\n\nAll good.\n", encoding="utf-8")
+    (r1 / "manifest.json").write_text(json.dumps({
+        "schemaVersion": 1, "component": "01-data-prep", "resultsVersion": 1,
+        "planVersion": 1, "provenance": "planned", "trigger": "initial",
+        "capturedAt": "2026-07-03 10:00", "summary": "r1",
+        "metrics": [{"label": "N", "value": "100"}],
+        "artifacts": [{"id": "fig", "kind": "figure", "title": "Fig 1",
+                       "file": "artifacts/fig1.png",
+                       "source": {"path": "output/fig1.png", "sha256": "0" * 64,
+                                  "bytes": 11, "oversized": False},
+                       "producedBy": {"script": "scripts/clean.R",
+                                      "sourcePath": "code/clean.R", "lang": "r"}}],
+    }), encoding="utf-8")
+    (r1 / "verdict.json").write_text(json.dumps({
+        "status": "accepted", "date": "2026-07-03 11:00",
+        "planVersion": 1, "reviewer": "BK"}), encoding="utf-8")
+    # a results-only component: no vN.md, only a bundle (retrofit case)
+    r_only = plans / "execution" / "03-retrofit" / "results" / "r1"
+    (r_only / "artifacts").mkdir(parents=True)
+    (r_only / "report.md").write_text("# Retrofit r1\n", encoding="utf-8")
+    (r_only / "manifest.json").write_text(json.dumps({
+        "schemaVersion": 1, "component": "03-retrofit", "resultsVersion": 1,
+        "planVersion": None, "provenance": "retrofit", "trigger": "initial",
+        "capturedAt": "2026-07-02 09:00", "metrics": [], "artifacts": []}),
+        encoding="utf-8")
+    # a stale staging dir that must NOT appear in the payload
+    (plans / "execution" / "01-data-prep" / "results" / ".staging-zz").mkdir()
     return plans
 
 
@@ -236,6 +268,98 @@ class TestCollectFile(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("pending", r.stdout)
             self.assertFalse(pending.is_file())
+
+
+class TestResultsPayload(unittest.TestCase):
+    def test_bundles_collected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            self.assertEqual(payload["schemaVersion"], 2)
+            groups = {g["component"]: g for g in payload["files"]["executionPlans"]}
+            b = groups["01-data-prep"]["results"][0]
+            self.assertEqual(b["resultsVersion"], 1)
+            self.assertEqual(b["manifest"]["provenance"], "planned")
+            self.assertEqual(b["verdict"]["status"], "accepted")
+            self.assertEqual(b["report"]["content"].splitlines()[0], "# Results r1")
+            self.assertEqual(b["scripts"][0]["path"],
+                             "plans/execution/01-data-prep/results/r1/scripts/clean.R")
+
+    def test_results_only_component_emitted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            comps = [g["component"] for g in payload["files"]["executionPlans"]]
+            self.assertIn("03-retrofit", comps)
+            g = next(g for g in payload["files"]["executionPlans"]
+                     if g["component"] == "03-retrofit")
+            self.assertEqual(g["versions"], [])
+            self.assertIsNone(g["results"][0]["manifest"]["planVersion"])
+
+    def test_payload_files_include_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            paths = [f["path"] for f in board.payload_files(payload)]
+            self.assertIn("plans/execution/01-data-prep/results/r1/manifest.json", paths)
+            self.assertIn("plans/execution/01-data-prep/results/r1/report.md", paths)
+            self.assertIn("plans/execution/01-data-prep/results/r1/verdict.json", paths)
+            self.assertIn("plans/execution/01-data-prep/results/r1/scripts/clean.R", paths)
+
+    def test_staging_dirs_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            g = next(g for g in payload["files"]["executionPlans"]
+                     if g["component"] == "01-data-prep")
+            self.assertEqual(len(g["results"]), 1)
+
+
+class TestAssets(unittest.TestCase):
+    def _bundle(self, payload):
+        g = next(g for g in payload["files"]["executionPlans"]
+                 if g["component"] == "01-data-prep")
+        return g["results"][0]
+
+    def test_live_assets_are_routes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            board.build_assets(root, payload)
+            b = self._bundle(payload)
+            self.assertEqual(b["assets"]["fig1.png"],
+                             "/artifact/01-data-prep/r1/fig1.png")
+
+    def test_static_assets_are_data_uris(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            payload = board.collect_payload(root, "static", None)
+            board.build_assets(root, payload)
+            b = self._bundle(payload)
+            self.assertTrue(b["assets"]["fig1.png"].startswith("data:image/png;base64,"))
+
+    def test_artifact_map_and_export_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            board.build_assets(root, payload)
+            amap = board.artifact_map(root, payload)
+            key = "/artifact/01-data-prep/r1/fig1.png"
+            self.assertIn(key, amap)
+            self.assertTrue(amap[key].is_file())
+            self.assertNotIn("/artifact/01-data-prep/r1/../secret", amap)
+
+    def test_focus_results_parsing(self):
+        self.assertEqual(board.split_focus("02-x:r3"), ("02-x", 3))
+        self.assertEqual(board.split_focus("02-x"), ("02-x", None))
+        self.assertEqual(board.split_focus(None), (None, None))
 
 
 class TestDocumentFromBody(unittest.TestCase):
