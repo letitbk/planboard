@@ -27,6 +27,7 @@ export default function PlanReader({
   annotations,
   onAddPlanComment,
   onPaintResult,
+  onOpenResults,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -37,6 +38,7 @@ export default function PlanReader({
     a: Omit<PlanCommentAnnotation, "id" | "type">,
   ) => void;
   onPaintResult: (paintedIds: Set<string>) => void;
+  onOpenResults: (slug: string) => void;
 }) {
   const groups = data.files.executionPlans;
   const group =
@@ -195,6 +197,30 @@ export default function PlanReader({
             </label>
           )}
         </div>
+
+        {(group.results ?? []).some(
+          (b) => b.manifest?.planVersion === doc.version && !doc.isDraft,
+        ) && (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
+            Results under this version:
+            {(group.results ?? [])
+              .filter((b) => b.manifest?.planVersion === doc.version)
+              .map((b) => (
+                <button
+                  key={b.dir}
+                  className="rounded-full border border-stone-300 bg-white px-2 py-0.5 font-medium text-blue-700 hover:border-stone-500"
+                  onClick={() => onOpenResults(group.component)}
+                >
+                  r{b.resultsVersion}
+                  {b.verdict?.status === "accepted"
+                    ? " ✓"
+                    : b.verdict?.status === "changes-requested"
+                      ? " ✕"
+                      : " ●"}
+                </button>
+              ))}
+          </div>
+        )}
 
         {doc.isDraft && (
           <div className="mb-3 flex items-center gap-2">

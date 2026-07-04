@@ -8,7 +8,7 @@ import {
 } from "../lib/parse";
 import type { BoardData } from "../lib/types";
 
-type EventKind = "decision" | "plan" | "review";
+type EventKind = "decision" | "plan" | "result" | "review";
 
 interface TimelineEvent {
   kind: EventKind;
@@ -22,6 +22,7 @@ interface TimelineEvent {
 const KIND_STYLE: Record<EventKind, { dot: string; label: string }> = {
   decision: { dot: "bg-blue-500", label: "Decision" },
   plan: { dot: "bg-stone-800", label: "Plan version" },
+  result: { dot: "bg-emerald-500", label: "Results" },
   review: { dot: "bg-purple-500", label: "Review" },
 };
 
@@ -48,7 +49,7 @@ export default function Timeline({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(["all", "decision", "plan", "review"] as const).map((k) => (
+        {(["all", "decision", "plan", "result", "review"] as const).map((k) => (
           <button
             key={k}
             className={`rounded-full border px-3 py-1 text-xs font-medium ${
@@ -135,6 +136,30 @@ function buildEvents(data: BoardData): TimelineEvent[] {
           : `Plan v${v.version} committed${parsed.signedOff ? ` — signed off: ${parsed.signedOff}` : ""}.`,
         searchText: `${group.component} v${v.version} ${parsed.supersedes ?? ""}`,
       });
+    }
+  }
+
+  for (const group of data.files.executionPlans) {
+    for (const b of group.results ?? []) {
+      const m = b.manifest;
+      events.push({
+        kind: "result",
+        sortKey: m?.capturedAt ?? "0000-00-00 00:00",
+        title: `${group.component} r${b.resultsVersion}`,
+        badge: m?.provenance === "retrofit" ? "retrofit" : undefined,
+        body: `Results captured${m?.planVersion != null ? ` under plan v${m.planVersion}` : ""}${m?.trigger && m.trigger !== "initial" ? ` (${m.trigger})` : ""}${m?.summary ? ` — ${m.summary}` : ""}.`,
+        searchText: `results ${group.component} r${b.resultsVersion} ${m?.summary ?? ""}`,
+      });
+      if (b.verdict) {
+        events.push({
+          kind: "result",
+          sortKey: b.verdict.date,
+          title: `${group.component} r${b.resultsVersion}`,
+          badge: b.verdict.status,
+          body: `Verdict by ${b.verdict.reviewer}: **${b.verdict.status}**${b.verdict.comment ? ` — ${b.verdict.comment}` : ""}.`,
+          searchText: `verdict ${group.component} ${b.verdict.status}`,
+        });
+      }
     }
   }
 

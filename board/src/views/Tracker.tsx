@@ -8,6 +8,7 @@ const CHIP: Record<TrackerStatus, string> = {
   planned: "bg-blue-50 text-blue-700 border-blue-200",
   "in progress": "bg-amber-50 text-amber-800 border-amber-200",
   done: "bg-green-50 text-green-800 border-green-200",
+  "done (verified)": "bg-green-100 text-green-900 border-green-300",
   dropped: "bg-red-50 text-red-700 border-red-200 line-through",
   unknown: "bg-stone-100 text-stone-500 border-stone-200",
 };
@@ -21,11 +22,13 @@ export default function Tracker({
   data,
   canAnnotate,
   onOpenComponent,
+  onOpenResults,
   onAddGeneral,
 }: {
   data: BoardData;
   canAnnotate: boolean;
   onOpenComponent: (slug: string | null, name: string) => void;
+  onOpenResults: (slug: string) => void;
   onAddGeneral: (view: string, comment: string) => void;
 }) {
   const mp = parseMasterPlan(data.files.masterPlan.content);
@@ -134,6 +137,7 @@ export default function Tracker({
               {hasRQs && <th className="px-4 py-2">Serves</th>}
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Plan</th>
+              <th className="px-4 py-2">Results</th>
               <th className="px-4 py-2">Outcome / notes</th>
             </tr>
           </thead>
@@ -202,6 +206,32 @@ export default function Tracker({
                     ) : (
                       <span className="text-xs text-stone-400">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {(() => {
+                      const g = slug
+                        ? data.files.executionPlans.find(
+                            (x) => x.component === slug,
+                          )
+                        : null;
+                      const latest = g?.results?.[g.results.length - 1];
+                      if (!latest)
+                        return <span className="text-xs text-stone-400">—</span>;
+                      const mark =
+                        latest.verdict?.status === "accepted"
+                          ? "✓"
+                          : latest.verdict?.status === "changes-requested"
+                            ? "✕"
+                            : "●";
+                      return (
+                        <button
+                          className="text-xs font-medium text-blue-700 underline hover:text-blue-900"
+                          onClick={() => onOpenResults(slug!)}
+                        >
+                          r{latest.resultsVersion} {mark}
+                        </button>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-2.5 text-stone-600">{r.notes}</td>
                 </tr>

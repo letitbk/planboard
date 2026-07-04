@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Tracker from "./views/Tracker";
 import PlanReader from "./views/PlanReader";
+import Results from "./views/Results";
 import Timeline from "./views/Timeline";
 import Scorecard from "./views/Scorecard";
 import { allFiles, payloadContentHash } from "./lib/parse";
@@ -13,13 +14,17 @@ import type {
   Annotation,
   BoardData,
   PlanCommentAnnotation,
+  ResultCommentAnnotation,
+  ScriptCommentAnnotation,
+  VerdictRequest,
 } from "./lib/types";
 
-type Tab = "tracker" | "plans" | "timeline" | "reviews";
+type Tab = "tracker" | "plans" | "results" | "timeline" | "reviews";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "tracker", label: "Tracker" },
   { id: "plans", label: "Plans" },
+  { id: "results", label: "Results" },
   { id: "timeline", label: "Timeline" },
   { id: "reviews", label: "Reviews" },
 ];
@@ -40,7 +45,13 @@ export default function App({ data }: { data: BoardData }) {
   const sessionId = useMemo(() => newSessionId(), []);
 
   const [tab, setTab] = useState<Tab>(
-    gate || data.focus ? "plans" : "tracker",
+    gate
+      ? "plans"
+      : data.focusResults != null
+        ? "results"
+        : data.focus
+          ? "plans"
+          : "tracker",
   );
   const [selectedComponent, setSelectedComponent] = useState<string | null>(
     gate?.component ?? data.focus,
@@ -96,6 +107,36 @@ export default function App({ data }: { data: BoardData }) {
     [],
   );
 
+  const addResultComment = useCallback(
+    (a: Omit<ResultCommentAnnotation, "id" | "type">) => {
+      setAnnotations((prev) => [
+        ...prev,
+        { ...a, id: nextId(), type: "result-comment" },
+      ]);
+      setDrawerOpen(true);
+    },
+    [],
+  );
+
+  const addScriptComment = useCallback(
+    (a: Omit<ScriptCommentAnnotation, "id" | "type">) => {
+      setAnnotations((prev) => [
+        ...prev,
+        { ...a, id: nextId(), type: "script-comment" },
+      ]);
+      setDrawerOpen(true);
+    },
+    [],
+  );
+
+  const [pendingVerdict, setPendingVerdict] = useState<VerdictRequest | null>(
+    null,
+  );
+  const onVerdict = useCallback((v: VerdictRequest) => {
+    setPendingVerdict(v);
+    setDrawerOpen(true);
+  }, []);
+
   const addGeneral = useCallback((view: string, comment: string) => {
     setAnnotations((prev) => [
       ...prev,
@@ -125,8 +166,8 @@ export default function App({ data }: { data: BoardData }) {
   }, []);
 
   const feedbackMarkdown = useMemo(
-    () => buildFeedbackMarkdown(annotations),
-    [annotations],
+    () => buildFeedbackMarkdown(annotations, pendingVerdict),
+    [annotations, pendingVerdict],
   );
 
   const feedbackDocument = useMemo(
@@ -140,8 +181,9 @@ export default function App({ data }: { data: BoardData }) {
         payloadHash,
         shareHash: data.shareHash ?? null,
         annotations,
+        verdict: pendingVerdict,
       }),
-    [feedbackMarkdown, sessionId, data, remote, reviewer, payloadHash, annotations],
+    [feedbackMarkdown, sessionId, data, remote, reviewer, payloadHash, annotations, pendingVerdict],
   );
 
   const submit = async () => {
@@ -159,6 +201,7 @@ export default function App({ data }: { data: BoardData }) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSubmitState("sent");
+      setPendingVerdict(null);
       try {
         localStorage.removeItem(storageKey);
       } catch {
@@ -342,6 +385,10 @@ export default function App({ data }: { data: BoardData }) {
               setSelectedComponent(slug);
               setTab("plans");
             }}
+            onOpenResults={(slug) => {
+              setSelectedComponent(slug);
+              setTab("results");
+            }}
           />
         )}
         {tab === "plans" && (
@@ -353,6 +400,25 @@ export default function App({ data }: { data: BoardData }) {
             annotations={annotations}
             onAddPlanComment={addPlanComment}
             onPaintResult={onPaintResult}
+            onOpenResults={(slug) => {
+              setSelectedComponent(slug);
+              setTab("results");
+            }}
+          />
+        )}
+        {tab === "results" && (
+          <Results
+            data={data}
+            canAnnotate={canAnnotate}
+            canPost={canPost}
+            selectedComponent={selectedComponent}
+            onSelectComponent={setSelectedComponent}
+            annotations={annotations}
+            onAddResultComment={addResultComment}
+            onAddScriptComment={addScriptComment}
+            onPaintResult={onPaintResult}
+            onVerdict={onVerdict}
+            focusResults={data.focusResults ?? null}
           />
         )}
         {tab === "timeline" && (
@@ -401,6 +467,20 @@ export default function App({ data }: { data: BoardData }) {
                         </span>
                       )}
                     </>
+                  ) : a.type === "result-comment" ? (
+                    <span className="font-medium text-stone-700">
+                      {a.component} r{a.resultsVersion} ·{" "}
+                      {a.target.kind === "artifact"
+                        ? a.target.artifactId
+                        : a.target.kind === "metric"
+                          ? a.target.metricLabel
+                          : "report"}
+                    </span>
+                  ) : a.type === "script-comment" ? (
+                    <span className="font-medium text-stone-700">
+                      {a.script.split("/").pop()} L{a.lineStart}
+                      {a.lineEnd !== a.lineStart ? `–${a.lineEnd}` : ""}
+                    </span>
                   ) : (
                     <span className="font-medium text-stone-700">
                       {a.view} — general
@@ -418,6 +498,16 @@ export default function App({ data }: { data: BoardData }) {
                   <div className="mb-1 line-clamp-2 rounded bg-amber-50 px-1.5 py-1 text-[11px] italic text-stone-500">
                     “{a.quote}”
                   </div>
+                )}
+                {a.type === "result-comment" && a.target.quote && (
+                  <div className="mb-1 line-clamp-2 rounded bg-amber-50 px-1.5 py-1 text-[11px] italic text-stone-500">
+                    “{a.target.quote}”
+                  </div>
+                )}
+                {a.type === "script-comment" && (
+                  <pre className="mb-1 max-h-16 overflow-hidden rounded bg-stone-50 px-1.5 py-1 text-[10px] text-stone-500">
+                    {a.excerpt}
+                  </pre>
                 )}
                 <div className="text-stone-700">{a.comment}</div>
               </div>
@@ -457,13 +547,33 @@ export default function App({ data }: { data: BoardData }) {
                 </button>
               </div>
             ) : canPost ? (
-              <button
-                className="w-full rounded-md bg-stone-900 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
-                disabled={annotations.length === 0 || submitState === "sending"}
-                onClick={submit}
-              >
-                {submitState === "sending" ? "Sending…" : "Send to Claude"}
-              </button>
+              <div className="space-y-2">
+                {pendingVerdict && (
+                  <div className="rounded-md border border-stone-300 bg-stone-50 p-2 text-xs">
+                    <span className="font-semibold">
+                      Verdict: {pendingVerdict.status} —{" "}
+                      {pendingVerdict.component} r{pendingVerdict.resultsVersion}
+                    </span>
+                    <button
+                      className="ml-2 text-stone-400 hover:text-red-600"
+                      onClick={() => setPendingVerdict(null)}
+                      title="Withdraw verdict"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                <button
+                  className="w-full rounded-md bg-stone-900 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+                  disabled={
+                    (annotations.length === 0 && !pendingVerdict) ||
+                    submitState === "sending"
+                  }
+                  onClick={submit}
+                >
+                  {submitState === "sending" ? "Sending…" : "Send to Claude"}
+                </button>
+              </div>
             ) : (
               <div className="space-y-2">
                 <input
@@ -500,19 +610,50 @@ export default function App({ data }: { data: BoardData }) {
   );
 }
 
-function buildFeedbackMarkdown(annotations: Annotation[]): string {
-  if (annotations.length === 0) return "# Board Feedback\n\nNo feedback.";
-  const lines: string[] = [
-    "# Board Feedback",
-    "",
-    `I've reviewed the board and have ${annotations.length} piece${annotations.length === 1 ? "" : "s"} of feedback:`,
-    "",
-  ];
+function buildFeedbackMarkdown(
+  annotations: Annotation[],
+  verdict: VerdictRequest | null,
+): string {
+  if (annotations.length === 0 && !verdict)
+    return "# Board Feedback\n\nNo feedback.";
+  const lines: string[] = ["# Board Feedback", ""];
+  if (verdict) {
+    lines.push(
+      `## VERDICT: ${verdict.status.toUpperCase()} — ${verdict.component} r${verdict.resultsVersion}`,
+    );
+    if (verdict.comment) lines.push(`> ${verdict.comment}`);
+    lines.push(
+      "",
+      "Apply via: results.py verdict --component " +
+        `${verdict.component} --version ${verdict.resultsVersion} --status ${verdict.status}`,
+      "",
+    );
+  }
+  if (annotations.length > 0) {
+    lines.push(
+      `I've reviewed the board and have ${annotations.length} piece${annotations.length === 1 ? "" : "s"} of feedback:`,
+      "",
+    );
+  }
   annotations.forEach((a, i) => {
     if (a.type === "plan-comment") {
       const head = `${a.component} v${a.version}${a.isDraft ? " (draft)" : ""}${a.sectionHeading ? ` — ${a.sectionHeading}` : ""}`;
       lines.push(`## ${i + 1}. [${head}]`);
       lines.push(`Feedback on: "${a.quote}"`);
+    } else if (a.type === "result-comment") {
+      const t =
+        a.target.kind === "artifact"
+          ? `artifact ${a.target.artifactId}`
+          : a.target.kind === "metric"
+            ? `metric ${a.target.metricLabel}`
+            : "report";
+      lines.push(`## ${i + 1}. [${a.component} r${a.resultsVersion} — ${t}]`);
+      if (a.target.quote) lines.push(`Feedback on: "${a.target.quote}"`);
+    } else if (a.type === "script-comment") {
+      lines.push(
+        `## ${i + 1}. [${a.component} r${a.resultsVersion} — ${a.script.split("/").pop()} lines ${a.lineStart}-${a.lineEnd}]`,
+      );
+      lines.push("```", a.excerpt, "```");
     } else {
       lines.push(`## ${i + 1}. [${a.view} — general]`);
     }
