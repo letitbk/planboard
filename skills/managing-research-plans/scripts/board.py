@@ -36,6 +36,8 @@ GITIGNORE_LINES = [
     "/execution/*/.gate-*.md",
 ]
 
+FENCE_RE = re.compile(r"```json board-feedback\n(.*?)\n```", re.DOTALL)
+
 
 def die(msg, code=1):
     print("board: %s" % msg, file=sys.stderr)
@@ -459,6 +461,47 @@ def collect_pending(root):
     sys.exit(0)
 
 
+def parse_fence(doc):
+    m = FENCE_RE.search(doc)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except ValueError:
+        return None
+
+
+def collect_file(root, path):
+    p = Path(path)
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    if not p.is_file():
+        die("no feedback file at %s" % p)
+    doc = p.read_text(encoding="utf-8", errors="replace")
+    meta = parse_fence(doc)
+    if meta is None:
+        print(
+            "board: warning — no parseable ```json board-feedback``` fence; "
+            "route from the markdown body.",
+            file=sys.stderr,
+        )
+    elif meta.get("mode") == "remote" and meta.get("shareHash"):
+        try:
+            current = collect_payload(root, "remote", meta.get("focus"))
+            fresh = current["shareHash"]
+        except SystemExit:
+            fresh = None  # e.g. focused component no longer exists
+        if fresh != meta["shareHash"]:
+            print(
+                "board: STALE — plans changed since this share was exported "
+                "(share %s, now %s). Relay this to the researcher before "
+                "routing." % (meta["shareHash"], fresh or "unknown"),
+                file=sys.stderr,
+            )
+    print(doc)
+    sys.exit(0)
+
+
 def apply_gate(root, payload, gate_spec):
     """gate_spec is '<slug>/vN'. Reads the proposal from .gate-vN.md (skipping
     the reservation header comment) and injects it as the component's draft."""
@@ -494,7 +537,7 @@ def main():
     ap.add_argument("--focus", default=None, metavar="NN-slug")
     ap.add_argument("--export", nargs="?", const="DEFAULT", default=None, metavar="PATH")
     ap.add_argument("--share", nargs="?", const="DEFAULT", default=None, metavar="PATH")
-    ap.add_argument("--collect", action="store_true")
+    ap.add_argument("--collect", nargs="?", const="PENDING", default=None, metavar="FILE")
     ap.add_argument("--gate", default=None, metavar="SLUG/vN")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
@@ -510,8 +553,11 @@ def main():
         else:
             die("no plans/master-plan.md found — run /research-plans:init first")
 
-    if args.collect:
-        collect_pending(root)
+    if args.collect is not None:
+        if args.collect == "PENDING":
+            collect_pending(root)
+        else:
+            collect_file(root, args.collect)
     elif args.share is not None:
         share(root, args)
     elif args.export is not None:

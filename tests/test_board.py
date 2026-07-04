@@ -159,5 +159,70 @@ class TestShareCli(unittest.TestCase):
             self.assertNotIn("Secret other plan", json.dumps(payload))
 
 
+def make_feedback_doc(share_hash_value, focus=None, mode="remote"):
+    meta = {
+        "sessionId": "test-session", "generatedAt": "2026-07-03T12:00:00",
+        "mode": mode, "focus": focus, "reviewer": "Candice",
+        "payloadHash": "deadbeef", "shareHash": share_hash_value,
+        "annotations": [],
+    }
+    return (
+        "# Board Feedback\n\nLooks good overall.\n"
+        + "\n```json board-feedback\n" + json.dumps(meta, indent=1) + "\n```\n"
+    )
+
+
+class TestCollectFile(unittest.TestCase):
+    def test_collect_file_fresh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            current = board.collect_payload(root, "remote", None)
+            doc = make_feedback_doc(current["shareHash"])
+            f = root / "feedback.txt"
+            f.write_text(doc, encoding="utf-8")
+            r = run_board(root, "--collect", str(f))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout.rstrip("\n"), doc.rstrip("\n"))
+            self.assertNotIn("STALE", r.stderr)
+            self.assertTrue(f.is_file())  # never deleted
+
+    def test_collect_file_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            current = board.collect_payload(root, "remote", None)
+            doc = make_feedback_doc(current["shareHash"])
+            f = root / "feedback.txt"
+            f.write_text(doc, encoding="utf-8")
+            (root / "plans" / "execution" / "01-data-prep" / ".draft-v2.md").write_text(
+                "# Data prep v2 draft\n\nRevised since export.\n", encoding="utf-8")
+            r = run_board(root, "--collect", str(f))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("STALE", r.stderr)
+
+    def test_collect_file_without_fence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            f = root / "feedback.txt"
+            f.write_text("# Board Feedback\n\nNo fence here.\n", encoding="utf-8")
+            r = run_board(root, "--collect", str(f))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("no parseable", r.stderr)
+            self.assertIn("No fence here", r.stdout)
+
+    def test_collect_pending_still_deletes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            pending = root / "plans" / ".board-feedback.md"
+            pending.write_text("# Board Feedback\n\npending\n", encoding="utf-8")
+            r = run_board(root, "--collect")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("pending", r.stdout)
+            self.assertFalse(pending.is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
