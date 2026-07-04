@@ -285,6 +285,16 @@ def build_feedback_document(body, payload):
     )
 
 
+def document_from_body(body, payload):
+    """Prefer the client-assembled feedback document (schemaVersion 1 clients
+    send feedbackDocument); fall back to server-side assembly for older
+    templates and the gate flow."""
+    doc = body.get("feedbackDocument")
+    if isinstance(doc, str) and doc.strip():
+        return doc
+    return build_feedback_document(body, payload)
+
+
 def serve(root, payload, args):
     plans_dir = root / "plans"
     ensure_gitignore(plans_dir)
@@ -330,7 +340,7 @@ def serve(root, payload, args):
                     self.send_response(400)
                     self.end_headers()
                     return
-                doc = build_feedback_document(body, payload)
+                doc = document_from_body(body, payload)
                 # File FIRST (survives a dead parent bash call), then unblock.
                 (plans_dir / ".board-feedback.md").write_text(doc, encoding="utf-8")
                 result["doc"] = doc
@@ -362,7 +372,7 @@ def serve(root, payload, args):
                     self.send_response(400)
                     self.end_headers()
                     return
-                doc = build_feedback_document(body, payload)
+                doc = document_from_body(body, payload)
                 (plans_dir / ".board-feedback.md").write_text(doc, encoding="utf-8")
                 result["doc"] = doc
                 result["exit"] = 3

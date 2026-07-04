@@ -238,5 +238,26 @@ class TestCollectFile(unittest.TestCase):
             self.assertFalse(pending.is_file())
 
 
+class TestDocumentFromBody(unittest.TestCase):
+    PAYLOAD = {"generatedAt": "2026-07-03T12:00:00", "mode": "live", "focus": None}
+
+    def test_verbatim_when_client_assembled(self):
+        body = {"feedbackDocument": "# Board Feedback\n\nclient built\n"}
+        self.assertEqual(
+            board.document_from_body(body, self.PAYLOAD),
+            "# Board Feedback\n\nclient built\n",
+        )
+
+    def test_fallback_to_server_builder(self):
+        body = {"feedbackMarkdown": "# Board Feedback\n\nlegacy", "annotations": []}
+        doc = board.document_from_body(body, self.PAYLOAD)
+        self.assertIn("legacy", doc)
+        self.assertIn("```json board-feedback", doc)
+
+    def test_empty_string_falls_back(self):
+        body = {"feedbackDocument": "  ", "feedbackMarkdown": "# X", "annotations": []}
+        self.assertIn("```json board-feedback", board.document_from_body(body, self.PAYLOAD))
+
+
 if __name__ == "__main__":
     unittest.main()
