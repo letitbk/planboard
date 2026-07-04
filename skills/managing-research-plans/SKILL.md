@@ -34,7 +34,10 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 **After execution work.**
 - Update the component's row in the master plan tracker (status + one-line outcome) when there is real evidence of progress (outputs on disk, commits), and update `Last updated:`.
 - If execution deviated materially from the plan, propose `v<N+1>.md` with a `Supersedes` line stating what changed and why. The researcher approves and signs before it is written.
+- When a component's analysis has produced outputs, offer `/research-plans:results` to capture a results bundle for board review; never capture silently.
 - `/research-plans:sync` is the explicit checkpoint for all of this; use its late-capture protocol if logging was missed mid-session.
+
+**Results bundles.** `plans/execution/<NN-slug>/results/rN/` holds an immutable snapshot of what an analysis produced: `manifest.json` (plan version, provenance planned|retrofit, trigger, metrics, artifacts with sha256 sources and producing scripts), `report.md` (brief, cites artifacts by id, honest about misses), `artifacts/` (copies; >5 MB recorded by path+checksum only), `scripts/` (the code that ran), and `verdict.json` once the researcher rules on it (written exactly once — by `scripts/results.py verdict`, driven from board feedback). Capture always goes through `scripts/results.py` staging (`stage`/`copy`/`finalize`); direct writes into `rN/` are hook-denied. On an accepted verdict the tracker status becomes `done (verified)`; on changes-requested the fix is a NEW bundle (`trigger: redo-after-review`), never an edit. Verdicts are recorded acts, not gates.
 
 ## Conventions
 
@@ -54,6 +57,8 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 | Execution plans | `plans/execution/<NN-slug>/vN.md` | One component each; versions immutable |
 | Decision log | `plans/decision-log.md` | Append-only, timestamped, real-time |
 | Drafts | `plans/execution/<NN-slug>/.draft-vN.md` | Unsigned, mutable, gitignored; deleted on sign-off |
+| Results bundles | `plans/execution/<NN-slug>/results/rN/` | Immutable once finalized; verdict.json written once |
+| Results staging | `plans/execution/<NN-slug>/results/.staging-*/` | Mutable, gitignored; finalized via results.py |
 | Saved reviews | `plans/reviews/<NN-slug>-vN.md` | Rubric scorecards; prose and JSON fence agree |
 | Board snapshot | `plans/board.html` | Read-only export; regenerate, never hand-edit |
 
@@ -62,6 +67,7 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 | `/research-plans:init` | Opt a project in (creates the artifacts) |
 | `/research-plans:plan` | Scope next component, author its execution plan |
 | `/research-plans:sync` | Post-execution checkpoint: tracker, log, revisions |
+| `/research-plans:results` | Capture a results bundle (report, artifacts, scripts, metrics); `--adopt` for pre-existing outputs |
 | `/research-plans:review` | Two-stage review per `references/plan-rubric.md`: threshold verdict (is it a plan?), then engagement grade |
 | `/research-plans:status` | Render tracker, flag drift |
 | `/research-plans:board` | Browser board: tracker, plans + diffs, timeline, scorecards; live annotation or static export |
@@ -75,3 +81,5 @@ Judgment criteria live in `references/`: `plan-rubric.md` (quality scoring), `sp
 - **Deciding for the researcher** because the choice seems obvious. Obvious choices are cheap to confirm and expensive to unwind.
 - **Updating the tracker without evidence.** Status changes follow artifacts (outputs, commits), not optimism.
 - **Letting exploration become analysis.** Bounded exploration informs a plan; results worth keeping belong under a signed plan.
+- **Padding a results bundle.** Zero qualifying artifacts is a legitimate capture outcome; report it and stop. Never guess a producing script — `producedBy: null` beats a fabricated provenance.
+- **Editing a finalized bundle** to "fix" a figure. The fix is a re-run captured as the next `rN`; what the researcher verified stays verifiable.

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0 (2026-07-03)
+
+- **Results layer**: versioned, immutable result bundles per component
+  (`plans/execution/<slug>/results/rN/` — report, figure/table snapshots with
+  sha256 provenance, script snapshots, key metrics). Capture via
+  `/research-plans:results` (or `--adopt` for pre-existing artifacts;
+  `provenance: retrofit`), staging-then-atomic-rename via `results.py`.
+- **Board: fifth view (Results)** — version strip with plan tags and verdict
+  badges, verdict banner (Accept / Request changes), metric tiles, figure/table
+  gallery (tables via a whitelist-sanitizing renderer), per-artifact
+  "produced by" script drawer with line-anchored comments.
+- **Verdicts are recorded acts, not gates**: accept/request-changes flows back
+  as an action block; the session applies it (`results.py verdict`), logs it,
+  and marks the tracker `done (verified)`. verdict.json is written once.
+- Sign-off hook now also enforces bundle immutability (synchronous policy;
+  never opens a browser; one-time verdict.json creation allowed).
+- `/sync` offers capture when components hit done or sources drift;
+  `/status` flags unverified done components and drifted verified results.
+  Payload schemaVersion 2. Design doc: `docs/specs/2026-07-03-results-layer-design.md`.
+
 ## 0.5.0 (unreleased)
 
 - **Remote plan review**: `/research-plans:board --share [component]` exports a self-contained, annotatable board file (`plans/board-share.html`, gitignored) to email to collaborators — no accounts, no hosting, browser-only. Collaborators annotate, enter their name, and download a `board-feedback-*.txt` file to send back; `/research-plans:board --collect <file>` routes it through the normal feedback pipeline with reviewer attribution and a staleness check (Python-side `shareHash`). Focused shares (`--focus`) embed only that component's plans plus the master plan (always visible by design). Remote gate approval is explicitly out of scope — sign-off stays local. Design doc: `docs/specs/2026-07-03-remote-plan-review-design.md`.
