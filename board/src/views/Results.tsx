@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import Markdown from "../components/Markdown";
 import SafeTable from "../components/SafeTable";
 import ScriptViewer from "../components/ScriptViewer";
-import AnnotationLayer from "../components/AnnotationLayer";
+import AnnotationLayer, {
+  type AnchoredSelection,
+} from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
 import { parseExecutionPlan } from "../lib/parse";
 import type {
@@ -113,18 +115,55 @@ export default function Results({
 
   const m = bundle.manifest;
   const badge = verdictBadge(bundle);
-  const reportComments = bundleAnnotations.filter(
-    (a): a is ResultCommentAnnotation =>
-      a.type === "result-comment" && a.target.kind === "report",
-  );
 
-  const addArtifactComment = (art: ResultArtifact, comment: string) =>
-    onAddResultComment({
+  // Drag-select anywhere in the bundle body; the stamped scope routes the
+  // comment to its structured target (metric / artifact / report).
+  const addSelectionComment = (partial: AnchoredSelection) => {
+    const base = {
       component: group.component,
       resultsVersion: bundle.resultsVersion,
-      target: { kind: "artifact", artifactId: art.id },
-      comment,
-    });
+      comment: partial.comment,
+    };
+    const target =
+      partial.scope.startsWith("metric:")
+        ? {
+            kind: "metric" as const,
+            metricLabel: partial.scope.slice("metric:".length),
+            quote: partial.quote,
+            occurrenceIndex: partial.occurrenceIndex,
+          }
+        : partial.scope.startsWith("artifact:")
+          ? {
+              kind: "artifact" as const,
+              artifactId: partial.scope.slice("artifact:".length),
+              quote: partial.quote,
+              occurrenceIndex: partial.occurrenceIndex,
+            }
+          : {
+              kind: "report" as const,
+              quote: partial.quote,
+              occurrenceIndex: partial.occurrenceIndex,
+            };
+    onAddResultComment({ ...base, target });
+  };
+
+  // Only quote-carrying comments paint; scope re-derived from the target.
+  const paintable = bundleAnnotations
+    .filter(
+      (a): a is ResultCommentAnnotation =>
+        a.type === "result-comment" && Boolean(a.target.quote),
+    )
+    .map((a) => ({
+      id: a.id,
+      quote: a.target.quote!,
+      occurrenceIndex: a.target.occurrenceIndex ?? 0,
+      scope:
+        a.target.kind === "metric"
+          ? `metric:${a.target.metricLabel}`
+          : a.target.kind === "artifact"
+            ? `artifact:${a.target.artifactId}`
+            : "report",
+    }));
 
   return (
     <div className="flex gap-5">
@@ -307,27 +346,18 @@ export default function Results({
             );
           })()}
 
+        {(() => {
+          const bundleBody = (
+            <>
         {/* metrics */}
         {m && m.metrics.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-3">
             {m.metrics.map((metric) => (
-              <button
+              <div
                 key={metric.label}
+                data-annot-scope={`metric:${metric.label}`}
+                data-annot-section={`metric ${metric.label}`}
                 className="rounded-lg border border-stone-200 bg-white px-4 py-2 text-left"
-                disabled={!canAnnotate}
-                onClick={() => {
-                  const c = canAnnotate
-                    ? window.prompt(`Comment on ${metric.label}:`)
-                    : null;
-                  if (c && c.trim())
-                    onAddResultComment({
-                      component: group.component,
-                      resultsVersion: bundle.resultsVersion,
-                      target: { kind: "metric", metricLabel: metric.label },
-                      comment: c.trim(),
-                    });
-                }}
-                title={canAnnotate ? "Click to comment on this number" : undefined}
               >
                 <div className="text-[11px] uppercase tracking-wide text-stone-500">
                   {metric.label}
@@ -336,41 +366,19 @@ export default function Results({
                 {metric.note && (
                   <div className="text-[11px] text-stone-400">{metric.note}</div>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         )}
 
         {/* report */}
         {bundle.report && (
-          <section className="mb-4 rounded-lg border border-stone-200 bg-white p-5">
-            {canAnnotate ? (
-              <AnnotationLayer
-                docKey={bundle.report.path}
-                annotations={reportComments.map((a) => ({
-                  id: a.id,
-                  quote: a.target.quote ?? "",
-                  occurrenceIndex: a.target.occurrenceIndex ?? 0,
-                }))}
-                onPaintResult={onPaintResult}
-                onAdd={(partial) =>
-                  onAddResultComment({
-                    component: group.component,
-                    resultsVersion: bundle.resultsVersion,
-                    target: {
-                      kind: "report",
-                      quote: partial.quote,
-                      occurrenceIndex: partial.occurrenceIndex,
-                    },
-                    comment: partial.comment,
-                  })
-                }
-              >
-                <Markdown source={bundle.report.content} />
-              </AnnotationLayer>
-            ) : (
-              <Markdown source={bundle.report.content} />
-            )}
+          <section
+            className="mb-4 rounded-lg border border-stone-200 bg-white p-5"
+            data-annot-scope="report"
+            data-annot-section="report"
+          >
+            <Markdown source={bundle.report.content} />
           </section>
         )}
 
@@ -385,15 +393,11 @@ export default function Results({
                     s.path.endsWith("/" + art.producedBy!.script),
                   )
                 : null;
-              const nComments = bundleAnnotations.filter(
-                (a) =>
-                  a.type === "result-comment" &&
-                  a.target.kind === "artifact" &&
-                  a.target.artifactId === art.id,
-              ).length;
               return (
                 <div
                   key={art.id}
+                  data-annot-scope={`artifact:${art.id}`}
+                  data-annot-section={`artifact ${art.id}: ${art.title}`}
                   className="rounded-lg border border-stone-200 bg-white p-4"
                 >
                   <div className="mb-2 flex items-baseline gap-2">
@@ -403,17 +407,6 @@ export default function Results({
                     <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] uppercase text-stone-500">
                       {art.kind}
                     </span>
-                    {canAnnotate && (
-                      <button
-                        className="ml-auto rounded border border-stone-300 px-2 py-0.5 text-[11px] text-stone-600 hover:border-stone-500"
-                        onClick={() => {
-                          const c = window.prompt(`Comment on “${art.title}”:`);
-                          if (c && c.trim()) addArtifactComment(art, c.trim());
-                        }}
-                      >
-                        comment{nComments > 0 ? ` (${nComments})` : ""}
-                      </button>
-                    )}
                   </div>
                   {art.source.oversized ? (
                     <div className="rounded border border-dashed border-stone-300 p-6 text-center text-xs text-stone-500">
@@ -463,6 +456,28 @@ export default function Results({
               );
             })}
           </div>
+        )}
+            </>
+          );
+          return canAnnotate ? (
+            <AnnotationLayer
+              docKey={bundle.dir}
+              annotations={paintable}
+              onPaintResult={onPaintResult}
+              onAdd={addSelectionComment}
+            >
+              {bundleBody}
+            </AnnotationLayer>
+          ) : (
+            bundleBody
+          );
+        })()}
+
+        {canAnnotate && (
+          <p className="mb-2 text-xs text-stone-400">
+            Select any text — a metric, an artifact title or caption, report
+            text — to attach a comment.
+          </p>
         )}
 
         {/* script drawer */}
