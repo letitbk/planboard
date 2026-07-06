@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.2 (2026-07-06)
+
+- **Board: select-to-comment everywhere** — the Plans gesture now works on the
+  Tracker (component rows, RQs, context/sequencing prose), Timeline (individual
+  event cards), and Reviews (threshold, rubric items, top revisions, split)
+  views. Comments arrive labeled with the exact element ("row 3: …",
+  "Decision 2026-07-06 16:24", "item G3: …").
+- **Results uses the same gesture**: metric tiles and artifact cards no longer
+  pop a `window.prompt` on click — drag-select there like everywhere else;
+  comments keep their structured metric/artifact/report targets.
+- **Scoped anchors**: highlights are anchored inside the stamped element
+  (stable `data-annot-scope` ids), so short repeated strings can't repaint on
+  the wrong row and timeline filtering can't corrupt or mis-flag comments
+  (found in cross-model review, Codex GPT-5.5).
+- Highlight styling applies outside rendered markdown (table cells, cards);
+  sign-off gate "request changes" now sends the same client-assembled feedback
+  document as every other path.
+
 ## 0.6.1 (2026-07-03)
 
 - **Reconcile mode**: `/research-plans:results` with no argument walks the
