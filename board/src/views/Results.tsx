@@ -190,6 +190,14 @@ export default function Results({
               retrofit — produced outside a plan
             </span>
           )}
+          {m?.late && (
+            <span
+              className="rounded bg-stone-200 px-1.5 py-0.5 text-[11px] font-medium text-stone-700"
+              title="Backfilled: captured after the run; script snapshots show the code as of capture time"
+            >
+              captured late
+            </span>
+          )}
           {m?.trigger === "redo-after-review" && (
             <span className="rounded bg-stone-200 px-1.5 py-0.5 text-[11px] font-medium text-stone-700">
               redo after review

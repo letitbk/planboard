@@ -410,7 +410,8 @@ const cleaningResults = [
       provenance: "planned" as const,
       trigger: "initial" as const,
       capturedAt: "2026-07-02 10:30",
-      summary: "Cleaning pipeline output under plan v2",
+      late: true,
+      summary: "Cleaning pipeline output under plan v2 (backfilled)",
       metrics: [
         { label: "Rows", value: "66,864", note: "analytic sample" },
         { label: "Dupes dropped", value: "214" },

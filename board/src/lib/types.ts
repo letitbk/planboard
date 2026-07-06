@@ -57,6 +57,7 @@ export interface ResultsManifest {
   provenance: "planned" | "retrofit";
   trigger: "initial" | "redo-after-review" | "plan-revision";
   capturedAt: string;
+  late?: boolean; // backfill: plan-governed work captured after the fact
   summary?: string;
   metrics: { label: string; value: string; note?: string }[];
   artifacts: ResultArtifact[];

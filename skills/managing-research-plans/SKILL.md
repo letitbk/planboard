@@ -37,7 +37,7 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 - When a component's analysis has produced outputs, offer `/research-plans:results` to capture a results bundle for board review; never capture silently.
 - `/research-plans:sync` is the explicit checkpoint for all of this; use its late-capture protocol if logging was missed mid-session.
 
-**Results bundles.** `plans/execution/<NN-slug>/results/rN/` holds an immutable snapshot of what an analysis produced: `manifest.json` (plan version, provenance planned|retrofit, trigger, metrics, artifacts with sha256 sources and producing scripts), `report.md` (brief, cites artifacts by id, honest about misses), `artifacts/` (copies; >5 MB recorded by path+checksum only), `scripts/` (the code that ran), and `verdict.json` once the researcher rules on it (written exactly once — by `scripts/results.py verdict`, driven from board feedback). Capture always goes through `scripts/results.py` staging (`stage`/`copy`/`finalize`); direct writes into `rN/` are hook-denied. On an accepted verdict the tracker status becomes `done (verified)`; on changes-requested the fix is a NEW bundle (`trigger: redo-after-review`), never an edit. Verdicts are recorded acts, not gates.
+**Results bundles.** `plans/execution/<NN-slug>/results/rN/` holds an immutable snapshot of what an analysis produced: `manifest.json` (plan version, provenance planned|retrofit, trigger, metrics, artifacts with sha256 sources and producing scripts), `report.md` (brief, cites artifacts by id, honest about misses), `artifacts/` (copies; >5 MB recorded by path+checksum only), `scripts/` (the code that ran), and `verdict.json` once the researcher rules on it (written exactly once — by `scripts/results.py verdict`, driven from board feedback). Capture always goes through `scripts/results.py` staging (`stage`/`copy`/`finalize`); direct writes into `rN/` are hook-denied. On an accepted verdict the tracker status becomes `done (verified)`; on changes-requested the fix is a NEW bundle (`trigger: redo-after-review`), never an edit. Verdicts are recorded acts, not gates. Backfilling is legitimate: `/research-plans:results` with no argument reconciles components whose plans ran ahead of their results record, one interview at a time; plan-governed work captured after the fact carries `late: true` in the manifest (the results analogue of the log's late-captured label — the script snapshot shows the code as of capture, not necessarily as of the run).
 
 ## Conventions
 
@@ -67,7 +67,7 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 | `/research-plans:init` | Opt a project in (creates the artifacts) |
 | `/research-plans:plan` | Scope next component, author its execution plan |
 | `/research-plans:sync` | Post-execution checkpoint: tracker, log, revisions |
-| `/research-plans:results` | Capture a results bundle (report, artifacts, scripts, metrics); `--adopt` for pre-existing outputs |
+| `/research-plans:results` | Capture a results bundle (report, artifacts, scripts, metrics); no argument = reconcile/backfill walk; `--adopt` for pre-existing outputs |
 | `/research-plans:review` | Two-stage review per `references/plan-rubric.md`: threshold verdict (is it a plan?), then engagement grade |
 | `/research-plans:status` | Render tracker, flag drift |
 | `/research-plans:board` | Browser board: tracker, plans + diffs, timeline, scorecards; live annotation or static export |

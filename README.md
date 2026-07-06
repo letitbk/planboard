@@ -47,6 +47,8 @@ On the board's Results view you review a bundle — report, stat tiles, figure/t
 
 Adopting the workflow mid-project? `/research-plans:results --adopt` scans your output folders, lets you pick which existing figures/tables matter, and files them as bundles marked `retrofit` — honest that no plan governed their production, reviewable and verifiable all the same.
 
+Plans ran ahead of your results record? `/research-plans:results` with **no argument** is reconcile mode: it walks the tracker for components that are done but bundle-less (or whose verified sources have drifted), and backfills them one interview at a time. Work that a signed plan governed but was captured after the fact is marked `late` — the same honesty rule as the decision log's late-captured entries: backfilling is fine, unlabeled backfilling is not.
+
 - **Share with collaborators**: `--share` exports an annotatable board file you can email; collaborators comment in their browser and send back a feedback file that `--collect <file>` routes with attribution.
 
 ## The sign-off gate

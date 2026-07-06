@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.1 (2026-07-03)
+
+- **Reconcile mode**: `/research-plans:results` with no argument walks the
+  tracker for components that are done without a bundle (or whose verified
+  sources have drifted, or with interrupted staging dirs) and backfills them
+  one interview at a time — component-first, plan-Verification-anchored,
+  never silent bulk capture.
+- **`late: true`** manifest flag + "captured late" board chip for plan-governed
+  work captured after the fact (the results analogue of the decision log's
+  late-captured label); reports must state it. Adopt (`--adopt`) stays the
+  route for work no plan governed.
+- Mid-session capture guidance: candidate matching via plan-promised outputs,
+  slug/number filename heuristics, and script git history when session
+  context is thin.
+
 ## 0.6.0 (2026-07-03)
 
 - **Results layer**: versioned, immutable result bundles per component
