@@ -15,6 +15,7 @@ import {
 import type {
   Annotation,
   BoardData,
+  DocCommentAnnotation,
   PlanCommentAnnotation,
   ResultCommentAnnotation,
   ScriptCommentAnnotation,
@@ -125,6 +126,17 @@ export default function App({ data }: { data: BoardData }) {
       setAnnotations((prev) => [
         ...prev,
         { ...a, id: nextId(), type: "script-comment" },
+      ]);
+      setDrawerOpen(true);
+    },
+    [],
+  );
+
+  const addDocComment = useCallback(
+    (a: Omit<DocCommentAnnotation, "id" | "type">) => {
+      setAnnotations((prev) => [
+        ...prev,
+        { ...a, id: nextId(), type: "doc-comment" },
       ]);
       setDrawerOpen(true);
     },
@@ -268,7 +280,12 @@ export default function App({ data }: { data: BoardData }) {
       const res = await fetch("/api/deny", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ annotations, feedbackMarkdown, payloadHash }),
+        body: JSON.stringify({
+          annotations,
+          feedbackMarkdown,
+          payloadHash,
+          feedbackDocument,
+        }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSubmitState("denied");
@@ -377,8 +394,9 @@ export default function App({ data }: { data: BoardData }) {
             <span className="font-medium">
               You’ve been asked to review this research plan.
             </span>{" "}
-            Select text in any plan to attach a comment, or use the comment
-            boxes on the other tabs. When you’re done, open Feedback and press
+            Select text in any view to attach a comment — plans, tracker rows,
+            timeline entries, results, and reviews all take them. When you’re
+            done, open Feedback and press
             “Download feedback file”, then email the downloaded file back to
             the researcher. Don’t move or rename this HTML file until you’ve
             downloaded your feedback — your comments are saved by this browser
@@ -398,6 +416,9 @@ export default function App({ data }: { data: BoardData }) {
           <Tracker
             data={data}
             canAnnotate={canAnnotate}
+            annotations={annotations}
+            onAddDocComment={addDocComment}
+            onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
             onOpenComponent={(slug) => {
               setSelectedComponent(slug);
@@ -440,10 +461,24 @@ export default function App({ data }: { data: BoardData }) {
           />
         )}
         {tab === "timeline" && (
-          <Timeline data={data} canAnnotate={canAnnotate} onAddGeneral={addGeneral} />
+          <Timeline
+            data={data}
+            canAnnotate={canAnnotate}
+            annotations={annotations}
+            onAddDocComment={addDocComment}
+            onPaintResult={onPaintResult}
+            onAddGeneral={addGeneral}
+          />
         )}
         {tab === "reviews" && (
-          <Scorecard data={data} canAnnotate={canAnnotate} onAddGeneral={addGeneral} />
+          <Scorecard
+            data={data}
+            canAnnotate={canAnnotate}
+            annotations={annotations}
+            onAddDocComment={addDocComment}
+            onPaintResult={onPaintResult}
+            onAddGeneral={addGeneral}
+          />
         )}
       </main>
 
@@ -463,7 +498,7 @@ export default function App({ data }: { data: BoardData }) {
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
             {annotations.length === 0 && (
               <p className="p-4 text-center text-xs text-stone-400">
-                Select text in a plan or add a general comment on any view.
+                Select text in any view or add a general comment.
               </p>
             )}
             {annotations.map((a) => (

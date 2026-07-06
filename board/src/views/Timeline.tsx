@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
 import Markdown from "../components/Markdown";
-import { GeneralCommentBox } from "../components/AnnotationLayer";
+import AnnotationLayer, {
+  GeneralCommentBox,
+  type AnchoredSelection,
+} from "../components/AnnotationLayer";
 import {
   parseDecisionLog,
   parseExecutionPlan,
   parseScorecard,
 } from "../lib/parse";
-import type { BoardData } from "../lib/types";
+import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
 
 type EventKind = "decision" | "plan" | "result" | "review";
 
@@ -29,10 +32,20 @@ const KIND_STYLE: Record<EventKind, { dot: string; label: string }> = {
 export default function Timeline({
   data,
   canAnnotate,
+  annotations,
+  onAddDocComment,
+  onPaintResult,
   onAddGeneral,
 }: {
   data: BoardData;
   canAnnotate: boolean;
+  annotations: Annotation[];
+  onAddDocComment: (a: Omit<DocCommentAnnotation, "id" | "type">) => void;
+  onPaintResult: (
+    painted: Set<string>,
+    docKey: string,
+    scopeAbsent: Set<string>,
+  ) => void;
   onAddGeneral: (view: string, comment: string) => void;
 }) {
   const events = useMemo(() => buildEvents(data), [data]);
@@ -45,6 +58,13 @@ export default function Timeline({
       return false;
     return true;
   });
+
+  const docAnnotations = annotations.filter(
+    (a): a is DocCommentAnnotation =>
+      a.type === "doc-comment" && a.docKey === "timeline",
+  );
+  const addComment = (partial: AnchoredSelection) =>
+    onAddDocComment({ ...partial, view: "timeline", docKey: "timeline" });
 
   return (
     <div>
@@ -77,32 +97,57 @@ export default function Timeline({
             : "No events match the current filter."}
         </div>
       ) : (
-        <ol className="relative ml-2 space-y-4 border-l border-stone-200 pl-6">
-          {visible.map((e, i) => (
-            <li key={i} className="relative">
-              <span
-                className={`absolute -left-[31px] top-1.5 h-2.5 w-2.5 rounded-full ${KIND_STYLE[e.kind].dot}`}
-              />
-              <div className="rounded-lg border border-stone-200 bg-white p-3">
-                <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-stone-500">
-                  <span className="font-medium text-stone-700">
-                    {KIND_STYLE[e.kind].label}
-                  </span>
-                  <span>{e.sortKey}</span>
-                  <span className="font-medium text-stone-700">{e.title}</span>
-                  {e.badge && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
-                      {e.badge}
-                    </span>
-                  )}
-                </div>
-                <Markdown source={e.body} className="text-sm" />
-              </div>
-            </li>
-          ))}
-        </ol>
+        (() => {
+          const list = (
+            <ol className="relative ml-2 space-y-4 border-l border-stone-200 pl-6">
+              {visible.map((e, i) => (
+                <li key={i} className="relative">
+                  <span
+                    className={`absolute -left-[31px] top-1.5 h-2.5 w-2.5 rounded-full ${KIND_STYLE[e.kind].dot}`}
+                  />
+                  <div
+                    className="rounded-lg border border-stone-200 bg-white p-3"
+                    data-annot-scope={`evt:${e.kind}:${e.sortKey}:${e.title}`}
+                    data-annot-section={`${KIND_STYLE[e.kind].label} ${e.sortKey.replace(/ 00:00$/, "")}${e.title ? ` — ${e.title}` : ""}`}
+                  >
+                    <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+                      <span className="font-medium text-stone-700">
+                        {KIND_STYLE[e.kind].label}
+                      </span>
+                      <span>{e.sortKey}</span>
+                      <span className="font-medium text-stone-700">{e.title}</span>
+                      {e.badge && (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                          {e.badge}
+                        </span>
+                      )}
+                    </div>
+                    <Markdown source={e.body} className="text-sm" />
+                  </div>
+                </li>
+              ))}
+            </ol>
+          );
+          return canAnnotate ? (
+            <AnnotationLayer
+              docKey="timeline"
+              annotations={docAnnotations}
+              onPaintResult={onPaintResult}
+              onAdd={addComment}
+            >
+              {list}
+            </AnnotationLayer>
+          ) : (
+            list
+          );
+        })()
       )}
 
+      {canAnnotate && (
+        <p className="mt-2 text-xs text-stone-400">
+          Select any text to attach a comment.
+        </p>
+      )}
       {canAnnotate && <GeneralCommentBox view="Timeline" onAdd={onAddGeneral} />}
     </div>
   );

@@ -98,7 +98,7 @@ pre {
   color: var(--color-blue-700);
   text-decoration: underline;
 }
-.prose-md mark[data-annotation] {
+mark[data-annotation] {
   background: var(--color-amber-200);
   padding: 0 0.1rem;
   border-radius: 0.15rem;

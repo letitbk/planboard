@@ -1,9 +1,12 @@
 import { useState } from "react";
 import Markdown from "../components/Markdown";
-import { GeneralCommentBox } from "../components/AnnotationLayer";
+import AnnotationLayer, {
+  GeneralCommentBox,
+  type AnchoredSelection,
+} from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
 import { parseScorecard } from "../lib/parse";
-import type { BoardData } from "../lib/types";
+import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
 
 function bandColor(percent: number): string {
   if (percent < 50) return "bg-red-500";
@@ -14,10 +17,20 @@ function bandColor(percent: number): string {
 export default function Scorecard({
   data,
   canAnnotate,
+  annotations,
+  onAddDocComment,
+  onPaintResult,
   onAddGeneral,
 }: {
   data: BoardData;
   canAnnotate: boolean;
+  annotations: Annotation[];
+  onAddDocComment: (a: Omit<DocCommentAnnotation, "id" | "type">) => void;
+  onPaintResult: (
+    painted: Set<string>,
+    docKey: string,
+    scopeAbsent: Set<string>,
+  ) => void;
   onAddGeneral: (view: string, comment: string) => void;
 }) {
   const reviews = data.files.reviews;
@@ -34,6 +47,20 @@ export default function Scorecard({
 
   const review = reviews[Math.min(idx, reviews.length - 1)];
   const sc = parseScorecard(review.content);
+
+  const docAnnotations = annotations.filter(
+    (a): a is DocCommentAnnotation =>
+      a.type === "doc-comment" && a.docKey === review.path,
+  );
+  const addComment = (partial: AnchoredSelection) =>
+    onAddDocComment({
+      ...partial,
+      view: "reviews",
+      docKey: review.path,
+      // raw reviews have no headings; never leave the label blank
+      sectionHeading:
+        partial.sectionHeading || (review.path.split("/").pop() ?? review.path),
+    });
 
   return (
     <div className="flex gap-5">
@@ -70,7 +97,8 @@ export default function Scorecard({
       </aside>
 
       <div className="min-w-0 flex-1">
-        {!sc ? (
+        {(() => {
+          const body = !sc ? (
           <div>
             <Notice text="This review has no (valid) machine-readable scorecard block — showing the raw markdown." />
             <div className="rounded-lg border border-stone-200 bg-white p-6">
@@ -88,6 +116,8 @@ export default function Scorecard({
                       ? "border-amber-200 bg-amber-50"
                       : "border-red-200 bg-red-50"
                 }`}
+                data-annot-scope="threshold"
+                data-annot-section="threshold"
               >
                 <h2 className="text-sm font-bold uppercase tracking-wide text-stone-800">
                   {sc.threshold.verdict === "pass"
@@ -129,7 +159,11 @@ export default function Scorecard({
               </div>
             )}
 
-            <div className="rounded-lg border border-stone-200 bg-white p-5">
+            <div
+              className="rounded-lg border border-stone-200 bg-white p-5"
+              data-annot-scope="score"
+              data-annot-section="score"
+            >
               <div className="flex items-baseline justify-between">
                 <h1 className="text-lg font-bold text-stone-900">
                   {sc.component} — plan v{sc.planVersion}
@@ -195,6 +229,8 @@ export default function Scorecard({
                     <tr
                       key={item.id}
                       className="border-b border-stone-100 align-top last:border-0"
+                      data-annot-scope={`item:${item.id}`}
+                      data-annot-section={`item ${item.id}${item.name ? `: ${item.name}` : ""}`}
                     >
                       <td className="px-3 py-2 text-stone-400">{item.id}</td>
                       <td className="px-3 py-2 font-medium text-stone-800">
@@ -217,7 +253,11 @@ export default function Scorecard({
             )}
 
             {sc.topRevisions && sc.topRevisions.length > 0 && (
-              <div className="rounded-lg border border-stone-200 bg-white p-4">
+              <div
+                className="rounded-lg border border-stone-200 bg-white p-4"
+                data-annot-scope="revisions"
+                data-annot-section="Top revisions"
+              >
                 <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
                   Top revisions
                 </h2>
@@ -236,6 +276,8 @@ export default function Scorecard({
                     ? "border-green-200 bg-green-50"
                     : "border-red-200 bg-red-50"
                 }`}
+                data-annot-scope="split"
+                data-annot-section="Split assessment"
               >
                 <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-600">
                   Split assessment — {sc.split.verdict}
@@ -244,6 +286,24 @@ export default function Scorecard({
               </div>
             )}
           </div>
+        );
+          return canAnnotate ? (
+            <AnnotationLayer
+              docKey={review.path}
+              annotations={docAnnotations}
+              onPaintResult={onPaintResult}
+              onAdd={addComment}
+            >
+              {body}
+            </AnnotationLayer>
+          ) : (
+            body
+          );
+        })()}
+        {canAnnotate && (
+          <p className="mt-2 text-xs text-stone-400">
+            Select any text to attach a comment.
+          </p>
         )}
         {canAnnotate && <GeneralCommentBox view="Reviews" onAdd={onAddGeneral} />}
       </div>

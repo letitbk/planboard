@@ -1,6 +1,14 @@
 import Markdown from "../components/Markdown";
-import { GeneralCommentBox } from "../components/AnnotationLayer";
-import type { BoardData, TrackerStatus } from "../lib/types";
+import AnnotationLayer, {
+  GeneralCommentBox,
+  type AnchoredSelection,
+} from "../components/AnnotationLayer";
+import type {
+  Annotation,
+  BoardData,
+  DocCommentAnnotation,
+  TrackerStatus,
+} from "../lib/types";
 import { parseExecutionPlan, parseMasterPlan, parseServes } from "../lib/parse";
 
 const CHIP: Record<TrackerStatus, string> = {
@@ -21,23 +29,51 @@ function slugFromLink(link: string): string | null {
 export default function Tracker({
   data,
   canAnnotate,
+  annotations,
+  onAddDocComment,
+  onPaintResult,
   onOpenComponent,
   onOpenResults,
   onAddGeneral,
 }: {
   data: BoardData;
   canAnnotate: boolean;
+  annotations: Annotation[];
+  onAddDocComment: (a: Omit<DocCommentAnnotation, "id" | "type">) => void;
+  onPaintResult: (
+    painted: Set<string>,
+    docKey: string,
+    scopeAbsent: Set<string>,
+  ) => void;
   onOpenComponent: (slug: string | null, name: string) => void;
   onOpenResults: (slug: string) => void;
   onAddGeneral: (view: string, comment: string) => void;
 }) {
   const mp = parseMasterPlan(data.files.masterPlan.content);
 
+  const docAnnotations = annotations.filter(
+    (a): a is DocCommentAnnotation =>
+      a.type === "doc-comment" && a.docKey === "tracker",
+  );
+  const addComment = (partial: AnchoredSelection) =>
+    onAddDocComment({ ...partial, view: "tracker", docKey: "tracker" });
+
   if (!mp.ok) {
     return (
       <div>
         <Notice text="The master plan did not match the expected format — showing it raw." />
-        <Markdown source={mp.raw} />
+        {canAnnotate ? (
+          <AnnotationLayer
+            docKey="tracker"
+            annotations={docAnnotations}
+            onPaintResult={onPaintResult}
+            onAdd={addComment}
+          >
+            <Markdown source={mp.raw} />
+          </AnnotationLayer>
+        ) : (
+          <Markdown source={mp.raw} />
+        )}
       </div>
     );
   }
@@ -81,8 +117,8 @@ export default function Tracker({
     );
   };
 
-  return (
-    <div>
+  const body = (
+    <>
       <div className="mb-1 flex items-baseline justify-between">
         <h1 className="text-xl font-bold text-stone-900">{mp.title}</h1>
         {mp.lastUpdated && (
@@ -92,7 +128,11 @@ export default function Tracker({
         )}
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div
+        className="mb-4 flex flex-wrap gap-2"
+        data-annot-scope="chips"
+        data-annot-section="status summary"
+      >
         {Object.entries(counts).map(([status, n]) => (
           <span
             key={status}
@@ -103,7 +143,11 @@ export default function Tracker({
         ))}
       </div>
 
-      <section className="mb-4 rounded-lg border border-stone-200 bg-white p-4">
+      <section
+        className="mb-4 rounded-lg border border-stone-200 bg-white p-4"
+        data-annot-scope="context"
+        data-annot-section="Project context"
+      >
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
           Project context
         </h2>
@@ -117,7 +161,12 @@ export default function Tracker({
           </h2>
           <ol className="space-y-1 text-sm text-stone-800">
             {mp.researchQuestions.map((q) => (
-              <li key={q.num} className="flex gap-2">
+              <li
+                key={q.num}
+                className="flex gap-2"
+                data-annot-scope={`rq:${q.num}`}
+                data-annot-section={`RQ${q.num}`}
+              >
                 <span className="shrink-0 rounded bg-stone-900 px-1.5 py-0.5 text-xs font-bold text-white">
                   RQ{q.num}
                 </span>
@@ -149,7 +198,12 @@ export default function Tracker({
               const serves = parseServes(r.serves);
               const mismatch = servesMismatch(r);
               return (
-                <tr key={i} className="border-b border-stone-100 last:border-0">
+                <tr
+                  key={i}
+                  className="border-b border-stone-100 last:border-0"
+                  data-annot-scope={`row:${r.num}`}
+                  data-annot-section={`row ${r.num}: ${r.component}`}
+                >
                   <td className="px-4 py-2.5 text-stone-400">{r.num}</td>
                   <td className="px-4 py-2.5 font-medium text-stone-800">
                     {r.component}
@@ -242,7 +296,11 @@ export default function Tracker({
       </section>
 
       {orphanGroups.length > 0 && (
-        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+        <div
+          className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800"
+          data-annot-scope="drift"
+          data-annot-section="drift notice"
+        >
           Drift: execution plan{orphanGroups.length > 1 ? "s" : ""} with no
           tracker row —{" "}
           {orphanGroups.map((g, i) => (
@@ -259,14 +317,39 @@ export default function Tracker({
       )}
 
       {mp.sequencingMd && (
-        <section className="mt-4 rounded-lg border border-stone-200 bg-white p-4">
+        <section
+          className="mt-4 rounded-lg border border-stone-200 bg-white p-4"
+          data-annot-scope="sequencing"
+          data-annot-section="Sequencing notes"
+        >
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
             Sequencing notes
           </h2>
           <Markdown source={mp.sequencingMd} className="text-sm" />
         </section>
       )}
+    </>
+  );
 
+  return (
+    <div>
+      {canAnnotate ? (
+        <AnnotationLayer
+          docKey="tracker"
+          annotations={docAnnotations}
+          onPaintResult={onPaintResult}
+          onAdd={addComment}
+        >
+          {body}
+        </AnnotationLayer>
+      ) : (
+        body
+      )}
+      {canAnnotate && (
+        <p className="mt-2 text-xs text-stone-400">
+          Select any text to attach a comment.
+        </p>
+      )}
       {canAnnotate && <GeneralCommentBox view="Tracker" onAdd={onAddGeneral} />}
     </div>
   );
