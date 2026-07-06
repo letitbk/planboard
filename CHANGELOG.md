@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.3 (2026-07-06)
+
+- **Reproducibility-first results capture**: when a component has runnable
+  producing code, `/research-plans:results` regenerates the real
+  figures/tables/numbers by re-running it and bundles those, instead of
+  scavenging whatever files happen to be on disk. Recorded recipes auto-run
+  without a prompt only when the script is repo-contained and its source hash
+  matches the approved recipe; otherwise the command shows the exact command and
+  asks. Runs are logged, use `pipefail`, and stop the capture on a non-zero exit
+  or missing/stale expected outputs (design cross-model reviewed, Codex GPT-5.5).
+- **Summary-only board notice**: a bundle with a report but no reproducible
+  figures/tables now shows an explicit "summary only" notice on the board
+  instead of a silently blank gallery. Fresh components with no code produce no
+  bundle at all.
+- **Broader discovery**: `results.py discover` scans more default output dirs
+  (`plots`, `viz`, `visuals`, `graphics`) and takes a repeatable, repo-relative
+  `--dir` for non-standard layouts (absolute / `..` / symlink escapes rejected).
+
 ## 0.6.2 (2026-07-06)
 
 - **Board: select-to-comment everywhere** — the Plans gesture now works on the

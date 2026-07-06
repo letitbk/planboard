@@ -382,8 +382,21 @@ export default function Results({
           </section>
         )}
 
-        {/* artifact gallery */}
-        {m && (
+        {/* artifact gallery — or, when a bundle carries a report but no
+            reproducible figures/tables, the summary-only notice */}
+        {m && m.artifacts.length === 0 ? (
+          <div className="mb-4 rounded-lg border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-stone-600">
+            <div className="font-semibold text-stone-700">Summary only</div>
+            <p className="mt-1">
+              No figures or tables in this bundle. The report and metrics were
+              captured, but the analysis outputs could not be reproduced (common
+              for retrospective captures, where outputs were never saved to
+              files). If a producing script exists, re-run it and capture again;
+              otherwise run <code>/research-plans:results</code> and name the
+              output file paths directly.
+            </p>
+          </div>
+        ) : m ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {m.artifacts.map((art) => {
               const basename = art.file ? art.file.split("/").pop()! : null;
@@ -456,7 +469,7 @@ export default function Results({
               );
             })}
           </div>
-        )}
+        ) : null}
             </>
           );
           return canAnnotate ? (

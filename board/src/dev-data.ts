@@ -398,6 +398,14 @@ These figures existed before the workflow was adopted; captured for
 verification. Weighted and unweighted means diverge most in waves 2-3.
 `;
 
+const reproFailReport = `# Results — Descriptives (r2, retrospective)
+
+Backfilled from an earlier run. The country-means figure was produced inline in
+the analysis notebook and never written to a file, and the notebook no longer
+runs against the current data snapshot, so no figure could be reproduced for
+this bundle. The headline number below is transcribed from the run log.
+`;
+
 const cleaningResults = [
   {
     resultsVersion: 1,
@@ -530,6 +538,35 @@ const descriptivesResults = [
     verdictRaw: null,
     scripts: [],
     assets: { "fig-means.svg": FIG_SVG },
+  },
+  {
+    resultsVersion: 2,
+    dir: "plans/execution/03-descriptives/results/r2",
+    manifest: {
+      schemaVersion: 1,
+      component: "03-descriptives",
+      resultsVersion: 2,
+      planVersion: null,
+      provenance: "retrofit" as const,
+      trigger: "initial" as const,
+      capturedAt: "2026-07-06 17:50",
+      late: true,
+      summary: "Retrospective capture; figures could not be reproduced",
+      metrics: [{ label: "Countries", value: "31" }],
+      artifacts: [],
+    },
+    manifestRaw: {
+      path: "plans/execution/03-descriptives/results/r2/manifest.json",
+      content: "{}",
+    },
+    report: {
+      path: "plans/execution/03-descriptives/results/r2/report.md",
+      content: reproFailReport,
+    },
+    verdict: null,
+    verdictRaw: null,
+    scripts: [],
+    assets: {} as Record<string, string>,
   },
 ];
 

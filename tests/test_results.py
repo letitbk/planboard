@@ -235,5 +235,62 @@ class TestDiscoverVerdictChanged(unittest.TestCase):
             self.assertEqual(out["changed"][0]["path"], "output/fig1.png")
 
 
+class TestDiscoverBroaden(unittest.TestCase):
+    def test_discover_finds_broadened_default_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            (root / "plots").mkdir()
+            (root / "plots" / "p.png").write_bytes(b"x")
+            (root / "viz").mkdir()
+            (root / "viz" / "v.svg").write_text("<svg/>", encoding="utf-8")
+            p = run_cli(root, "discover")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            paths = [e["path"] for e in json.loads(p.stdout)]
+            self.assertIn("plots/p.png", paths)
+            self.assertIn("viz/v.svg", paths)
+
+    def test_discover_dir_adds_repo_relative_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            (root / "custom" / "sub").mkdir(parents=True)
+            (root / "custom" / "sub" / "c.png").write_bytes(b"x")
+            p0 = run_cli(root, "discover")
+            self.assertNotIn("custom/sub/c.png",
+                             [e["path"] for e in json.loads(p0.stdout)])
+            p = run_cli(root, "discover", "--dir", "custom")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("custom/sub/c.png",
+                          [e["path"] for e in json.loads(p.stdout)])
+
+    def test_discover_dir_rejects_absolute(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            p = run_cli(root, "discover", "--dir", "/tmp")
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("--dir", p.stderr)
+
+    def test_discover_dir_rejects_parent_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            p = run_cli(root, "discover", "--dir", "../escape")
+            self.assertEqual(p.returncode, 1)
+
+    def test_discover_dir_rejects_symlink_escape(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                tempfile.TemporaryDirectory() as outside:
+            root = Path(tmp)
+            make_project(root)
+            target = Path(outside) / "secret"
+            target.mkdir()
+            (target / "s.png").write_bytes(b"x")
+            (root / "link").symlink_to(target)
+            p = run_cli(root, "discover", "--dir", "link")
+            self.assertEqual(p.returncode, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

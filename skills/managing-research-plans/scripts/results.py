@@ -28,7 +28,8 @@ import uuid
 from pathlib import Path
 
 MAX_BYTES = 5 * 1024 * 1024
-SCAN_DIRS = ["output", "outputs", "figures", "figs", "tables", "results", "reports"]
+SCAN_DIRS = ["output", "outputs", "figures", "figs", "plots", "viz", "visuals",
+             "graphics", "tables", "results", "reports"]
 SCAN_EXTS = {
     ".png", ".jpg", ".jpeg", ".svg", ".gif", ".pdf",
     ".csv", ".tsv", ".html", ".md", ".txt", ".tex", ".json",
@@ -81,10 +82,30 @@ def next_version(results_dir):
     return n + 1
 
 
+def safe_extra_dir(root, d):
+    """Resolve a --dir value to a repo-relative scan dir, or die on escape.
+    Rejects absolute paths, `..` escapes, and symlinks that resolve outside
+    the repo; returns the unresolved root/d so relative_to(root) still holds."""
+    if os.path.isabs(d):
+        die("--dir must be repo-relative, not absolute: %s" % d)
+    dp = root / d
+    try:
+        resolved = dp.resolve()
+    except OSError:
+        die("--dir cannot be resolved: %s" % d)
+    root_r = root.resolve()
+    if resolved != root_r and root_r not in resolved.parents:
+        die("--dir escapes the repository: %s" % d)
+    return dp
+
+
 def cmd_discover(root, args):
+    scan = [root / dname for dname in SCAN_DIRS]
+    for d in (getattr(args, "dir", None) or []):
+        scan.append(safe_extra_dir(root, d))
     found = []
-    for dname in SCAN_DIRS:
-        d = root / dname
+    seen = set()
+    for d in scan:
         if not d.is_dir():
             continue
         for p in d.rglob("*"):
@@ -95,6 +116,9 @@ def cmd_discover(root, args):
             rel = str(p.relative_to(root))
             if rel.startswith("plans/"):
                 continue  # bundles never adopt themselves
+            if rel in seen:
+                continue  # a --dir may overlap a default scan dir
+            seen.add(rel)
             st = p.stat()
             found.append({"path": rel, "bytes": st.st_size,
                           "mtime": datetime.datetime.fromtimestamp(
@@ -251,6 +275,8 @@ def main():
     ap = argparse.ArgumentParser(description="research-plans results mechanics")
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("discover")
+    d.add_argument("--dir", action="append", default=None,
+                   help="extra repo-relative dir to scan (repeatable)")
     s = sub.add_parser("stage")
     s.add_argument("--component", required=True)
     c = sub.add_parser("copy")
