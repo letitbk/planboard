@@ -8,6 +8,7 @@ export interface BoardData {
   focusResults?: number | null; // --focus slug:rN opens the Results view on rN
   shareHash?: string; // remote mode: Python-computed, echoed back in feedback
   gate?: { component: string; proposedVersion: number }; // sign-off gate mode
+  gateBatch?: GateBatchEntry[]; // batch sign-off wizard (one plan at a time)
   project: { name: string; root?: string };
   git: {
     available: boolean;
@@ -25,6 +26,13 @@ export interface BoardData {
 }
 
 export interface BoardFile {
+  path: string;
+  content: string;
+}
+
+export interface GateBatchEntry {
+  component: string;
+  proposedVersion: number;
   path: string;
   content: string;
 }

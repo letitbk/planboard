@@ -4,6 +4,7 @@ import PlanReader from "./views/PlanReader";
 import Results from "./views/Results";
 import Timeline from "./views/Timeline";
 import Scorecard from "./views/Scorecard";
+import BatchGate from "./views/BatchGate";
 import { allFiles, payloadContentHash } from "./lib/parse";
 import {
   buildFeedbackDocument,
@@ -39,6 +40,11 @@ function nextId(): string {
 }
 
 export default function App({ data }: { data: BoardData }) {
+  // Batch sign-off is a full-screen wizard, isolated from the normal board's
+  // tabs/annotation state. The payload is static, so this early return is stable
+  // (hook order never changes within a session).
+  if (data.gateBatch) return <BatchGate data={data} />;
+
   const canAnnotate = data.mode === "live" || data.mode === "remote";
   const canPost = data.mode === "live";
   const remote = data.mode === "remote";

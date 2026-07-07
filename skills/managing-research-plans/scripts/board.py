@@ -27,10 +27,18 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+# Share the gate's plan normalization so a batch ticket's hash (over the unsigned
+# draft) matches the gate's hash (over the signed vN.md write). Must not drift.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from signoff_gate import normalize_plan  # noqa: E402
+
+TICKET_TTL = 7 * 24 * 3600  # 7 days — sized to a resumable multi-session adoption
 
 SLOT = '<script id="board-data" type="application/json">{}</script>'
 SLOT_OPEN = '<script id="board-data" type="application/json">'
@@ -443,11 +451,13 @@ def serve(root, payload, args):
     lock = acquire_lock(plans_dir, args.force)
 
     gate_mode = payload.get("gate") is not None
+    batch_mode = payload.get("gateBatch") is not None
+    batch_id = uuid.uuid4().hex[:8]
     amap = artifact_map(root, payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     html_bytes = html.encode("utf-8")
     done = threading.Event()
-    result = {}
+    result = {"approved": [], "rejected": []}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet
@@ -536,6 +546,46 @@ def serve(root, payload, args):
                 self._json(200, {"ok": True})
                 done.set()
                 return
+            # ---- Batch sign-off wizard: each approval writes its ticket NOW
+            # (incremental persistence); the session ends only on /api/batch/done. ----
+            if self.path == "/api/batch/approve" and batch_mode:
+                try:
+                    body = self._read_body()
+                except Exception:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+                comp, ver = body.get("component"), body.get("proposedVersion")
+                entry = next(
+                    (e for e in payload["gateBatch"]
+                     if e["component"] == comp and e["proposedVersion"] == ver),
+                    None,
+                )
+                if entry is None:
+                    self._json(404, {"ok": False, "error": "unknown plan"})
+                    return
+                write_ticket(root, comp, int(ver), entry["content"], batch_id)
+                if [comp, ver] not in result["approved"]:
+                    result["approved"].append([comp, ver])
+                self._json(200, {"ok": True, "approved": len(result["approved"])})
+                return
+            if self.path == "/api/batch/reject" and batch_mode:
+                try:
+                    body = self._read_body()
+                except Exception:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+                result["rejected"].append(
+                    [body.get("component"), body.get("proposedVersion"),
+                     (body.get("comment") or "").strip()])
+                self._json(200, {"ok": True})
+                return
+            if self.path == "/api/batch/done" and batch_mode:
+                result["exit"] = 0
+                self._json(200, {"ok": True})
+                done.set()
+                return
             self.send_response(404)
             self.end_headers()
 
@@ -557,6 +607,17 @@ def serve(root, payload, args):
     try:
         got = done.wait(timeout=args.timeout)
         server.shutdown()
+        if batch_mode:
+            appr, rej = result["approved"], result["rejected"]
+            print("Batch sign-off: %d approved, %d changes-requested%s."
+                  % (len(appr), len(rej),
+                     "" if got else " (session timed out; approvals were saved)"))
+            for c, v in appr:
+                print("  approved: %s v%s" % (c, v))
+            for c, v, cm in rej:
+                print("  changes-requested: %s v%s%s"
+                      % (c, v, " — %s" % cm if cm else ""))
+            sys.exit(0)  # approvals are persisted tickets; a timeout loses nothing
         if not got:
             print("board: no feedback received within %ds" % args.timeout, file=sys.stderr)
             sys.exit(2)
@@ -676,6 +737,51 @@ def collect_file(root, path):
     sys.exit(0)
 
 
+def write_ticket(root, slug, version, content, batch_id):
+    """Write a batch-approval ticket that signoff_gate.check_ticket accepts.
+    Hashed over the NORMALIZED draft (sign-off-trailer-invariant), so the later
+    signed vN.md write matches and the gate allows it without reopening a browser."""
+    doc = {
+        "slug": slug,
+        "version": version,
+        "contentHash": hashlib.sha256(
+            normalize_plan(content).encode("utf-8")).hexdigest(),
+        "approver": os.environ.get("USER", "researcher"),
+        "batchId": batch_id,
+        "approvedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "expiry": time.time() + TICKET_TTL,
+    }
+    tp = root / "plans" / "execution" / (".import-approved-%s-v%d" % (slug, version))
+    tp.write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    return tp
+
+
+def apply_gate_batch(root, payload):
+    """Collect every pending draft (.draft-vN.md) into payload['gateBatch'] for the
+    one-at-a-time batch sign-off wizard. Each approval writes that plan's ticket
+    immediately (incremental persistence), so an interrupted session keeps prior
+    approvals."""
+    batch = []
+    exec_dir = root / "plans" / "execution"
+    if exec_dir.is_dir():
+        for comp_dir in sorted(p for p in exec_dir.iterdir() if p.is_dir()):
+            drafts = sorted(comp_dir.glob(".draft-v*.md"))
+            if not drafts:
+                continue
+            d = drafts[-1]
+            m = re.fullmatch(r"\.draft-v(\d+)\.md", d.name)
+            batch.append({
+                "component": comp_dir.name,
+                "proposedVersion": int(m.group(1)) if m else 1,
+                "path": str(d.relative_to(root)),
+                "content": d.read_text(encoding="utf-8"),
+            })
+    if not batch:
+        die("no pending drafts (.draft-v*.md) to review — nothing to approve")
+    payload["gateBatch"] = batch
+    return payload
+
+
 def apply_gate(root, payload, gate_spec):
     """gate_spec is '<slug>/vN'. Reads the proposal from .gate-vN.md (skipping
     the reservation header comment) and injects it as the component's draft."""
@@ -713,6 +819,8 @@ def main():
     ap.add_argument("--share", nargs="?", const="DEFAULT", default=None, metavar="PATH")
     ap.add_argument("--collect", nargs="?", const="PENDING", default=None, metavar="FILE")
     ap.add_argument("--gate", default=None, metavar="SLUG/vN")
+    ap.add_argument("--gate-batch", action="store_true",
+                    help="one-at-a-time sign-off over all pending drafts")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, metavar="SECONDS")
@@ -743,6 +851,8 @@ def main():
         build_assets(root, payload)
         if args.gate:
             payload = apply_gate(root, payload, args.gate)
+        elif args.gate_batch:
+            payload = apply_gate_batch(root, payload)
         serve(root, payload, args)
 
 

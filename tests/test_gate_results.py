@@ -187,6 +187,20 @@ class TestGateBatchTickets(unittest.TestCase):
                                       content=self._signed())
             self.assertEqual((code, decision), (0, "deny"))
 
+    def test_producer_ticket_allows_signed_write_e2e(self):
+        # End-to-end: board.py's write_ticket (producer, hashes the unsigned
+        # draft) must produce a ticket signoff_gate (consumer, sees the signed
+        # write) accepts — proving both halves share normalize_plan.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            sys.path.insert(0, str(GATE.parent))
+            import board  # noqa: E402
+            board.write_ticket(root, "03-x", 1, self.DRAFT, "batch-e2e")
+            code, decision = run_gate(tmp, "Write", comp / "v1.md",
+                                      content=self._signed())
+            self.assertEqual((code, decision), (0, "allow"))
+
 
 if __name__ == "__main__":
     unittest.main()
