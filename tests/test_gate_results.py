@@ -2,10 +2,12 @@
 """Sign-off gate: results-bundle immutability branch. Run:
     python3 -m unittest tests.test_gate_results -v
 """
+import hashlib
 import json
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -82,6 +84,108 @@ class TestGateResults(unittest.TestCase):
             (rdir / "report.md").write_text("# R\n", encoding="utf-8")
             code, decision = run_gate(tmp, "Edit", rdir / "report.md")
             self.assertEqual((code, decision), (0, None))
+
+
+SIGN_OFF = "\n\n---\nSigned off: BK, 2026-07-07\n"
+
+
+def _norm(text):
+    """Mirror the gate's normalization for a trailer-less draft: strip trailing
+    whitespace per line and trailing blank lines. The gate additionally strips a
+    `Signed off:` trailer, so gate.normalize(signed) == _norm(draft)."""
+    lines = [ln.rstrip() for ln in text.replace("\r\n", "\n").split("\n")]
+    while lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines) + "\n"
+
+
+def make_init_component(root: Path, slug="03-x"):
+    plans = root / "plans"
+    (plans / "execution" / slug).mkdir(parents=True)
+    (plans / "master-plan.md").write_text(
+        "<!-- research-plans:master-plan -->\n# MP\n", encoding="utf-8")
+    (root / "CLAUDE.md").write_text(
+        "<!-- research-plans:start -->\nx\n", encoding="utf-8")
+    return plans / "execution" / slug
+
+
+def write_ticket(root: Path, slug, version, draft, *, expiry=None,
+                 slug_field=None, version_field=None):
+    doc = {
+        "slug": slug_field or slug,
+        "version": version if version_field is None else version_field,
+        "contentHash": hashlib.sha256(_norm(draft).encode("utf-8")).hexdigest(),
+        "approver": "BK", "batchId": "b1", "approvedAt": "2026-07-07 10:00",
+        "expiry": time.time() + 604800 if expiry is None else expiry,
+    }
+    tp = root / "plans" / "execution" / (".import-approved-%s-v%d" % (slug, version))
+    tp.write_text(json.dumps(doc), encoding="utf-8")
+    return tp
+
+
+class TestGateBatchTickets(unittest.TestCase):
+    DRAFT = ("# X — Execution Plan v1\n\n"
+             "Provenance: retrospective — written 2026-07-07; covers 2026-02–2026-06\n\n"
+             "## Goal and success criteria\n\nDo the thing; success is the thing done.\n")
+
+    def _signed(self):
+        return self.DRAFT.rstrip("\n") + SIGN_OFF
+
+    def test_valid_ticket_allows_signed_write(self):
+        # H1: ticket hashes the UNSIGNED draft; the SIGNED vN.md write must match.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            write_ticket(root, "03-x", 1, self.DRAFT)
+            code, decision = run_gate(tmp, "Write", comp / "v1.md",
+                                      content=self._signed())
+            self.assertEqual((code, decision), (0, "allow"))
+
+    def test_ticket_left_after_consume(self):
+        # H3: consumption does not delete the ticket.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            tp = write_ticket(root, "03-x", 1, self.DRAFT)
+            run_gate(tmp, "Write", comp / "v1.md", content=self._signed())
+            self.assertTrue(tp.exists())
+
+    def test_forged_ticket_write_denied(self):
+        # H2: the agent cannot write a ticket through the tool the gate polices.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_init_component(root)
+            tp = root / "plans" / "execution" / ".import-approved-03-x-v1"
+            code, decision = run_gate(tmp, "Write", tp, content='{"slug":"03-x"}')
+            self.assertEqual((code, decision), (0, "deny"))
+
+    def test_hash_mismatch_fast_denies(self):
+        # H5: a draft changed since approval fast-denies (never opens the board).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            write_ticket(root, "03-x", 1, self.DRAFT)
+            tampered = self._signed().replace("Do the thing", "Do a DIFFERENT thing")
+            code, decision = run_gate(tmp, "Write", comp / "v1.md", content=tampered)
+            self.assertEqual((code, decision), (0, "deny"))
+
+    def test_expired_ticket_fast_denies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            write_ticket(root, "03-x", 1, self.DRAFT, expiry=1.0)
+            code, decision = run_gate(tmp, "Write", comp / "v1.md",
+                                      content=self._signed())
+            self.assertEqual((code, decision), (0, "deny"))
+
+    def test_slug_version_mismatch_denies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            write_ticket(root, "03-x", 1, self.DRAFT, version_field=2)
+            code, decision = run_gate(tmp, "Write", comp / "v1.md",
+                                      content=self._signed())
+            self.assertEqual((code, decision), (0, "deny"))
 
 
 if __name__ == "__main__":

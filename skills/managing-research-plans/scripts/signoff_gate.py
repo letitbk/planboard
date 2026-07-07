@@ -15,6 +15,7 @@ timeout in hooks.json, because timeout-exceeded hook behavior is undocumented).
 Stdlib only, Python 3.9+.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -28,8 +29,64 @@ VERSION_RE = re.compile(r"^v(\d+)\.md$")
 RESULTS_RE = re.compile(r"/plans/execution/([^/]+)/results/(r\d+)/")
 MASTER_MARKER = "<!-- research-plans:master-plan -->"
 CLAUDE_MARKER = "<!-- research-plans:start -->"
+TICKET_PREFIX = ".import-approved-"
 DEFAULT_TIMEOUT = 1500
 MAX_REASON = 2000
+
+
+def normalize_plan(text):
+    """Canonical plan text for hashing, invariant to the sign-off trailer.
+
+    A `.draft-vN.md` is unsigned; the final `vN.md` gets a `Signed off:` line (and
+    a `---` rule) appended at write time. Stripping that trailer plus trailing
+    whitespace makes normalize(draft) == normalize(signed), so a batch-approval
+    ticket hashed over the draft authorizes the signed write. Board and gate MUST
+    use this same function."""
+    lines = [ln.rstrip() for ln in text.replace("\r\n", "\n").split("\n")]
+    while lines and lines[-1] == "":
+        lines.pop()
+    if lines and lines[-1].startswith("Signed off:"):
+        lines.pop()
+        while lines and lines[-1] == "":
+            lines.pop()
+        if lines and lines[-1] == "---":
+            lines.pop()
+    while lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines) + "\n"
+
+
+def check_ticket(ticket, slug, version, content):
+    """Validate a batch-approval ticket for a new vN.md write. Returns
+    (decision, reason). Never opens the interactive board — a present-but-invalid
+    ticket fast-denies with a precise fix, so a bulk write loop cannot silently
+    pop an unattended browser gate."""
+    try:
+        doc = json.loads(ticket.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "deny", (
+            "Batch approval ticket %s is unreadable or corrupt. Re-run the board's "
+            "--gate-batch approval for %s v%d." % (ticket.name, slug, version))
+    if doc.get("slug") != slug or doc.get("version") != version:
+        return "deny", (
+            "Batch ticket %s does not match %s v%d (slug/version mismatch). "
+            "Re-approve this plan on the board." % (ticket.name, slug, version))
+    exp = doc.get("expiry")
+    if isinstance(exp, (int, float)) and time.time() > exp:
+        return "deny", (
+            "Batch approval for %s v%d has expired. Re-run board.py --gate-batch to "
+            "re-approve the current draft." % (slug, version))
+    got = hashlib.sha256(normalize_plan(content).encode("utf-8")).hexdigest()
+    if doc.get("contentHash") != got:
+        return "deny", (
+            "The draft for %s v%d changed since it was approved on the board "
+            "(content-hash mismatch). Re-approve the current draft via board.py "
+            "--gate-batch." % (slug, version))
+    return "allow", (
+        "Batch-approved: %s v%d approved by %s in batch %s at %s (ticket %s; left "
+        "in place — inert once v%d.md exists)." % (
+            slug, version, doc.get("approver", "researcher"), doc.get("batchId", "?"),
+            doc.get("approvedAt", "?"), ticket.name, version))
 
 
 def decide(decision, reason):
@@ -147,6 +204,24 @@ def main():
             % (res_m.group(2), res_m.group(1))
         )
 
+    # ---- Batch-approval ticket forgery guard. Tickets (.import-approved-*) are
+    # written ONLY by board.py --gate-batch (a subprocess, outside the agent's
+    # Write/Edit tools). A direct agent write here would forge sign-off — deny it
+    # inside the gate's own enforcement domain. ----
+    if (
+        p.name.startswith(TICKET_PREFIX)
+        and p.parent.name == "execution"
+        and p.parent.parent.name == "plans"
+    ):
+        if find_project_root(p) is not None:
+            deny(
+                "Batch approval tickets (%s*) are created only by the board's "
+                "batch sign-off flow (board.py --gate-batch), never written "
+                "directly. Approve plans on the board; the ticket is written for "
+                "you." % TICKET_PREFIX
+            )
+        sys.exit(0)
+
     m = VERSION_RE.fullmatch(p.name)
     if (
         m is None
@@ -188,6 +263,17 @@ def main():
             "Write payload. Re-attempt the write; if this persists, set "
             "RESEARCH_PLANS_NO_GATE=1 and report the issue."
         )
+
+    # ---- Batch sign-off ticket: if the researcher pre-approved this exact plan
+    # on the board's --gate-batch pass, the ticket authorizes the write without
+    # reopening the browser. A present-but-invalid ticket fast-denies (never
+    # opens the interactive gate); an absent ticket falls through to it. ----
+    ticket = p.parent.parent / ("%s%s-v%d" % (TICKET_PREFIX, slug, version))
+    if ticket.exists():
+        decision, reason = check_ticket(ticket, slug, version, content)
+        if decision == "allow":
+            allow(reason)  # H3: leave the ticket; immutability blocks any re-use
+        deny(reason)
 
     timeout = gate_timeout()
     gate_file = p.parent / (".gate-v%d.md" % version)
