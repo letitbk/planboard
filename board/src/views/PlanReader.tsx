@@ -3,21 +3,38 @@ import Markdown from "../components/Markdown";
 import DiffView from "../components/DiffView";
 import AnnotationLayer from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
-import { parseExecutionPlan, parseMasterPlan, parseServes } from "../lib/parse";
+import {
+  AGENT_SECTIONS,
+  parseExecutionPlan,
+  parseMasterPlan,
+  parseServes,
+} from "../lib/parse";
 import type {
   Annotation,
   BoardData,
+  DraftSnapshotFile,
   ExecutionPlanGroup,
   PlanCommentAnnotation,
 } from "../lib/types";
 
+type DocKind = "signed" | "workingDraft" | "draftSnapshot";
+
 interface DocRef {
   group: ExecutionPlanGroup;
   version: number;
-  isDraft: boolean;
+  iteration?: number; // draftSnapshot only
+  docKind: DocKind;
+  isDraft: boolean; // convenience: docKind !== "signed"
   path: string;
   content: string;
 }
+
+const docLabel = (d: DocRef): string =>
+  d.docKind === "draftSnapshot"
+    ? `v${d.version}·d${d.iteration}`
+    : d.docKind === "workingDraft"
+      ? `proposed v${d.version}`
+      : `v${d.version}`;
 
 export default function PlanReader({
   data,
@@ -48,41 +65,87 @@ export default function PlanReader({
   const group =
     groups.find((g) => g.component === selectedComponent) ?? groups[0] ?? null;
 
+  // The full version history in chronological order: for each version number,
+  // its committed draft iterations (vN-draft-K) in order, then the signed vN (or
+  // the still-unsigned working draft). Reads idea → signed left to right.
   const docs: DocRef[] = useMemo(() => {
     if (!group) return [];
-    const out: DocRef[] = group.versions
-      .slice()
-      .sort((a, b) => a.version - b.version)
-      .map((v) => ({
-        group,
-        version: v.version,
-        isDraft: false,
-        path: v.path,
-        content: v.content,
-      }));
-    if (group.draft) {
+    const snapsByVersion = new Map<number, DraftSnapshotFile[]>();
+    for (const s of group.draftSnapshots ?? []) {
+      const list = snapsByVersion.get(s.version) ?? [];
+      list.push(s);
+      snapsByVersion.set(s.version, list);
+    }
+    const signedByVersion = new Map(group.versions.map((v) => [v.version, v]));
+    const draftVersion = group.draft?.proposedVersion ?? null;
+    const versionNums = [
+      ...new Set<number>([
+        ...group.versions.map((v) => v.version),
+        ...(group.draftSnapshots ?? []).map((s) => s.version),
+        ...(draftVersion !== null ? [draftVersion] : []),
+      ]),
+    ].sort((a, b) => a - b);
+
+    const out: DocRef[] = [];
+    let draftPushed = false;
+    const pushDraft = () => {
+      if (!group.draft) return;
       out.push({
         group,
         version: group.draft.proposedVersion,
+        docKind: "workingDraft",
         isDraft: true,
         path: group.draft.path,
         content: group.draft.content,
       });
+      draftPushed = true;
+    };
+    for (const n of versionNums) {
+      for (const s of (snapsByVersion.get(n) ?? [])
+        .slice()
+        .sort((a, b) => a.iteration - b.iteration)) {
+        out.push({
+          group,
+          version: n,
+          iteration: s.iteration,
+          docKind: "draftSnapshot",
+          isDraft: true,
+          path: s.path,
+          content: s.content,
+        });
+      }
+      const signed = signedByVersion.get(n);
+      if (signed) {
+        out.push({
+          group,
+          version: n,
+          docKind: "signed",
+          isDraft: false,
+          path: signed.path,
+          content: signed.content,
+        });
+      }
+      // The working draft shows at its proposedVersion when that version has no
+      // signed vN yet. If a signed vN already exists there, the draft is a stale
+      // leftover — still shown (appended at the end) so the stale banner can warn.
+      if (draftVersion === n && !signed) pushDraft();
     }
+    if (!draftPushed) pushDraft();
     return out;
   }, [group]);
 
   const [docIdx, setDocIdx] = useState(docs.length - 1);
   useEffect(() => setDocIdx(docs.length - 1), [group?.component, docs.length]);
-  const doc = docs[Math.min(docIdx, docs.length - 1)] ?? null;
+  const curIdx = Math.min(docIdx, docs.length - 1);
+  const doc = docs[curIdx] ?? null;
 
-  const prevDoc = useMemo(() => {
-    if (!doc) return null;
-    const before = docs.filter(
-      (d) => !d.isDraft && (doc.isDraft ? true : d.version < doc.version),
-    );
-    return before.length > 0 ? before[before.length - 1] : null;
-  }, [doc, docs]);
+  // Part 2 (agent/technical half) collapse state; reset when the shown doc changes.
+  const [agentOpen, setAgentOpen] = useState(false);
+  useEffect(() => setAgentOpen(false), [doc?.path]);
+
+  // Diff base is the immediately preceding step in the version history (previous
+  // snapshot, signed version, or working draft) — reads the evolution in order.
+  const prevDoc = curIdx > 0 ? docs[curIdx - 1] : null;
 
   const [diffOn, setDiffOn] = useState(false);
   useEffect(() => {
@@ -96,15 +159,20 @@ export default function PlanReader({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollToSection = useCallback((heading: string) => {
-    const host = scrollRef.current;
-    if (!host) return;
-    const h2s = host.querySelectorAll("h2");
-    for (const h of h2s) {
-      if ((h.textContent ?? "").trim() === heading) {
-        h.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
+    // Agent sections sit in the collapsed Part 2 — open it, then scroll once the
+    // DOM has reflowed.
+    if (AGENT_SECTIONS.includes(heading)) setAgentOpen(true);
+    const doScroll = () => {
+      const host = scrollRef.current;
+      if (!host) return;
+      for (const h of host.querySelectorAll("h2")) {
+        if ((h.textContent ?? "").trim() === heading) {
+          h.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
       }
-    }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, []);
 
   const docAnnotations = useMemo(
@@ -126,8 +194,12 @@ export default function PlanReader({
   }
 
   const stale =
-    doc.isDraft &&
+    doc.docKind === "workingDraft" &&
     group.versions.some((v) => v.version >= (group.draft?.proposedVersion ?? 0));
+
+  // Snapshots (committed draft iterations) are read-only: viewed and diffed,
+  // never annotated. Feedback routing must not touch an immutable snapshot.
+  const annotatable = canAnnotate && doc.docKind !== "draftSnapshot";
 
   return (
     <div className="flex gap-5">
@@ -153,43 +225,65 @@ export default function PlanReader({
           ))}
         </ul>
 
-        {parsed?.ok && (
-          <>
-            <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-              Sections
-            </h2>
-            <ul className="space-y-0.5">
-              {parsed.sections.map((s) => (
-                <li key={s.heading}>
-                  <button
-                    className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100"
-                    onClick={() => scrollToSection(s.heading)}
-                  >
-                    {s.heading}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+        {parsed?.ok &&
+          (
+            [
+              {
+                label: "Part 1 · for humans",
+                items: parsed.sections.filter(
+                  (s) => !AGENT_SECTIONS.includes(s.heading),
+                ),
+              },
+              {
+                label: "Part 2 · for agents",
+                items: parsed.sections.filter((s) =>
+                  AGENT_SECTIONS.includes(s.heading),
+                ),
+              },
+            ] as const
+          ).map((grp) =>
+            grp.items.length === 0 ? null : (
+              <div key={grp.label}>
+                <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                  {grp.label}
+                </h2>
+                <ul className="space-y-0.5">
+                  {grp.items.map((s) => (
+                    <li key={s.heading}>
+                      <button
+                        className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100"
+                        onClick={() => scrollToSection(s.heading)}
+                      >
+                        {s.heading}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ),
+          )}
       </aside>
 
       {/* Main pane */}
       <div className="min-w-0 flex-1">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {docs.map((d, i) => (
-            <button
-              key={d.path}
-              className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                i === Math.min(docIdx, docs.length - 1)
-                  ? "border-stone-900 bg-stone-900 text-white"
-                  : "border-stone-300 bg-white text-stone-600 hover:border-stone-500"
-              } ${d.isDraft ? "border-dashed" : ""}`}
-              onClick={() => setDocIdx(i)}
-            >
-              {d.isDraft ? `proposed v${d.version} (draft)` : `v${d.version}`}
-            </button>
-          ))}
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          {docs.map((d, i) =>
+            d.docKind === "draftSnapshot" ? null : (
+              <button
+                key={d.path}
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                  i === curIdx
+                    ? "border-stone-900 bg-stone-900 text-white"
+                    : "border-stone-300 bg-white text-stone-600 hover:border-stone-500"
+                } ${d.docKind === "workingDraft" ? "border-dashed" : ""}`}
+                onClick={() => setDocIdx(i)}
+              >
+                {d.docKind === "workingDraft"
+                  ? `proposed v${d.version} (draft)`
+                  : `v${d.version}`}
+              </button>
+            ),
+          )}
           {prevDoc && (
             <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-stone-600">
               <input
@@ -197,10 +291,34 @@ export default function PlanReader({
                 checked={diffOn}
                 onChange={(e) => setDiffOn(e.target.checked)}
               />
-              Diff vs v{prevDoc.version}
+              Diff vs {docLabel(prevDoc)}
             </label>
           )}
         </div>
+
+        {docs.some((d) => d.docKind === "draftSnapshot") && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-stone-400">
+              iterations
+            </span>
+            {docs.map((d, i) =>
+              d.docKind !== "draftSnapshot" ? null : (
+                <button
+                  key={d.path}
+                  title="Committed draft iteration — read-only"
+                  className={`rounded border px-2 py-0.5 text-xs ${
+                    i === curIdx
+                      ? "border-stone-900 bg-stone-100 font-semibold text-stone-900"
+                      : "border-dashed border-stone-300 bg-white text-stone-500 hover:border-stone-500"
+                  }`}
+                  onClick={() => setDocIdx(i)}
+                >
+                  {docLabel(d)}
+                </button>
+              ),
+            )}
+          </div>
+        )}
 
         {(group.results ?? []).some(
           (b) => b.manifest?.planVersion === doc.version && !doc.isDraft,
@@ -226,7 +344,7 @@ export default function PlanReader({
           </div>
         )}
 
-        {doc.isDraft && (
+        {doc.docKind === "workingDraft" && (
           <div className="mb-3 flex items-center gap-2">
             <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
               Unsigned draft
@@ -236,6 +354,14 @@ export default function PlanReader({
                 Stale — a signed version already supersedes this draft
               </span>
             )}
+          </div>
+        )}
+
+        {doc.docKind === "draftSnapshot" && (
+          <div className="mb-3 flex items-center gap-2">
+            <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-stone-600">
+              Draft iteration {docLabel(doc)} · read-only
+            </span>
           </div>
         )}
 
@@ -294,7 +420,7 @@ export default function PlanReader({
             ref={scrollRef}
             className="rounded-lg border border-stone-200 bg-white p-6"
           >
-            {canAnnotate ? (
+            {annotatable ? (
               <AnnotationLayer
                 docKey={doc.path}
                 annotations={docAnnotations}
@@ -309,10 +435,18 @@ export default function PlanReader({
                   })
                 }
               >
-                <Markdown source={doc.content} />
+                <PlanBody
+                content={doc.content}
+                open={agentOpen}
+                onToggle={() => setAgentOpen((o) => !o)}
+              />
               </AnnotationLayer>
             ) : (
-              <Markdown source={doc.content} />
+              <PlanBody
+                content={doc.content}
+                open={agentOpen}
+                onToggle={() => setAgentOpen((o) => !o)}
+              />
             )}
             {parsed?.ok && (
               <div className="mt-4 border-t border-stone-100 pt-3 text-xs">
@@ -329,12 +463,89 @@ export default function PlanReader({
             )}
           </div>
         )}
-        {canAnnotate && (
+        {annotatable && (
           <p className="mt-2 text-xs text-stone-400">
             Select any text in the plan to attach a comment.
           </p>
         )}
+        {canAnnotate && doc.docKind === "draftSnapshot" && (
+          <p className="mt-2 text-xs text-stone-400">
+            Draft iterations are read-only history — open the signed version or
+            working draft to comment.
+          </p>
+        )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Split a plan on its "## Part 2 —" banner. Returns the human half, the agent
+ * half (everything after the Part-2 heading line), and the heading text for the
+ * toggle. Old-format plans with no banner return agent:null (rendered whole).
+ */
+function splitParts(content: string): {
+  human: string;
+  agent: string | null;
+  heading: string;
+} {
+  const m = /^## Part 2\b[^\n]*$/m.exec(content);
+  if (!m) return { human: content, agent: null, heading: "" };
+  return {
+    human: content.slice(0, m.index),
+    agent: content.slice(m.index + m[0].length),
+    heading: m[0].replace(/^##\s*/, "").trim(),
+  };
+}
+
+/**
+ * Renders a plan body with Part 2 (the agent/technical half) collapsed under a
+ * toggle. Both halves stay inside the caller's single AnnotationLayer container,
+ * so comment anchoring — occurrence-counted over the whole rendered text — is
+ * unchanged. The collapsed half is clipped (max-h-0), never unmounted, so its
+ * painted highlights survive and reveal on expand. The toggle's label is the
+ * verbatim Part-2 heading text, keeping the container's text content identical
+ * to a single-blob render.
+ */
+function PlanBody({
+  content,
+  open,
+  onToggle,
+}: {
+  content: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { human, agent, heading } = splitParts(content);
+  if (agent === null) return <Markdown source={content} />;
+  return (
+    <>
+      <Markdown source={human} />
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="mt-4 flex w-full items-center gap-2 border-t border-stone-200 pt-4 text-left text-lg font-bold text-stone-900 hover:text-stone-600"
+      >
+        <svg
+          className={`h-4 w-4 shrink-0 text-stone-400 transition-transform ${open ? "rotate-90" : ""}`}
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M6 4l4 4-4 4"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        {heading}
+      </button>
+      <div className={open ? "mt-2" : "max-h-0 overflow-hidden"} aria-hidden={!open}>
+        <Markdown source={agent} />
+      </div>
+    </>
   );
 }

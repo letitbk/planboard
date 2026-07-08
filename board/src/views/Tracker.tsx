@@ -9,7 +9,13 @@ import type {
   DocCommentAnnotation,
   TrackerStatus,
 } from "../lib/types";
-import { parseExecutionPlan, parseMasterPlan, parseServes } from "../lib/parse";
+import {
+  parseDecisionLog,
+  parseExecutionPlan,
+  parseHistory,
+  parseMasterPlan,
+  parseServes,
+} from "../lib/parse";
 
 const CHIP: Record<TrackerStatus, string> = {
   "not started": "bg-stone-100 text-stone-600 border-stone-200",
@@ -116,6 +122,94 @@ export default function Tracker({
       rowTokens.some((t) => !planTokens.includes(t))
     );
   };
+
+  // Drift & hygiene checks folded in from the retired /status command. These are
+  // all computed from the payload already present. Four filesystem-only checks
+  // (stale board.html, leftover staging dirs, verified-source drift, 14-day
+  // inactivity) need new board.py payload fields and are not yet surfaced here.
+  type Drift = { text: string; slug?: string };
+  const drift: Drift[] = [];
+  const rqNums = new Set(mp.researchQuestions.map((q) => q.num));
+  for (const g of data.files.executionPlans) {
+    const latest = g.versions[g.versions.length - 1];
+    if (latest && parseExecutionPlan(latest.content).signedOff === null) {
+      drift.push({
+        text: `${g.component} v${latest.version} has no sign-off line`,
+        slug: g.component,
+      });
+    }
+  }
+  if (
+    data.files.executionPlans.length > 0 &&
+    parseDecisionLog(data.files.decisionLog.content).length === 0
+  ) {
+    drift.push({
+      text: "Decision log is empty while execution plans exist — a logging gap",
+    });
+  }
+  if (!hasRQs) {
+    drift.push({
+      text: "Master plan has no Research questions (pre-v0.3) — run /research-plans:init update mode",
+    });
+  }
+  for (const r of mp.components) {
+    const slug = slugFromLink(r.planLink);
+    const badRQs = parseServes(r.serves).tokens.filter(
+      (t) => !rqNums.has(parseInt(t.replace(/\D/g, ""), 10)),
+    );
+    if (badRQs.length > 0) {
+      drift.push({
+        text: `${r.component}: Serves names ${badRQs.join(", ")}, not in the research questions`,
+      });
+    }
+    if (
+      (r.status === "done" ||
+        r.status === "done (verified)" ||
+        r.status === "in progress") &&
+      !slug
+    ) {
+      drift.push({
+        text: `${r.component} is ${r.status} but carries no execution plan — run /research-plans:adopt`,
+      });
+    }
+    const g = slug
+      ? data.files.executionPlans.find((x) => x.component === slug)
+      : null;
+    if (g) {
+      const latestResult = g.results?.[g.results.length - 1];
+      if (
+        r.status === "done" &&
+        latestResult &&
+        latestResult.verdict?.status !== "accepted"
+      ) {
+        drift.push({
+          text: `${r.component} is done but results r${latestResult.resultsVersion} are unverified`,
+          slug,
+        });
+      }
+      const latestV = g.versions[g.versions.length - 1];
+      if (r.status === "in progress" && latestV) {
+        const prov = parseExecutionPlan(latestV.content).provenance;
+        if (prov && /retrospective/i.test(prov)) {
+          drift.push({
+            text: `${r.component} is in progress but its latest plan is retrospective — write a prospective v${latestV.version + 1}`,
+            slug,
+          });
+        }
+      }
+    }
+  }
+  const initialized =
+    /^Initialized:\s*(\d{4}-\d{2}-\d{2})/m.exec(mp.raw)?.[1] ?? null;
+  if (initialized && data.files.history) {
+    for (const h of parseHistory(data.files.history.content)) {
+      if (h.sortKey >= initialized) {
+        drift.push({
+          text: `history.md entry ${h.date} is on/after Initialized (${initialized}) — belongs in the decision log`,
+        });
+      }
+    }
+  }
 
   const body = (
     <>
@@ -313,6 +407,34 @@ export default function Tracker({
               {i < orphanGroups.length - 1 ? ", " : ""}
             </button>
           ))}
+        </div>
+      )}
+
+      {drift.length > 0 && (
+        <div
+          className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          data-annot-scope="drift-checks"
+          data-annot-section="drift and hygiene"
+        >
+          <div className="mb-1 font-semibold uppercase tracking-wide text-amber-700">
+            Drift &amp; hygiene ({drift.length})
+          </div>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {drift.map((d, i) => (
+              <li key={i}>
+                {d.slug ? (
+                  <button
+                    className="text-left underline hover:text-amber-950"
+                    onClick={() => onOpenComponent(d.slug!, d.slug!)}
+                  >
+                    {d.text}
+                  </button>
+                ) : (
+                  d.text
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

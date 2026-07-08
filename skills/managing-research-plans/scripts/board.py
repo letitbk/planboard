@@ -6,6 +6,7 @@ Stdlib only, Python 3.9+. Modes:
   --export [PATH]    write a static read-only snapshot (default plans/board.html)
   --share [PATH]     write an annotatable remote board for collaborators
                      (default plans/board-share.html; --focus prunes to one component)
+  --publish          push the static board to the repo's GitHub Pages (gh-pages)
   --collect          print and delete pending feedback from an interrupted session
   --collect FILE     print a collaborator's feedback file (never deletes it;
                      stderr notes STALE if plans changed since the share)
@@ -23,9 +24,11 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -127,6 +130,7 @@ def payload_files(payload):
     out = [f["masterPlan"], f["decisionLog"]]
     for g in f["executionPlans"]:
         out.extend(g["versions"])
+        out.extend(g.get("draftSnapshots", []))
         if g.get("draft"):
             out.append(g["draft"])
         for b in g.get("results", []):
@@ -290,8 +294,29 @@ def collect_payload(root, mode, focus):
                         (versions[-1]["version"] + 1) if versions else 1
                     )
                     group["draft"] = entry
+            # Committed within-version draft iterations (feature #1). Unlike the
+            # ephemeral working draft above, these are real history and ride in
+            # every mode. Named vN-draft-K.md — never matched by the sign-off
+            # gate's version regex, so they stay plain committed files.
+            snapshots = []
+            for f in sorted(comp_dir.glob("v*-draft-*.md")):
+                m = re.fullmatch(r"v(\d+)-draft-(\d+)\.md", f.name)
+                if not m:
+                    continue
+                entry = read_file(root, str(f.relative_to(root)))
+                entry["version"] = int(m.group(1))
+                entry["iteration"] = int(m.group(2))
+                snapshots.append(entry)
+            snapshots.sort(key=lambda s: (s["version"], s["iteration"]))
+            if snapshots:
+                group["draftSnapshots"] = snapshots
             group["results"] = collect_results(root, comp_dir)
-            if versions or group.get("draft") or group["results"]:
+            if (
+                versions
+                or group.get("draft")
+                or group.get("draftSnapshots")
+                or group["results"]
+            ):
                 exec_groups.append(group)
 
     reviews = []
@@ -333,6 +358,7 @@ def collect_payload(root, mode, focus):
     all_paths = ["plans/master-plan.md", "plans/decision-log.md"]
     for g in exec_groups:
         all_paths.extend(v["path"] for v in g["versions"])
+        all_paths.extend(s["path"] for s in g.get("draftSnapshots", []))
         all_paths.extend(b["manifestRaw"]["path"] for b in g.get("results", []))
     all_paths.extend(r["path"] for r in reviews)
     if history is not None:
@@ -633,12 +659,19 @@ def serve(root, payload, args):
             pass
 
 
-def export(root, args):
-    slug, focus_results = split_focus(args.focus)
+def render_static_html(root, focus=None):
+    """The self-contained static board as a string. Pure: writes no file and
+    touches no gitignore. Shared by --export (which writes it to disk) and
+    --publish (which pushes it to the gh-pages branch)."""
+    slug, focus_results = split_focus(focus)
     payload = collect_payload(root, "static", slug)
     payload["focusResults"] = focus_results
     build_assets(root, payload)
-    html = inject(template_path().read_text(encoding="utf-8"), payload)
+    return inject(template_path().read_text(encoding="utf-8"), payload)
+
+
+def export(root, args):
+    html = render_static_html(root, args.focus)
     out = Path(args.export) if args.export != "DEFAULT" else root / "plans" / "board.html"
     if not out.is_absolute():
         out = root / out
@@ -682,6 +715,164 @@ def share(root, args):
             "to the recipient. Use --focus NN-slug to share one component.",
             file=sys.stderr,
         )
+    sys.exit(0)
+
+
+# --- GitHub Pages publish (feature #4) ---
+
+TMP_BRANCH_PREFIX = "_rp_pages_"  # per-run throwaway branch backing the publish worktree
+# github.com must be the HOST (right after an optional scheme and userinfo), not
+# merely appear somewhere in the URL/path — so git.example.com/github.com/... is rejected.
+GITHUB_RE = re.compile(
+    r"^(?:\w+://)?(?:[^@/]+@)?github\.com[:/]([^/]+?)/(.+?)(?:\.git)?/?$"
+)
+_VOLATILE_RE = re.compile(r'"generatedAt":\s*"[^"]*"')
+INDEX_REDIRECT = (
+    '<!doctype html>\n<meta charset="utf-8">\n'
+    "<title>research-plans board</title>\n"
+    '<meta http-equiv="refresh" content="0; url=board.html">\n'
+    '<a href="board.html">Open the board</a>\n'
+)
+
+
+def parse_github_remote(url):
+    """(owner, repo) from a GitHub remote URL (ssh or https, with or without a
+    trailing .git), or None when it is not a github.com remote."""
+    if not url:
+        return None
+    m = GITHUB_RE.search(url.strip())
+    return (m.group(1), m.group(2)) if m else None
+
+
+def _git(cwd, argv, check=True, timeout=120):
+    r = subprocess.run(["git", *argv], cwd=str(cwd),
+                       capture_output=True, text=True, timeout=timeout)
+    if check and r.returncode != 0:
+        die("git %s failed:\n%s" % (" ".join(argv), (r.stderr or r.stdout).strip()))
+    return r
+
+
+def _publish_noop(files, worktree):
+    """True when every file already matches the current branch content once the
+    board's only volatile field (generatedAt) is masked — a timestamp-only diff
+    that is not worth a new commit."""
+    for name, content in files.items():
+        existing = worktree / name
+        if not existing.is_file():
+            return False
+        a = _VOLATILE_RE.sub('"generatedAt":""', content)
+        b = _VOLATILE_RE.sub('"generatedAt":""', existing.read_text(encoding="utf-8"))
+        if a != b:
+            return False
+    return True
+
+
+def publish_to_branch(root, files, branch, message):
+    """Push {name: content} to `branch` on origin through a throwaway git
+    worktree, so the working tree and current branch are never touched. Builds
+    on origin/<branch> when it already exists (preserving any other files there),
+    otherwise creates an orphan branch. Returns 'pushed' or 'unchanged'."""
+    _git(root, ["worktree", "prune"], check=False)
+    tmp_branch = TMP_BRANCH_PREFIX + uuid.uuid4().hex[:8]  # unique — never clobbers a user ref
+    _git(root, ["fetch", "origin", branch], check=False)  # branch may not exist yet
+    has_remote = _git(
+        root, ["show-ref", "--verify", "--quiet", "refs/remotes/origin/%s" % branch],
+        check=False,
+    ).returncode == 0
+    tmp = tempfile.mkdtemp(prefix="rp-pages-")
+    try:
+        if has_remote:
+            _git(root, ["worktree", "add", "-B", tmp_branch, tmp, "origin/%s" % branch])
+        else:
+            _git(root, ["worktree", "add", "--detach", tmp])
+            _git(tmp, ["checkout", "--orphan", tmp_branch])
+            _git(tmp, ["rm", "-rf", "."], check=False)  # clear the inherited tree
+        if _publish_noop(files, Path(tmp)):
+            return "unchanged"
+        for name, content in files.items():
+            (Path(tmp) / name).write_text(content, encoding="utf-8")
+        _git(tmp, ["add", "-A"])
+        _git(tmp, ["commit", "-m", message])
+        push = _git(tmp, ["push", "origin", "HEAD:%s" % branch], check=False)
+        if push.returncode != 0:
+            die("push to %s failed:\n%s\nIf the branch is protected or has diverged, "
+                "resolve it and retry." % (branch, (push.stderr or push.stdout).strip()))
+        return "pushed"
+    finally:
+        _git(root, ["worktree", "remove", "--force", tmp], check=False)
+        _git(root, ["branch", "-D", tmp_branch], check=False)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _gh(argv):
+    """Run a gh command, best-effort: return None if gh is missing or the call
+    errors or times out (never raises), else the CompletedProcess."""
+    if shutil.which("gh") is None:
+        return None
+    try:
+        return subprocess.run(["gh", *argv], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _pages_enabled(owner, repo):
+    """Best-effort: make sure GitHub Pages serves gh-pages/. True if enabled (or
+    newly enabled), False if gh is missing/unauthenticated or the call fails."""
+    got = _gh(["api", "repos/%s/%s/pages" % (owner, repo)])
+    if got is None:
+        return False
+    if got.returncode == 0:
+        return True  # already enabled
+    created = _gh(["api", "--method", "POST", "repos/%s/%s/pages" % (owner, repo),
+                   "-f", "source[branch]=gh-pages", "-f", "source[path]=/"])
+    return created is not None and created.returncode == 0
+
+
+def _repo_visibility(owner, repo):
+    r = _gh(["repo", "view", "%s/%s" % (owner, repo),
+             "--json", "visibility", "-q", ".visibility"])
+    return r.stdout.strip().lower() if r is not None and r.returncode == 0 else None
+
+
+def publish_pages(root, args):
+    if _git(root, ["rev-parse", "--is-inside-work-tree"], check=False).returncode != 0:
+        die("not a git repository — --publish needs a git repo with a GitHub 'origin' remote")
+    remote = _git(root, ["remote", "get-url", "origin"], check=False)
+    if remote.returncode != 0 or not remote.stdout.strip():
+        die("no 'origin' remote — add your GitHub remote "
+            "(git remote add origin git@github.com:you/repo.git) and retry")
+    gh = parse_github_remote(remote.stdout.strip())
+    if gh is None:
+        die("origin is not a GitHub remote:\n  %s\n"
+            "GitHub Pages publish needs a github.com origin." % remote.stdout.strip())
+    owner, repo = gh
+    html = render_static_html(root, None)  # v1 publishes the full board (no --focus)
+    outcome = publish_to_branch(
+        root, {"board.html": html, "index.html": INDEX_REDIRECT},
+        "gh-pages", "Publish research-plans board",
+    )
+    url = "https://%s.github.io/%s/" % (owner, repo)
+    enabled = _pages_enabled(owner, repo)
+    vis = _repo_visibility(owner, repo)
+    print(url)  # stdout: the shareable URL
+    lines = []
+    if outcome == "unchanged":
+        lines.append("Board unchanged since the last publish — nothing new pushed.")
+    lines.append(
+        "Published the FULL board — every plan, result, and decision under plans/. "
+        "Anyone who can reach the URL can read all of it."
+    )
+    if vis == "public":
+        lines.append("This repo is PUBLIC, so the board is public.")
+    elif vis == "private":
+        lines.append("This repo is private; GitHub Pages for a private repo needs a paid "
+                     "plan (Pro/Team/Enterprise) or the URL will 404.")
+    else:
+        lines.append("If this repo is public, the board is public to anyone with the link.")
+    if not enabled:
+        lines.append("Could not confirm Pages is enabled (gh missing or unauthenticated). "
+                     "Enable it once: repo Settings > Pages > Branch gh-pages, folder / (root).")
+    print("\n".join(lines), file=sys.stderr)
     sys.exit(0)
 
 
@@ -817,6 +1008,8 @@ def main():
     ap.add_argument("--focus", default=None, metavar="NN-slug")
     ap.add_argument("--export", nargs="?", const="DEFAULT", default=None, metavar="PATH")
     ap.add_argument("--share", nargs="?", const="DEFAULT", default=None, metavar="PATH")
+    ap.add_argument("--publish", action="store_true",
+                    help="publish the static board to the repo's GitHub Pages (gh-pages branch)")
     ap.add_argument("--collect", nargs="?", const="PENDING", default=None, metavar="FILE")
     ap.add_argument("--gate", default=None, metavar="SLUG/vN")
     ap.add_argument("--gate-batch", action="store_true",
@@ -844,6 +1037,8 @@ def main():
         share(root, args)
     elif args.export is not None:
         export(root, args)
+    elif args.publish:
+        publish_pages(root, args)
     else:
         slug, focus_results = split_focus(args.focus)
         payload = collect_payload(root, "live", slug)

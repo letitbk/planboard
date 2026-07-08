@@ -41,6 +41,7 @@ export interface ExecutionPlanGroup {
   component: string; // NN-slug
   versions: PlanVersionFile[];
   draft?: DraftFile;
+  draftSnapshots?: DraftSnapshotFile[]; // committed within-version iterations (feature #1)
   results?: ResultsBundle[];
 }
 
@@ -128,6 +129,14 @@ export interface PlanVersionFile extends BoardFile {
 
 export interface DraftFile extends BoardFile {
   proposedVersion: number;
+}
+
+// A committed within-version draft iteration (vN-draft-K.md). Immutable by
+// convention (the sign-off gate does not guard these names); read-only on the
+// board — viewed and diffed, never annotated.
+export interface DraftSnapshotFile extends BoardFile {
+  version: number;
+  iteration: number;
 }
 
 // ---- parsed shapes (client-side contract parsing; see parse.ts) ----

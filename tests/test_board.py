@@ -113,6 +113,10 @@ class TestShareHash(unittest.TestCase):
             "executionPlans": [{
                 "component": "01-x",
                 "versions": [{"path": "plans/execution/01-x/v1.md", "content": "v1"}],
+                "draftSnapshots": [
+                    {"path": "plans/execution/01-x/v1-draft-1.md", "content": "s1",
+                     "version": 1, "iteration": 1},
+                ],
                 "draft": {"path": "plans/execution/01-x/.draft-v2.md", "content": "d2"},
             }],
             "reviews": [{"path": "plans/reviews/r.md", "content": "r"}],
@@ -120,7 +124,9 @@ class TestShareHash(unittest.TestCase):
         paths = [f["path"] for f in board.payload_files(payload)]
         self.assertEqual(sorted(paths), sorted([
             "plans/master-plan.md", "plans/decision-log.md",
-            "plans/execution/01-x/v1.md", "plans/execution/01-x/.draft-v2.md",
+            "plans/execution/01-x/v1.md",
+            "plans/execution/01-x/v1-draft-1.md",
+            "plans/execution/01-x/.draft-v2.md",
             "plans/reviews/r.md",
         ]))
 
@@ -159,6 +165,31 @@ class TestRemotePayload(unittest.TestCase):
             self.assertNotIn("shareHash", payload)
             groups = {g["component"]: g for g in payload["files"]["executionPlans"]}
             self.assertNotIn("draft", groups["01-data-prep"])
+
+    def test_draft_snapshots_collected_in_all_modes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            comp = root / "plans" / "execution" / "01-data-prep"
+            (comp / "v1-draft-1.md").write_text("# v1 draft 1\n", encoding="utf-8")
+            (comp / "v1-draft-2.md").write_text("# v1 draft 2\n", encoding="utf-8")
+            # Committed snapshots ride in every mode (unlike the ephemeral draft,
+            # which static/export omit).
+            for mode in ("static", "remote", "live"):
+                payload = board.collect_payload(root, mode, None)
+                groups = {g["component"]: g for g in payload["files"]["executionPlans"]}
+                snaps = groups["01-data-prep"].get("draftSnapshots")
+                self.assertIsNotNone(snaps, "snapshots missing in %s mode" % mode)
+                self.assertEqual(
+                    [(s["version"], s["iteration"]) for s in snaps], [(1, 1), (1, 2)])
+                paths = [f["path"] for f in board.payload_files(payload)]
+                self.assertIn("plans/execution/01-data-prep/v1-draft-1.md", paths)
+            # The sign-off version regex ignores vN-draft-K names, so a snapshot
+            # never leaks into the signed versions list.
+            payload = board.collect_payload(root, "static", None)
+            groups = {g["component"]: g for g in payload["files"]["executionPlans"]}
+            vpaths = [v["path"] for v in groups["01-data-prep"]["versions"]]
+            self.assertNotIn("plans/execution/01-data-prep/v1-draft-1.md", vpaths)
 
 
 class TestShareCli(unittest.TestCase):
@@ -395,6 +426,118 @@ class TestDocumentFromBody(unittest.TestCase):
     def test_empty_string_falls_back(self):
         body = {"feedbackDocument": "  ", "feedbackMarkdown": "# X", "annotations": []}
         self.assertIn("```json board-feedback", board.document_from_body(body, self.PAYLOAD))
+
+
+def _init_git(root):
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    for k, v in (("user.email", "t@example.com"), ("user.name", "Test")):
+        subprocess.run(["git", "-C", str(root), "config", k, v], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-m", "init", "--allow-empty"],
+                   check=True, capture_output=True)
+
+
+class TestPublish(unittest.TestCase):
+    def test_render_static_html_is_pure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            html = board.render_static_html(root, None)
+            self.assertIn('id="board-data"', html)
+            # pure: writes no file, touches no gitignore
+            self.assertFalse((root / "plans" / "board.html").exists())
+            self.assertFalse((root / "plans" / ".gitignore").exists())
+
+    def test_parse_github_remote_forms(self):
+        self.assertEqual(board.parse_github_remote("git@github.com:o/r.git"), ("o", "r"))
+        self.assertEqual(board.parse_github_remote("https://github.com/o/r.git"), ("o", "r"))
+        self.assertEqual(board.parse_github_remote("https://github.com/o/r"), ("o", "r"))
+        self.assertEqual(board.parse_github_remote("ssh://git@github.com/o/r.git"), ("o", "r"))
+        self.assertEqual(board.parse_github_remote("https://user@github.com/o/r.git"), ("o", "r"))
+        self.assertIsNone(board.parse_github_remote("https://gitlab.com/o/r.git"))
+        # github.com must be the HOST, not merely present in the path
+        self.assertIsNone(board.parse_github_remote("https://git.example.com/github.com/o/r.git"))
+        self.assertIsNone(board.parse_github_remote("https://github.com.evil.com/o/r.git"))
+        self.assertIsNone(board.parse_github_remote(""))
+        self.assertIsNone(board.parse_github_remote(None))
+
+    def test_publish_dedupes_generatedat_only_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpd = Path(tmp)
+            origin = tmpd / "origin.git"
+            work = tmpd / "work"
+            subprocess.run(["git", "init", "--bare", str(origin)], check=True, capture_output=True)
+            work.mkdir()
+            make_project(work)
+            _init_git(work)
+            subprocess.run(["git", "-C", str(work), "remote", "add", "origin", str(origin)],
+                           check=True, capture_output=True)
+            v1 = '<script id="board-data">{"generatedAt":"2026-07-08T10:00:00","x":1}</script>'
+            v2 = '<script id="board-data">{"generatedAt":"2026-07-08T23:59:59","x":1}</script>'
+            v3 = '<script id="board-data">{"generatedAt":"2026-07-08T23:59:59","x":2}</script>'
+            self.assertEqual(board.publish_to_branch(work, {"board.html": v1}, "gh-pages", "p1"), "pushed")
+            # only the timestamp changed → no new publish
+            self.assertEqual(board.publish_to_branch(work, {"board.html": v2}, "gh-pages", "p2"), "unchanged")
+            # real content change → pushed
+            self.assertEqual(board.publish_to_branch(work, {"board.html": v3}, "gh-pages", "p3"), "pushed")
+
+    def test_publish_rejects_non_git(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)  # plans/ tree but NOT a git repo
+            with self.assertRaises(SystemExit):
+                board.publish_pages(root, None)
+
+    def test_publish_rejects_non_github_origin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            _init_git(root)
+            subprocess.run(["git", "-C", str(root), "remote", "add", "origin",
+                            "https://gitlab.com/o/r.git"], check=True, capture_output=True)
+            with self.assertRaises(SystemExit):
+                board.publish_pages(root, None)
+
+    def test_publish_to_branch_push_dedupe_and_isolation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpd = Path(tmp)
+            origin = tmpd / "origin.git"
+            work = tmpd / "work"
+            subprocess.run(["git", "init", "--bare", str(origin)], check=True, capture_output=True)
+            work.mkdir()
+            make_project(work)
+            _init_git(work)
+            subprocess.run(["git", "-C", str(work), "remote", "add", "origin", str(origin)],
+                           check=True, capture_output=True)
+            head_before = subprocess.run(
+                ["git", "-C", str(work), "rev-parse", "HEAD"],
+                capture_output=True, text=True).stdout.strip()
+
+            # first publish → orphan gh-pages carrying both files
+            self.assertEqual(
+                board.publish_to_branch(work, {"board.html": "<h1>v1</h1>", "index.html": "i"},
+                                        "gh-pages", "p1"), "pushed")
+            tree = subprocess.run(["git", "-C", str(origin), "ls-tree", "-r", "--name-only",
+                                   "gh-pages"], capture_output=True, text=True).stdout
+            self.assertIn("board.html", tree)
+            self.assertIn("index.html", tree)
+
+            # the working tree and current branch are untouched
+            self.assertEqual(
+                subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                               capture_output=True, text=True).stdout.strip(), head_before)
+            self.assertFalse((work / "board.html").exists())
+            self.assertNotIn(board.TMP_BRANCH_PREFIX,
+                             subprocess.run(["git", "-C", str(work), "branch"],
+                                            capture_output=True, text=True).stdout)
+
+            # identical content → unchanged; changed content → pushed again
+            self.assertEqual(
+                board.publish_to_branch(work, {"board.html": "<h1>v1</h1>", "index.html": "i"},
+                                        "gh-pages", "p2"), "unchanged")
+            self.assertEqual(
+                board.publish_to_branch(work, {"board.html": "<h1>v2</h1>", "index.html": "i"},
+                                        "gh-pages", "p3"), "pushed")
 
 
 if __name__ == "__main__":

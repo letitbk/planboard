@@ -206,6 +206,23 @@ const EXEC_SECTIONS = [
   "Files to reuse",
 ];
 
+// Feature #3 — the human/agent split. Part 1 (human-readable) is shown on the
+// board; Part 2 (agent/technical) is collapsed under a toggle. These classify
+// the eight EXEC_SECTIONS; the literal "## Part 1 —" / "## Part 2 —" banner lines
+// in the template are the render/collapse boundary (see PlanReader).
+export const HUMAN_SECTIONS = [
+  "Goal and success criteria",
+  "Context",
+  "Scope decisions",
+];
+export const AGENT_SECTIONS = [
+  "Approach",
+  "Build steps",
+  "Verification",
+  "Out of scope",
+  "Files to reuse",
+];
+
 export function parseExecutionPlan(raw: string): ParsedExecutionPlan {
   const fail: ParsedExecutionPlan = {
     ok: false,
@@ -323,6 +340,7 @@ export function allFiles(data: {
     executionPlans: {
       versions: { path: string; content: string }[];
       draft?: { path: string; content: string };
+      draftSnapshots?: { path: string; content: string }[];
       results?: {
         manifestRaw: { path: string; content: string };
         report: { path: string; content: string } | null;
@@ -337,6 +355,7 @@ export function allFiles(data: {
   const out = [data.files.masterPlan, data.files.decisionLog];
   for (const g of data.files.executionPlans) {
     out.push(...g.versions);
+    out.push(...(g.draftSnapshots ?? []));
     if (g.draft) out.push(g.draft);
     for (const b of g.results ?? []) {
       out.push(b.manifestRaw);

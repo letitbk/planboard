@@ -29,8 +29,7 @@ Then restart Claude Code. See [QUICKSTART.md](QUICKSTART.md) for a walkthrough.
 | `/research-plans:sync` | Post-execution checkpoint. Update the tracker, catch unlogged decisions, version the plan if execution deviated. |
 | `/research-plans:review` | Two-stage review: first a pass/fail threshold (is this a plan at all: goal and success criteria, reasoned scope decisions, executable steps, a named verification plan, prospectivity, recorded revisions), then a quality grade if it passes. Always includes a split assessment. |
 | `/research-plans:results` | Capture a versioned results bundle for a component — brief report, figure/table snapshots, key numbers, script snapshots. `--adopt` brings pre-existing artifacts under verification. |
-| `/research-plans:status` | Show the tracker and flag drift. |
-| `/research-plans:board` | Open the board: a browser dashboard over everything, with live annotation or a shareable snapshot. |
+| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish` to a GitHub Pages URL. |
 
 Everything is opt-in. The plugin does nothing in projects you have not initialized.
 
@@ -44,7 +43,7 @@ It runs in two modes. **Live**: `/research-plans:board` starts a small local ser
 
 Plans say what the work will do; results bundles show what it did. `/research-plans:results` captures a **versioned, immutable bundle** per component at `plans/execution/<component>/results/rN/`: a brief agent-drafted report, snapshot copies of the figures and tables (sha256-verified against their sources; files over 5 MB are recorded by path + checksum instead of copied), the exact scripts that produced them, and the key numbers as metric tiles. Capture goes through a staging directory and an atomic rename, so a bundle either exists complete and validated or not at all. Re-running an analysis can never silently change what you verified — a redo is the next `rN`.
 
-On the board's Results view you review a bundle — report, stat tiles, figure/table gallery, and a per-artifact "produced by" script drawer with line-anchored comments — and issue a **verdict**: Accept, or Request changes with comments. The verdict flows back to your session, which records it (`verdict.json`, written once), logs it in the decision log, and marks the tracker `done (verified)` on accept. On request-changes, your comments drive script fixes and a re-run, captured as the next bundle. Verdicts are recorded acts, not gates: nothing blocks the tracker on unverified results, but `/research-plans:status` flags them.
+On the board's Results view you review a bundle — report, stat tiles, figure/table gallery, and a per-artifact "produced by" script drawer with line-anchored comments — and issue a **verdict**: Accept, or Request changes with comments. The verdict flows back to your session, which records it (`verdict.json`, written once), logs it in the decision log, and marks the tracker `done (verified)` on accept. On request-changes, your comments drive script fixes and a re-run, captured as the next bundle. Verdicts are recorded acts, not gates: nothing blocks the tracker on unverified results, but the board's Tracker flags them.
 
 Adopting the workflow mid-project? `/research-plans:results --adopt` scans your output folders, lets you pick which existing figures/tables matter, and files them as bundles marked `retrofit` — honest that no plan governed their production, reviewable and verifiable all the same.
 

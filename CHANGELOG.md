@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.0 (2026-07-07)
+
+Feature release — traceable iterations, a self-driving loop, human-readable
+plans, and link-shareable boards.
+
+- **Committed draft iterations**: every drafting round is snapshotted to
+  `plans/execution/<slug>/vN-draft-K.md` — flat committed files beside the
+  signed `vN.md`, so the path from first idea to signed version is traceable.
+  The sign-off gate's version regex and the draft gitignore both ignore these
+  names, so they commit with no gate change and no migration. The board shows a
+  read-only "iterations" track per version and diffs each step against its
+  predecessor; snapshots are never annotatable.
+- **Auto-chaining the workflow**: `/plan` auto-runs `/review` then opens the
+  board after a clean sign-off; `/sync` auto-proceeds into `/results` (the
+  per-component interview is preserved) then the board; `/results` opens the
+  board itself; `/init` recommends `/adopt` when it finds substantial prior
+  work. Each chain opens exactly one board — through the full `/board` workflow,
+  so verdicts and comments still route — after the sign-off gate's board closes.
+- **Human/agent plan split**: the execution-plan template separates `Part 1 —
+  For humans` (goal, context, scope decisions) from `Part 2 — For agents`
+  (approach, build steps, verification, files). The board shows Part 1 and
+  collapses Part 2 under a toggle, keeping a single annotation layer so comment
+  anchoring is unchanged.
+- **`/research-plans:board --publish`**: push the self-contained board to the
+  repo's GitHub Pages (`gh-pages`) for a stable, shareable URL — no artifacts,
+  no emailing HTML files. Runs through a throwaway git worktree that never
+  touches the working tree or current branch; builds on an existing `gh-pages`
+  or creates an orphan, dedupes no-op republishes, and warns about repo
+  visibility. Best-effort Pages-enable via `gh`.
+- **`/research-plans:status` retired**: its drift and hygiene checks (unsigned
+  versions, empty log, missing/mismatched Serves, unverified-done,
+  executed-work-with-no-plan, misfiled history, and more) now render in the
+  board's Tracker, where the reviewing already happens. The `/init` interview
+  also drops the collaborator question.
+- Design + review: brainstormed with the researcher; each feature's diff was
+  cross-model reviewed by Codex (GPT-5.5), with findings folded in.
+
 ## 0.7.0 (2026-07-07)
 
 Adoption release — the plugin now works at any project stage, including after the fact.
