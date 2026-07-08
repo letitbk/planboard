@@ -29,7 +29,7 @@ Then restart Claude Code. See [QUICKSTART.md](QUICKSTART.md) for a walkthrough.
 | `/research-plans:sync` | Post-execution checkpoint. Update the tracker, catch unlogged decisions, version the plan if execution deviated. |
 | `/research-plans:review` | Two-stage review: first a pass/fail threshold (is this a plan at all: goal and success criteria, reasoned scope decisions, executable steps, a named verification plan, prospectivity, recorded revisions), then a quality grade if it passes. Always includes a split assessment. |
 | `/research-plans:results` | Capture a versioned results bundle for a component — brief report, figure/table snapshots, key numbers, script snapshots. `--adopt` brings pre-existing artifacts under verification. |
-| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, or a shareable snapshot. |
+| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish` to a GitHub Pages URL. |
 
 Everything is opt-in. The plugin does nothing in projects you have not initialized.
 

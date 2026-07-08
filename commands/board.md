@@ -1,6 +1,6 @@
 ---
 description: Open the board — browser dashboard for the tracker, plans with version diffs, decision timeline, and rubric scorecards; annotate live or export a shareable snapshot
-argument-hint: [component name/number | --export | --share [component] | --collect <file>]
+argument-hint: [component name/number | --export | --share [component] | --publish | --collect <file>]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
