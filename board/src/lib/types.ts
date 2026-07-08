@@ -6,6 +6,12 @@ export interface BoardData {
   mode: "live" | "static" | "remote";
   focus: string | null;
   focusResults?: number | null; // --focus slug:rN opens the Results view on rN
+  drift?: {
+    // filesystem/git hygiene flags (feature #7); researcher modes only
+    staleBoardHtml: boolean | null;
+    leftoverStaging: string[];
+    sourceDrift: string[];
+  };
   shareHash?: string; // remote mode: Python-computed, echoed back in feedback
   gate?: { component: string; proposedVersion: number }; // sign-off gate mode
   gateBatch?: GateBatchEntry[]; // batch sign-off wizard (one plan at a time)

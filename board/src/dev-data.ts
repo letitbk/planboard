@@ -679,6 +679,11 @@ export const devData: BoardData = {
   generatedAt: "2026-07-02T12:00:00-04:00",
   mode: "live",
   focus: null,
+  drift: {
+    staleBoardHtml: true,
+    leftoverStaging: ["02-data-cleaning"],
+    sourceDrift: ["03-descriptives"],
+  },
   project: { name: "issp-immigration-dev", root: "/dev/sample" },
   git: {
     available: true,
@@ -692,6 +697,10 @@ export const devData: BoardData = {
       "plans/execution/02-data-cleaning/v2.md": {
         firstCommit: "2026-07-01T16:00:00-04:00",
         lastCommit: "2026-07-01T16:00:00-04:00",
+      },
+      "plans/execution/03-descriptives/v1.md": {
+        firstCommit: "2026-06-01T09:00:00-04:00",
+        lastCommit: "2026-06-01T09:00:00-04:00",
       },
     },
   },

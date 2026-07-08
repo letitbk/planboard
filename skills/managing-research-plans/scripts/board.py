@@ -40,6 +40,7 @@ from pathlib import Path
 # draft) matches the gate's hash (over the signed vN.md write). Must not drift.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from signoff_gate import normalize_plan  # noqa: E402
+from results import changed_sources  # noqa: E402
 
 TICKET_TTL = 7 * 24 * 3600  # 7 days — sized to a resumable multi-session adoption
 
@@ -265,6 +266,45 @@ def split_focus(focus):
     return focus, None
 
 
+def collect_drift(root, exec_groups):
+    """Filesystem/git hygiene flags for the Tracker: a stale exported board.html,
+    leftover results staging dirs, and bundles whose sources drifted since capture.
+    (14-day inactivity is computed client-side from git.fileDates.)"""
+    plans = root / "plans"
+    board_html = plans / "board.html"
+    stale_board = None
+    if board_html.is_file():
+        ignore = {"board.html", "board-share.html", ".board-feedback.md", ".board.lock"}
+        newest = 0.0
+        for p in plans.rglob("*"):
+            if p.is_file() and p.name not in ignore:
+                try:
+                    newest = max(newest, p.stat().st_mtime)
+                except OSError:
+                    continue
+        stale_board = board_html.stat().st_mtime < newest
+    leftover = sorted({
+        d.parent.parent.name  # .../<slug>/results/.staging-x
+        for d in plans.glob("execution/*/results/.staging-*")
+        if d.is_dir()
+    })
+    source_drift = []
+    for g in exec_groups:
+        if not g.get("results"):
+            continue
+        try:
+            _, changed = changed_sources(root, g["component"])
+        except Exception:
+            changed = []
+        if changed:
+            source_drift.append(g["component"])
+    return {
+        "staleBoardHtml": stale_board,
+        "leftoverStaging": leftover,
+        "sourceDrift": sorted(set(source_drift)),
+    }
+
+
 def collect_payload(root, mode, focus):
     plans = root / "plans"
     if not (plans / "master-plan.md").is_file():
@@ -379,6 +419,9 @@ def collect_payload(root, mode, focus):
             **({"history": history} if history is not None else {}),
         },
     }
+    if mode != "remote":
+        # Researcher-only hygiene flags; kept out of collaborator shares.
+        payload["drift"] = collect_drift(root, exec_groups)
     if mode == "live":
         payload["project"]["root"] = str(root)
     elif mode == "remote":

@@ -211,6 +211,49 @@ export default function Tracker({
     }
   }
 
+  // Filesystem/git hygiene (feature #7): board.py-provided flags, plus 14-day
+  // inactivity computed here from git.fileDates.
+  if (data.drift?.staleBoardHtml) {
+    drift.push({
+      text: "Exported board.html is older than newer files under plans/ — regenerate with /research-plans:board --export",
+    });
+  }
+  for (const slug of data.drift?.leftoverStaging ?? []) {
+    drift.push({
+      text: `${slug}: a leftover results/.staging-* dir — resume or remove the interrupted capture`,
+      slug,
+    });
+  }
+  for (const slug of data.drift?.sourceDrift ?? []) {
+    drift.push({
+      text: `${slug}: captured results no longer match the source files on disk (drifted)`,
+      slug,
+    });
+  }
+  const genMs = data.generatedAt ? Date.parse(data.generatedAt) : NaN;
+  const fileDates = data.git?.fileDates ?? {};
+  if (data.git?.available && !Number.isNaN(genMs)) {
+    for (const r of mp.components) {
+      if (r.status !== "in progress") continue;
+      const slug = slugFromLink(r.planLink);
+      const g = slug
+        ? data.files.executionPlans.find((x) => x.component === slug)
+        : null;
+      if (!g) continue;
+      let last = 0;
+      for (const f of [...g.versions, ...(g.draftSnapshots ?? [])]) {
+        const d = fileDates[f.path]?.lastCommit;
+        if (d) last = Math.max(last, Date.parse(d));
+      }
+      if (last > 0 && genMs - last > 14 * 24 * 3600 * 1000) {
+        drift.push({
+          text: `${r.component} is in progress but has had no git activity in 14+ days`,
+          slug: slug ?? undefined,
+        });
+      }
+    }
+  }
+
   const body = (
     <>
       <div className="mb-1 flex items-baseline justify-between">

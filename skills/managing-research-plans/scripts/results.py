@@ -256,20 +256,19 @@ def cmd_verdict(root, args):
     print(str(vp))
 
 
-def cmd_changed(root, args):
-    comp = component_dir(root, args.component)
-    results_dir = comp / "results"
+def changed_sources(root, component):
+    """(latest_version, [{path, why}]) for the latest bundle's drifted sources.
+    latest is None when the component has no bundles; the list is empty when the
+    manifest is missing/unreadable or nothing drifted. Reusable by the board."""
+    results_dir = component_dir(root, component) / "results"
     latest = next_version(results_dir) - 1
     if latest < 1:
-        print(json.dumps({"latest": None, "changed": [], "note": "no bundles yet"}))
-        return
+        return None, []
     manifest_p = results_dir / ("r%d" % latest) / "manifest.json"
     try:
         manifest = json.loads(manifest_p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        print(json.dumps({"latest": latest, "changed": [],
-                          "note": "manifest unreadable"}))
-        return
+        return latest, []
     changed = []
     for art in manifest.get("artifacts", []):
         src = art.get("source", {})
@@ -281,6 +280,14 @@ def cmd_changed(root, args):
             changed.append({"path": rel, "why": "source deleted"})
         elif src.get("sha256") and sha256_file(sp) != src["sha256"]:
             changed.append({"path": rel, "why": "content changed"})
+    return latest, changed
+
+
+def cmd_changed(root, args):
+    latest, changed = changed_sources(root, args.component)
+    if latest is None:
+        print(json.dumps({"latest": None, "changed": [], "note": "no bundles yet"}))
+        return
     print(json.dumps({"latest": latest, "changed": changed}, indent=1))
 
 

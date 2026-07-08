@@ -540,5 +540,38 @@ class TestPublish(unittest.TestCase):
                                         "gh-pages", "p3"), "pushed")
 
 
+class TestDrift(unittest.TestCase):
+    def test_collect_drift_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)  # seeds a .staging-zz dir and a bundle whose source is absent
+            drift = board.collect_payload(root, "static", None)["drift"]
+            self.assertIn("01-data-prep", drift["leftoverStaging"])
+            self.assertIn("01-data-prep", drift["sourceDrift"])
+            self.assertIsNone(drift["staleBoardHtml"])  # no board.html yet
+
+    def test_stale_board_html(self):
+        import os
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            bh = root / "plans" / "board.html"
+            bh.write_text("<html></html>", encoding="utf-8")
+            future = time.time() + 100
+            os.utime(root / "plans" / "master-plan.md", (future, future))
+            self.assertTrue(
+                board.collect_payload(root, "static", None)["drift"]["staleBoardHtml"])
+            os.utime(bh, (future + 200, future + 200))
+            self.assertFalse(
+                board.collect_payload(root, "static", None)["drift"]["staleBoardHtml"])
+
+    def test_drift_omitted_from_remote_share(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            self.assertNotIn("drift", board.collect_payload(root, "remote", None))
+
+
 if __name__ == "__main__":
     unittest.main()
