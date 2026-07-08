@@ -206,6 +206,23 @@ const EXEC_SECTIONS = [
   "Files to reuse",
 ];
 
+// Feature #3 — the human/agent split. Part 1 (human-readable) is shown on the
+// board; Part 2 (agent/technical) is collapsed under a toggle. These classify
+// the eight EXEC_SECTIONS; the literal "## Part 1 —" / "## Part 2 —" banner lines
+// in the template are the render/collapse boundary (see PlanReader).
+export const HUMAN_SECTIONS = [
+  "Goal and success criteria",
+  "Context",
+  "Scope decisions",
+];
+export const AGENT_SECTIONS = [
+  "Approach",
+  "Build steps",
+  "Verification",
+  "Out of scope",
+  "Files to reuse",
+];
+
 export function parseExecutionPlan(raw: string): ParsedExecutionPlan {
   const fail: ParsedExecutionPlan = {
     ok: false,

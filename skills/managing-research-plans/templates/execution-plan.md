@@ -9,6 +9,13 @@ Supersedes: v<N-1> — <one line: what changed and why>
      rubric item. Cite each claim to its dated source or commit; tag anything reconstructed
      with hindsight inline as (reconstructed), the same honesty move as history.md's Uncertain. -->
 
+## Part 1 — For humans (the what & why)
+
+<!-- The human-readable half: what this component is for and why. A coauthor with no chat
+     context should be able to read Part 1 alone and understand the work. On the board,
+     Part 1 is shown and Part 2 is collapsed under a toggle. Keep the "## Part 1 —"/"## Part 2 —"
+     banner lines verbatim: the board splits the plan on them. -->
+
 ## Goal and success criteria
 
 Serves: <RQ numbers from the master plan, e.g. `RQ1` or `RQ1, RQ2`; `—` for infrastructure>
@@ -30,6 +37,11 @@ Stopping rule: <only for an iterated component — a collection round, a pilot/r
 | <e.g., sample restriction> | <chosen option> | <one-line reason> |
 
 <Every substantive dimension of the design gets a row: what was chosen and why. The reason column is what a reader checks first. A list is fine instead of a table for small components.>
+
+## Part 2 — For agents (the how)
+
+<!-- The technical half: how to execute. On the board this is collapsed by default under the
+     "Part 2 — For agents" toggle. -->
 
 ## Approach
 

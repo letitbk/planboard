@@ -3,7 +3,12 @@ import Markdown from "../components/Markdown";
 import DiffView from "../components/DiffView";
 import AnnotationLayer from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
-import { parseExecutionPlan, parseMasterPlan, parseServes } from "../lib/parse";
+import {
+  AGENT_SECTIONS,
+  parseExecutionPlan,
+  parseMasterPlan,
+  parseServes,
+} from "../lib/parse";
 import type {
   Annotation,
   BoardData,
@@ -76,6 +81,10 @@ export default function PlanReader({
   useEffect(() => setDocIdx(docs.length - 1), [group?.component, docs.length]);
   const doc = docs[Math.min(docIdx, docs.length - 1)] ?? null;
 
+  // Part 2 (agent/technical half) collapse state; reset when the shown doc changes.
+  const [agentOpen, setAgentOpen] = useState(false);
+  useEffect(() => setAgentOpen(false), [doc?.path]);
+
   const prevDoc = useMemo(() => {
     if (!doc) return null;
     const before = docs.filter(
@@ -96,15 +105,20 @@ export default function PlanReader({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollToSection = useCallback((heading: string) => {
-    const host = scrollRef.current;
-    if (!host) return;
-    const h2s = host.querySelectorAll("h2");
-    for (const h of h2s) {
-      if ((h.textContent ?? "").trim() === heading) {
-        h.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
+    // Agent sections sit in the collapsed Part 2 — open it, then scroll once the
+    // DOM has reflowed.
+    if (AGENT_SECTIONS.includes(heading)) setAgentOpen(true);
+    const doScroll = () => {
+      const host = scrollRef.current;
+      if (!host) return;
+      for (const h of host.querySelectorAll("h2")) {
+        if ((h.textContent ?? "").trim() === heading) {
+          h.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
       }
-    }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, []);
 
   const docAnnotations = useMemo(
@@ -153,25 +167,43 @@ export default function PlanReader({
           ))}
         </ul>
 
-        {parsed?.ok && (
-          <>
-            <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-              Sections
-            </h2>
-            <ul className="space-y-0.5">
-              {parsed.sections.map((s) => (
-                <li key={s.heading}>
-                  <button
-                    className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100"
-                    onClick={() => scrollToSection(s.heading)}
-                  >
-                    {s.heading}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+        {parsed?.ok &&
+          (
+            [
+              {
+                label: "Part 1 · for humans",
+                items: parsed.sections.filter(
+                  (s) => !AGENT_SECTIONS.includes(s.heading),
+                ),
+              },
+              {
+                label: "Part 2 · for agents",
+                items: parsed.sections.filter((s) =>
+                  AGENT_SECTIONS.includes(s.heading),
+                ),
+              },
+            ] as const
+          ).map((grp) =>
+            grp.items.length === 0 ? null : (
+              <div key={grp.label}>
+                <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                  {grp.label}
+                </h2>
+                <ul className="space-y-0.5">
+                  {grp.items.map((s) => (
+                    <li key={s.heading}>
+                      <button
+                        className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100"
+                        onClick={() => scrollToSection(s.heading)}
+                      >
+                        {s.heading}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ),
+          )}
       </aside>
 
       {/* Main pane */}
@@ -309,10 +341,18 @@ export default function PlanReader({
                   })
                 }
               >
-                <Markdown source={doc.content} />
+                <PlanBody
+                content={doc.content}
+                open={agentOpen}
+                onToggle={() => setAgentOpen((o) => !o)}
+              />
               </AnnotationLayer>
             ) : (
-              <Markdown source={doc.content} />
+              <PlanBody
+                content={doc.content}
+                open={agentOpen}
+                onToggle={() => setAgentOpen((o) => !o)}
+              />
             )}
             {parsed?.ok && (
               <div className="mt-4 border-t border-stone-100 pt-3 text-xs">
@@ -336,5 +376,76 @@ export default function PlanReader({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Split a plan on its "## Part 2 —" banner. Returns the human half, the agent
+ * half (everything after the Part-2 heading line), and the heading text for the
+ * toggle. Old-format plans with no banner return agent:null (rendered whole).
+ */
+function splitParts(content: string): {
+  human: string;
+  agent: string | null;
+  heading: string;
+} {
+  const m = /^## Part 2\b[^\n]*$/m.exec(content);
+  if (!m) return { human: content, agent: null, heading: "" };
+  return {
+    human: content.slice(0, m.index),
+    agent: content.slice(m.index + m[0].length),
+    heading: m[0].replace(/^##\s*/, "").trim(),
+  };
+}
+
+/**
+ * Renders a plan body with Part 2 (the agent/technical half) collapsed under a
+ * toggle. Both halves stay inside the caller's single AnnotationLayer container,
+ * so comment anchoring — occurrence-counted over the whole rendered text — is
+ * unchanged. The collapsed half is clipped (max-h-0), never unmounted, so its
+ * painted highlights survive and reveal on expand. The toggle's label is the
+ * verbatim Part-2 heading text, keeping the container's text content identical
+ * to a single-blob render.
+ */
+function PlanBody({
+  content,
+  open,
+  onToggle,
+}: {
+  content: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { human, agent, heading } = splitParts(content);
+  if (agent === null) return <Markdown source={content} />;
+  return (
+    <>
+      <Markdown source={human} />
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="mt-4 flex w-full items-center gap-2 border-t border-stone-200 pt-4 text-left text-lg font-bold text-stone-900 hover:text-stone-600"
+      >
+        <svg
+          className={`h-4 w-4 shrink-0 text-stone-400 transition-transform ${open ? "rotate-90" : ""}`}
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M6 4l4 4-4 4"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        {heading}
+      </button>
+      <div className={open ? "mt-2" : "max-h-0 overflow-hidden"} aria-hidden={!open}>
+        <Markdown source={agent} />
+      </div>
+    </>
   );
 }

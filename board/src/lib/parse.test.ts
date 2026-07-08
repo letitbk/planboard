@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  AGENT_SECTIONS,
+  HUMAN_SECTIONS,
   allFiles,
   parseDecisionLog,
   parseExecutionPlan,
@@ -133,6 +135,22 @@ describe("execution plan parsing (contract: current template)", () => {
     ]);
     expect(ep.goal).not.toBeNull();
     expect(ep.serves).toContain("RQ");
+  });
+
+  it("keeps all eight sections when the human/agent Part banners are present", () => {
+    const raw = read(join(TEMPLATES, "execution-plan.md"));
+    expect(raw).toContain("## Part 1 — For humans");
+    expect(raw).toContain("## Part 2 — For agents");
+    const ep = parseExecutionPlan(raw);
+    expect(ep.ok).toBe(true);
+    // Part banners are not counted as content sections.
+    const headings = ep.sections.map((s) => s.heading);
+    expect(headings).not.toContain("Part 1 — For humans (the what & why)");
+    expect(headings.length).toBe(8);
+    // The human/agent partition classifies exactly the eight sections.
+    expect([...HUMAN_SECTIONS, ...AGENT_SECTIONS].slice().sort()).toEqual(
+      headings.slice().sort(),
+    );
   });
 
   it("parses goal, serves, version, supersedes, sign-off from dev-data v2", () => {

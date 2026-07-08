@@ -102,6 +102,8 @@ const cleaningV2 = `# Data Cleaning — Execution Plan v2
 Component: \`02-data-cleaning\` · Master plan: [master-plan.md](../../master-plan.md) · Date: 2026-07-01
 Supersedes: v1 — duplicated household IDs discovered in two countries; added an explicit exclusion rule.
 
+## Part 1 — For humans (the what & why)
+
 ## Goal and success criteria
 
 Serves: RQ1, RQ2
@@ -119,6 +121,8 @@ Prepare the ISSP extract for analysis: recode missing values, harmonize country 
 | Missing codes | Recode 97/98 to NA | Codebook lists them as refusals |
 | Countries | Keep all 31 | Attrition handled at modeling stage |
 | Duplicates | Drop exact duplicates only | Household IDs collide in two countries; partial matches kept |
+
+## Part 2 — For agents (the how)
 
 ## Approach
 
