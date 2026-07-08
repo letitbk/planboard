@@ -109,4 +109,4 @@ If you change any artifact format (templates or the commands that write them), t
 
 ## License
 
-MIT
+[PolyForm Noncommercial License 1.0.0](LICENSE). Free to use, modify, and share for any **noncommercial** purpose — academic research, teaching, personal, and non-profit use all qualify. Commercial use is not permitted without a separate license; contact the author.
