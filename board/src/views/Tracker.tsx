@@ -129,10 +129,11 @@ export default function Tracker({
     );
   };
 
-  // Drift & hygiene checks folded in from the retired /status command. These are
-  // all computed from the payload already present. Four filesystem-only checks
+  // Drift & hygiene checks folded in from the retired /status command. Most are
+  // computed from the payload already present; the four filesystem/git checks
   // (stale board.html, leftover staging dirs, verified-source drift, 14-day
-  // inactivity) need new board.py payload fields and are not yet surfaced here.
+  // inactivity) use board.py's `drift` payload field plus git.fileDates and are
+  // surfaced below (feature #7).
   type Drift = { text: string; slug?: string };
   const drift: Drift[] = [];
   const rqNums = new Set(mp.researchQuestions.map((q) => q.num));

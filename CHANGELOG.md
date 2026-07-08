@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1 (2026-07-08)
+
+- **Filesystem/git drift checks in the Tracker** (the last checks from the
+  retired `/status`, now folded into the board): a stale `board.html` (older
+  than the newest file under `plans/`), leftover results staging directories,
+  verified-source drift (a bundle's producing script changed since capture),
+  and components in progress with no git activity in 14+ days. All surface in
+  the board's Drift & hygiene panel; none appear in a remote share.
+
 ## 0.9.0 (2026-07-08)
 
 Feature release — one-click agent review across every plan document.

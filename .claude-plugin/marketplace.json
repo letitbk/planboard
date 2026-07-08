@@ -10,7 +10,7 @@
       "name": "research-plans",
       "source": "./",
       "description": "Plan-based AI research workflows: master plan with tracker, versioned execution plans, decision log, plan-quality rubric, and a browser board for review and annotation.",
-      "version": "0.9.0",
+      "version": "0.9.1",
       "author": {
         "name": "Byungkyu Lee"
       }
