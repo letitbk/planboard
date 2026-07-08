@@ -3,10 +3,12 @@ import AnnotationLayer, {
   GeneralCommentBox,
   type AnchoredSelection,
 } from "../components/AnnotationLayer";
+import ReviewMenu from "../components/ReviewMenu";
 import type {
   Annotation,
   BoardData,
   DocCommentAnnotation,
+  ReviewRequest,
   TrackerStatus,
 } from "../lib/types";
 import {
@@ -41,6 +43,8 @@ export default function Tracker({
   onOpenComponent,
   onOpenResults,
   onAddGeneral,
+  canPost,
+  onRequestReview,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -54,6 +58,8 @@ export default function Tracker({
   onOpenComponent: (slug: string | null, name: string) => void;
   onOpenResults: (slug: string) => void;
   onAddGeneral: (view: string, comment: string) => void;
+  canPost?: boolean;
+  onRequestReview?: (req: ReviewRequest) => void;
 }) {
   const mp = parseMasterPlan(data.files.masterPlan.content);
 
@@ -184,7 +190,7 @@ export default function Tracker({
       ) {
         drift.push({
           text: `${r.component} is done but results r${latestResult.resultsVersion} are unverified`,
-          slug,
+          slug: slug ?? undefined,
         });
       }
       const latestV = g.versions[g.versions.length - 1];
@@ -193,7 +199,7 @@ export default function Tracker({
         if (prov && /retrospective/i.test(prov)) {
           drift.push({
             text: `${r.component} is in progress but its latest plan is retrospective — write a prospective v${latestV.version + 1}`,
-            slug,
+            slug: slug ?? undefined,
           });
         }
       }
@@ -213,13 +219,20 @@ export default function Tracker({
 
   const body = (
     <>
-      <div className="mb-1 flex items-baseline justify-between">
+      <div className="mb-1 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-stone-900">{mp.title}</h1>
-        {mp.lastUpdated && (
-          <span className="text-xs text-stone-500">
-            Last updated {mp.lastUpdated}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {mp.lastUpdated && (
+            <span className="text-xs text-stone-500">
+              Last updated {mp.lastUpdated}
+            </span>
+          )}
+          {canPost && !data.gate && onRequestReview && (
+            <ReviewMenu
+              onPick={(agent) => onRequestReview({ agent, scope: "master" })}
+            />
+          )}
+        </div>
       </div>
 
       <div

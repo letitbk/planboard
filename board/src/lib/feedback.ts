@@ -5,6 +5,7 @@ import type {
   Annotation,
   BoardData,
   DocCommentAnnotation,
+  ReviewRequest,
   VerdictRequest,
 } from "./types";
 
@@ -18,6 +19,7 @@ export interface FeedbackMeta {
   shareHash: string | null;
   annotations: Annotation[];
   verdict?: VerdictRequest | null;
+  reviewRequest?: ReviewRequest | null; // agent plan review (v0.9)
 }
 
 export function newSessionId(): string {
@@ -52,10 +54,25 @@ export const VIEW_LABEL: Record<DocCommentAnnotation["view"], string> = {
 export function buildFeedbackMarkdown(
   annotations: Annotation[],
   verdict: VerdictRequest | null,
+  reviewRequest?: ReviewRequest | null,
 ): string {
-  if (annotations.length === 0 && !verdict)
+  if (annotations.length === 0 && !verdict && !reviewRequest)
     return "# Board Feedback\n\nNo feedback.";
   const lines: string[] = ["# Board Feedback", ""];
+  if (reviewRequest) {
+    const t =
+      reviewRequest.scope === "plan"
+        ? `${reviewRequest.component} v${reviewRequest.version}${reviewRequest.isDraft ? " (draft)" : ""}`
+        : reviewRequest.scope === "results"
+          ? `${reviewRequest.component} r${reviewRequest.resultsVersion}`
+          : "master plan";
+    lines.push(
+      `## REVIEW REQUEST: ${reviewRequest.agent} on ${t}`,
+      "",
+      "Run this reviewer on the target, then reopen the board with its comments seeded.",
+      "",
+    );
+  }
   if (verdict) {
     lines.push(
       `## VERDICT: ${verdict.status.toUpperCase()} — ${verdict.component} r${verdict.resultsVersion}`,
@@ -78,7 +95,7 @@ export function buildFeedbackMarkdown(
     switch (a.type) {
       case "plan-comment": {
         const head = `${a.component} v${a.version}${a.isDraft ? " (draft)" : ""}${a.sectionHeading ? ` — ${a.sectionHeading}` : ""}`;
-        lines.push(`## ${i + 1}. [${head}]`);
+        lines.push(`## ${i + 1}. [${head}]${a.author ? ` (via ${a.author})` : ""}`);
         lines.push(`Feedback on: "${a.quote}"`);
         break;
       }
@@ -89,7 +106,9 @@ export function buildFeedbackMarkdown(
             : a.target.kind === "metric"
               ? `metric ${a.target.metricLabel}`
               : "report";
-        lines.push(`## ${i + 1}. [${a.component} r${a.resultsVersion} — ${t}]`);
+        lines.push(
+          `## ${i + 1}. [${a.component} r${a.resultsVersion} — ${t}]${a.author ? ` (via ${a.author})` : ""}`,
+        );
         if (a.target.quote) lines.push(`Feedback on: "${a.target.quote}"`);
         break;
       }
@@ -102,7 +121,7 @@ export function buildFeedbackMarkdown(
       }
       case "doc-comment": {
         const head = `${VIEW_LABEL[a.view]}${a.sectionHeading ? ` — ${a.sectionHeading}` : ""}`;
-        lines.push(`## ${i + 1}. [${head}]`);
+        lines.push(`## ${i + 1}. [${head}]${a.author ? ` (via ${a.author})` : ""}`);
         lines.push(`Feedback on: "${a.quote}"`);
         break;
       }

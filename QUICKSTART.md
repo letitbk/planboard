@@ -69,7 +69,7 @@ The review runs in two stages. First a threshold: is this a plan at all? Nine pa
 /research-plans:board
 ```
 
-This opens a dashboard in your browser: the tracker as a status board, every plan version with diffs, the decision log as a timeline, and saved review scorecards. It is also where reviewing a plan feels best: select any text to attach a comment, add general comments on any view, then press "Send to Claude". Your comments come back to the session, where Claude walks through them with you, proposes plan revisions where you approved changes, and records the exchange in the decision log.
+This opens a dashboard in your browser: the tracker as a status board, every plan version with diffs, the decision log as a timeline, and saved review scorecards. It is also where reviewing a plan feels best: select any text to attach a comment, add general comments on any view, then press "Send to Claude". Your comments come back to the session, where Claude walks through them with you, proposes plan revisions where you approved changes, and records the exchange in the decision log. Don't want to write the feedback yourself? Press **Review with** (on a plan, the master plan, or a results bundle) and Codex, Gemini, or a Claude subagent produces the section-anchored comments for you — they land on the board as pending annotations you curate, then route exactly like your own.
 
 To share the project state with someone who does not use Claude Code:
 

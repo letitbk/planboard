@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "../components/Markdown";
 import DiffView from "../components/DiffView";
 import AnnotationLayer from "../components/AnnotationLayer";
+import ReviewMenu from "../components/ReviewMenu";
 import { Notice } from "./Tracker";
 import {
   AGENT_SECTIONS,
@@ -15,6 +16,7 @@ import type {
   DraftSnapshotFile,
   ExecutionPlanGroup,
   PlanCommentAnnotation,
+  ReviewRequest,
 } from "../lib/types";
 
 type DocKind = "signed" | "workingDraft" | "draftSnapshot";
@@ -45,6 +47,8 @@ export default function PlanReader({
   onAddPlanComment,
   onPaintResult,
   onOpenResults,
+  canPost,
+  onRequestReview,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -60,6 +64,8 @@ export default function PlanReader({
     scopeAbsent: Set<string>,
   ) => void;
   onOpenResults: (slug: string) => void;
+  canPost?: boolean;
+  onRequestReview?: (req: ReviewRequest) => void;
 }) {
   const groups = data.files.executionPlans;
   const group =
@@ -284,16 +290,32 @@ export default function PlanReader({
               </button>
             ),
           )}
-          {prevDoc && (
-            <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-stone-600">
-              <input
-                type="checkbox"
-                checked={diffOn}
-                onChange={(e) => setDiffOn(e.target.checked)}
+          <div className="ml-auto flex items-center gap-2">
+            {canPost && !data.gate && onRequestReview && doc.docKind !== "draftSnapshot" && (
+              <ReviewMenu
+                onPick={(agent) =>
+                  onRequestReview({
+                    agent,
+                    scope: "plan",
+                    component: group.component,
+                    version: doc.version,
+                    planPath: doc.path,
+                    isDraft: doc.isDraft,
+                  })
+                }
               />
-              Diff vs {docLabel(prevDoc)}
-            </label>
-          )}
+            )}
+            {prevDoc && (
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-stone-600">
+                <input
+                  type="checkbox"
+                  checked={diffOn}
+                  onChange={(e) => setDiffOn(e.target.checked)}
+                />
+                Diff vs {docLabel(prevDoc)}
+              </label>
+            )}
+          </div>
         </div>
 
         {docs.some((d) => d.docKind === "draftSnapshot") && (

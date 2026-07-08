@@ -19,7 +19,9 @@ import type {
   DocCommentAnnotation,
   PlanCommentAnnotation,
   ResultCommentAnnotation,
+  ReviewRequest,
   ScriptCommentAnnotation,
+  SeededAnnotation,
   VerdictRequest,
 } from "./lib/types";
 
@@ -37,6 +39,75 @@ let idCounter = 0;
 function nextId(): string {
   idCounter += 1;
   return `ann-${Date.now().toString(36)}-${idCounter}`;
+}
+
+// Agent plan review (v0.9). Scope-aware identity for a seeded reviewer comment,
+// used to make ingestion one-shot (see the annotations initializer): a dismissed
+// seed must not re-add on reload, and reopening must never double it.
+function seedDedupKey(s: SeededAnnotation): string {
+  const scope = s.scope ?? "plan";
+  // Plan scope keeps the original (unprefixed) key `planPath|quote|comment|author`
+  // so a plan seed dismissed under Phase 1-3 stays dismissed after upgrading;
+  // master/results get scope-prefixed keys that never collide with a plan path.
+  if (scope === "plan") return `${s.planPath}|${s.quote}|${s.comment}|${s.author}`;
+  const target =
+    scope === "results" ? `${s.component}|r${s.resultsVersion}` : "master";
+  return `${scope}|${target}|${s.quote}|${s.comment}|${s.author}`;
+}
+
+// Convert a reviewer seed into a pending annotation of the right type for its
+// scope: plan → plan-comment, master → doc-comment (tracker), results →
+// result-comment (report target). Seeds arrive unanchored (anchored:false) and
+// paint in-browser at first quote match; occurrenceIndex 0 anchors the first
+// match (section-aware disambiguation is a later hardening).
+function seedToAnnotation(s: SeededAnnotation): Annotation {
+  const scope = s.scope ?? "plan";
+  if (scope === "master") {
+    return {
+      id: nextId(),
+      type: "doc-comment",
+      view: "tracker",
+      docKey: "tracker",
+      scope: "",
+      quote: s.quote,
+      prefix: "",
+      suffix: "",
+      sectionHeading: s.sectionHeading,
+      occurrenceIndex: 0,
+      anchored: false,
+      comment: s.comment,
+      author: s.author,
+    };
+  }
+  if (scope === "results") {
+    return {
+      id: nextId(),
+      type: "result-comment",
+      component: s.component ?? "",
+      resultsVersion: s.resultsVersion ?? 0,
+      target: { kind: "report", quote: s.quote, occurrenceIndex: 0 },
+      anchored: false,
+      comment: s.comment,
+      author: s.author,
+    };
+  }
+  return {
+    id: nextId(),
+    type: "plan-comment",
+    planPath: s.planPath ?? "",
+    component: s.component ?? "",
+    version: s.version ?? 0,
+    isDraft: s.isDraft ?? false,
+    quote: s.quote,
+    prefix: "",
+    suffix: "",
+    sectionHeading: s.sectionHeading,
+    scope: "",
+    occurrenceIndex: 0,
+    anchored: false,
+    comment: s.comment,
+    author: s.author,
+  };
 }
 
 export default function App({ data }: { data: BoardData }) {
@@ -67,14 +138,34 @@ export default function App({ data }: { data: BoardData }) {
   );
   const [annotations, setAnnotations] = useState<Annotation[]>(() => {
     if (!canAnnotate) return [];
+    let base: Annotation[] = [];
     try {
       const saved = localStorage.getItem(storageKey);
-      return saved ? (JSON.parse(saved) as Annotation[]) : [];
+      base = saved ? (JSON.parse(saved) as Annotation[]) : [];
     } catch {
-      return [];
+      base = [];
     }
+    // Agent plan review (v0.9): reviewer comments arrive unanchored and paint
+    // in-browser at first quote match (see seedToAnnotation). One-shot per board
+    // session: `${storageKey}:seeded` records which reviewer comments have already
+    // been ingested, so deleting one and reloading before Send does not re-add it
+    // (curation must stick), and reopening never doubles.
+    let ingested: Set<string>;
+    try {
+      ingested = new Set(
+        JSON.parse(localStorage.getItem(`${storageKey}:seeded`) ?? "[]") as string[],
+      );
+    } catch {
+      ingested = new Set();
+    }
+    const seeded: Annotation[] = (data.seededAnnotations ?? [])
+      .filter((s) => !ingested.has(seedDedupKey(s)))
+      .map(seedToAnnotation);
+    return [...base, ...seeded];
   });
-  const [drawerOpen, setDrawerOpen] = useState(gate !== null);
+  const [drawerOpen, setDrawerOpen] = useState(
+    gate !== null || (data.seededAnnotations?.length ?? 0) > 0,
+  );
   const [submitState, setSubmitState] = useState<
     "idle" | "sending" | "sent" | "approved" | "denied" | "failed" | "downloaded"
   >("idle");
@@ -104,6 +195,23 @@ export default function App({ data }: { data: BoardData }) {
       // storage full/unavailable — annotations still live in memory
     }
   }, [annotations, canAnnotate, storageKey]);
+
+  // Record seeded reviewer comments as ingested (one-shot) — see the annotations
+  // initializer. Runs once so a dismissed seed is not re-added on reload.
+  useEffect(() => {
+    const seeds = data.seededAnnotations ?? [];
+    if (!canAnnotate || seeds.length === 0) return;
+    try {
+      const prev = new Set<string>(
+        JSON.parse(localStorage.getItem(`${storageKey}:seeded`) ?? "[]"),
+      );
+      for (const s of seeds) prev.add(seedDedupKey(s));
+      localStorage.setItem(`${storageKey}:seeded`, JSON.stringify([...prev]));
+    } catch {
+      // storage unavailable — one-shot degrades to memory only
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const addPlanComment = useCallback(
     (a: Omit<PlanCommentAnnotation, "id" | "type">) => {
@@ -193,6 +301,17 @@ export default function App({ data }: { data: BoardData }) {
             changed = true;
             return { ...a, anchored };
           }
+          if (a.type === "result-comment") {
+            // Only seeded reviewer comments track anchoring (anchored defined);
+            // researcher-selected ones stay untracked (no badge). Sticky-promote:
+            // once painted it stays anchored, so switching bundles — where this
+            // comment isn't in the pass's painted set — never clobbers it back.
+            if (a.anchored === undefined) return a;
+            const anchored = a.anchored || painted.has(a.id);
+            if (a.anchored === anchored) return a;
+            changed = true;
+            return { ...a, anchored };
+          }
           return a;
         });
         return changed ? next : prev;
@@ -233,6 +352,49 @@ export default function App({ data }: { data: BoardData }) {
           feedbackMarkdown,
           payloadHash,
           feedbackDocument,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSubmitState("sent");
+      setPendingVerdict(null);
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {
+        // ignore
+      }
+    } catch {
+      setSubmitState("failed");
+    }
+  };
+
+  // Agent plan review (v0.9): submit a review-request through the same feedback
+  // channel. Any pending manual comments ride along and get routed first; the
+  // session then runs the reviewer and reopens the board with its comments seeded.
+  const requestReview = async (req: ReviewRequest) => {
+    const md = buildFeedbackMarkdown(annotations, pendingVerdict, req);
+    const doc = buildFeedbackDocument(md, {
+      sessionId,
+      generatedAt: data.generatedAt,
+      mode: data.mode,
+      focus: data.focus,
+      reviewer: remote ? reviewer.trim() || "anonymous reviewer" : null,
+      payloadHash,
+      shareHash: data.shareHash ?? null,
+      annotations,
+      verdict: pendingVerdict,
+      reviewRequest: req,
+    });
+    setSubmitState("sending");
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          annotations,
+          feedbackMarkdown: md,
+          payloadHash,
+          feedbackDocument: doc,
+          reviewRequest: req,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -434,6 +596,8 @@ export default function App({ data }: { data: BoardData }) {
               setSelectedComponent(slug);
               setTab("results");
             }}
+            canPost={canPost}
+            onRequestReview={requestReview}
           />
         )}
         {tab === "plans" && (
@@ -449,6 +613,8 @@ export default function App({ data }: { data: BoardData }) {
               setSelectedComponent(slug);
               setTab("results");
             }}
+            canPost={canPost}
+            onRequestReview={requestReview}
           />
         )}
         {tab === "results" && (
@@ -464,6 +630,7 @@ export default function App({ data }: { data: BoardData }) {
             onPaintResult={onPaintResult}
             onVerdict={onVerdict}
             focusResults={data.focusResults ?? null}
+            onRequestReview={requestReview}
           />
         )}
         {tab === "timeline" && (
@@ -520,6 +687,11 @@ export default function App({ data }: { data: BoardData }) {
                         {a.isDraft ? " (draft)" : ""}
                       </span>
                       {a.sectionHeading && <span>· {a.sectionHeading}</span>}
+                      {a.author && (
+                        <span className="rounded bg-violet-100 px-1 py-0.5 font-medium text-violet-700">
+                          via {a.author}
+                        </span>
+                      )}
                       {!a.anchored && (
                         <span className="rounded bg-stone-100 px-1 py-0.5">
                           unanchored
@@ -527,14 +699,26 @@ export default function App({ data }: { data: BoardData }) {
                       )}
                     </>
                   ) : a.type === "result-comment" ? (
-                    <span className="font-medium text-stone-700">
-                      {a.component} r{a.resultsVersion} ·{" "}
-                      {a.target.kind === "artifact"
-                        ? a.target.artifactId
-                        : a.target.kind === "metric"
-                          ? a.target.metricLabel
-                          : "report"}
-                    </span>
+                    <>
+                      <span className="font-medium text-stone-700">
+                        {a.component} r{a.resultsVersion} ·{" "}
+                        {a.target.kind === "artifact"
+                          ? a.target.artifactId
+                          : a.target.kind === "metric"
+                            ? a.target.metricLabel
+                            : "report"}
+                      </span>
+                      {a.author && (
+                        <span className="rounded bg-violet-100 px-1 py-0.5 font-medium text-violet-700">
+                          via {a.author}
+                        </span>
+                      )}
+                      {a.anchored === false && (
+                        <span className="rounded bg-stone-100 px-1 py-0.5">
+                          unanchored
+                        </span>
+                      )}
+                    </>
                   ) : a.type === "script-comment" ? (
                     <span className="font-medium text-stone-700">
                       {a.script.split("/").pop()} L{a.lineStart}
@@ -546,6 +730,11 @@ export default function App({ data }: { data: BoardData }) {
                         {VIEW_LABEL[a.view]}
                       </span>
                       {a.sectionHeading && <span>· {a.sectionHeading}</span>}
+                      {a.author && (
+                        <span className="rounded bg-violet-100 px-1 py-0.5 font-medium text-violet-700">
+                          via {a.author}
+                        </span>
+                      )}
                       {!a.anchored && (
                         <span className="rounded bg-stone-100 px-1 py-0.5">
                           unanchored

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "../components/Markdown";
 import ArtifactCard from "../components/ArtifactCard";
 import ScriptViewer from "../components/ScriptViewer";
 import AnnotationLayer, {
   type AnchoredSelection,
 } from "../components/AnnotationLayer";
+import ReviewMenu from "../components/ReviewMenu";
 import { Notice } from "./Tracker";
 import { parseExecutionPlan } from "../lib/parse";
 import type {
@@ -13,6 +14,7 @@ import type {
   ResultArtifact,
   ResultCommentAnnotation,
   ResultsBundle,
+  ReviewRequest,
   ScriptCommentAnnotation,
   VerdictRequest,
 } from "../lib/types";
@@ -51,6 +53,7 @@ export default function Results({
   onPaintResult,
   onVerdict,
   focusResults,
+  onRequestReview,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -67,6 +70,7 @@ export default function Results({
   ) => void;
   onVerdict: (v: VerdictRequest) => void;
   focusResults: number | null;
+  onRequestReview?: (req: ReviewRequest) => void;
 }) {
   const groups = data.files.executionPlans.filter(
     (g) => (g.results ?? []).length > 0,
@@ -82,11 +86,15 @@ export default function Results({
     }
     return Math.max(0, bundles.length - 1);
   });
-  useEffect(
-    () => setIdx(Math.max(0, bundles.length - 1)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [group?.component, bundles.length],
-  );
+  // Reset to the latest bundle when the researcher switches component — but NOT
+  // on first mount, so an initial focusResults pin (--focus slug:rN, e.g. a
+  // results-review reopen) lands on the reviewed bundle instead of the latest.
+  const lastComponent = useRef(group?.component);
+  useEffect(() => {
+    if (lastComponent.current === group?.component) return;
+    lastComponent.current = group?.component;
+    setIdx(Math.max(0, bundles.length - 1));
+  }, [group?.component, bundles.length]);
   const bundle = bundles[Math.min(idx, bundles.length - 1)] ?? null;
 
   const [openScript, setOpenScript] = useState<string | null>(null);
@@ -223,6 +231,20 @@ export default function Results({
               </button>
             );
           })}
+          {canPost && onRequestReview && (
+            <div className="ml-auto">
+              <ReviewMenu
+                onPick={(agent) =>
+                  onRequestReview({
+                    agent,
+                    scope: "results",
+                    component: group.component,
+                    resultsVersion: bundle.resultsVersion,
+                  })
+                }
+              />
+            </div>
+          )}
         </div>
 
         {/* verdict banner */}

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.0 (2026-07-08)
+
+Feature release — one-click agent review across every plan document.
+
+- **Agent plan review**: a **Review with ▾** button on execution-plan
+  versions, the master plan (Tracker), and results bundles asks a reviewer
+  to critique the document and produce section-anchored comments — no more
+  writing the feedback by hand. Four reviewers: a Claude subagent, a
+  three-lens subagent panel (correctness / methodological rigor /
+  feasibility), Codex (GPT-5.5), and Gemini (agy). Each returns the same
+  `{overall, comments}` JSON contract; the session runs the reviewer, seeds
+  its comments onto the board as pending annotations attributed to the
+  reviewer, and reopens on the target so you curate them and press Send —
+  routed through the normal feedback flow and logged as the reviewer's, not
+  yours.
+- Comments anchor per scope: plan comments on the plan, master-plan comments
+  on the Tracker, results comments on the report. A quote the browser cannot
+  locate becomes an explicit **unanchored** badge (shown in the drawer,
+  never dropped).
+- External reviewers run read-only and shell-injection-hardened: the review
+  prompt is written to a gitignored temp file, never interpolated into a
+  shell command; Codex runs `--sandbox read-only` and agy without
+  `--dangerously-skip-permissions` — a review must not mutate the repo.
+
 ## 0.8.0 (2026-07-07)
 
 Feature release — traceable iterations, a self-driving loop, human-readable

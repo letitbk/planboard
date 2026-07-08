@@ -107,6 +107,52 @@ describe("buildFeedbackMarkdown", () => {
     expect(md).toContain("## 2. [Timeline — general]");
   });
 
+  it("renders a review-request header (agent plan review)", () => {
+    const md = buildFeedbackMarkdown([], null, {
+      agent: "subagent",
+      scope: "plan",
+      component: "03-x",
+      version: 2,
+      isDraft: false,
+    });
+    expect(md).toContain("## REVIEW REQUEST: subagent on 03-x v2");
+  });
+
+  it("badges an agent-authored plan comment with (via …)", () => {
+    const md = buildFeedbackMarkdown(
+      [{ ...planComment, author: "Codex" } as Annotation],
+      null,
+    );
+    expect(md).toContain("## 1. [03-x v2 — Goal] (via Codex)");
+  });
+
+  it("badges agent-authored doc and result comments with (via …)", () => {
+    const docMd = buildFeedbackMarkdown(
+      [{ ...docComment, author: "Gemini" } as Annotation],
+      null,
+    );
+    expect(docMd).toContain("## 1. [Tracker — row 3: Platform reach] (via Gemini)");
+    const resultComment: Annotation = {
+      id: "r1", type: "result-comment", component: "03-x", resultsVersion: 2,
+      target: { kind: "report", quote: "n = 40", occurrenceIndex: 0 },
+      comment: "underpowered", author: "Subagent panel · rigor",
+    };
+    const resMd = buildFeedbackMarkdown([resultComment], null);
+    expect(resMd).toContain("## 1. [03-x r2 — report] (via Subagent panel · rigor)");
+    expect(resMd).toContain('Feedback on: "n = 40"');
+  });
+
+  it("renders review-request headers for master and results scopes", () => {
+    expect(
+      buildFeedbackMarkdown([], null, { agent: "codex", scope: "master" }),
+    ).toContain("## REVIEW REQUEST: codex on master plan");
+    expect(
+      buildFeedbackMarkdown([], null, {
+        agent: "gemini", scope: "results", component: "03-x", resultsVersion: 1,
+      }),
+    ).toContain("## REVIEW REQUEST: gemini on 03-x r1");
+  });
+
   it("renders the verdict block with the apply command", () => {
     const verdict: VerdictRequest = {
       component: "03-x", resultsVersion: 1,
