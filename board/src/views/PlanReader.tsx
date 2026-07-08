@@ -37,8 +37,8 @@ const docLabel = (d: DocRef): string =>
       ? `proposed v${d.version}`
       : `v${d.version}`;
 
-// Agent plan review (v0.9). Phase 1 wires the subagent end-to-end; Codex/Gemini/
-// panel arrive in later phases (the routing handles them gracefully meanwhile).
+// Agent plan review (v0.9). Subagent + Codex + Gemini are wired end-to-end; the
+// panel arrives in a later phase (the routing reports it as not-yet-wired).
 const REVIEW_AGENTS: { id: ReviewRequest["agent"]; label: string }[] = [
   { id: "subagent", label: "Claude subagent" },
   { id: "panel", label: "Subagent panel" },

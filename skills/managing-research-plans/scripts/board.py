@@ -48,6 +48,7 @@ SLOT_OPEN = '<script id="board-data" type="application/json">'
 GITIGNORE_LINES = [
     "/.board-feedback.md",
     "/.rp-seed-*.json",
+    "/.rp-review-*.txt",
     "/.board.lock",
     "/board-share.html",
     "/execution/*/.draft-v*.md",
