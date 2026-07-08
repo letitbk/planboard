@@ -7,7 +7,7 @@ Initialized: <YYYY-MM-DD HH:MM>
 
 ## Project context
 
-<Two or three paragraphs: what this research project is about and what it is trying to find out — the questions, the data, who is involved, key constraints. This is the project's frame, not a history of what has happened in the repository. Written once at init; edit only when the project itself changes direction.>
+<Two or three paragraphs: what this research project is about and what it is trying to find out — the questions, the data, key constraints. This is the project's frame, not a history of what has happened in the repository. Written once at init; edit only when the project itself changes direction.>
 
 ### Research questions
 

@@ -21,7 +21,7 @@ Open Claude Code in your project folder and run:
 /research-plans:init
 ```
 
-Claude will ask a few questions, starting with your research questions (they become a numbered list in the master plan), then data, people, and constraints. It derives the components from your research design, with each one naming the questions it serves, and looks at what already exists in the folder only to set honest statuses. Adopting mid-project is fine: work you have already done gets marked `done` or `in progress`, and nothing is invented about the past. You can also run init mid-session, after an hour of exploring with Claude: what the session established goes into the plan's context and reasons, and the decision log starts at init, never backfilled. Then it creates `plans/master-plan.md`, `plans/decision-log.md`, and a marked section in your `CLAUDE.md`. Commit when it looks right.
+Claude will ask a few questions, starting with your research questions (they become a numbered list in the master plan), then data and constraints. It derives the components from your research design, with each one naming the questions it serves, and looks at what already exists in the folder only to set honest statuses. Adopting mid-project is fine: work you have already done gets marked `done` or `in progress`, and nothing is invented about the past. You can also run init mid-session, after an hour of exploring with Claude: what the session established goes into the plan's context and reasons, and the decision log starts at init, never backfilled. Then it creates `plans/master-plan.md`, `plans/decision-log.md`, and a marked section in your `CLAUDE.md`. Commit when it looks right.
 
 ## 3. Plan your first component
 
@@ -62,8 +62,6 @@ Started using the plugin mid-project? `/research-plans:results --adopt` scans yo
 ```
 
 The review runs in two stages. First a threshold: is this a plan at all? Nine pass or fail checks (a goal with success criteria, reasoned scope decisions, executable steps, a named verification plan, readability, prospectivity, recorded revisions). A document that fails gets told exactly why, in plain terms ("no success criteria: a task list, not a plan yet"), with the fixes. Only a plan that passes gets the second stage: a quality grade on eight items with quoted evidence and the three revisions that would help most. The bands: below 50 percent, revise before executing; 50 to 75 percent, fine to execute but address the flags; above 75 percent, strong. The rubric is a draft; disagreements with it are useful feedback.
-
-And `/research-plans:status` at any time shows the tracker and flags drift.
 
 ## 7. See the whole project on the board
 

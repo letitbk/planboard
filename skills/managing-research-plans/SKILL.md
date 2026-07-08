@@ -75,8 +75,7 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 | `/research-plans:sync` | Post-execution checkpoint: tracker, log, revisions |
 | `/research-plans:results` | Capture a results bundle (report, artifacts, scripts, metrics); no argument = reconcile/backfill walk; `--adopt` for pre-existing outputs |
 | `/research-plans:review` | Two-stage review per `references/plan-rubric.md`: threshold verdict (is it a plan?), then engagement grade |
-| `/research-plans:status` | Render tracker, flag drift |
-| `/research-plans:board` | Browser board: tracker, plans + diffs, timeline, scorecards; live annotation or static export |
+| `/research-plans:board` | Browser board: tracker (with drift flags), plans + diffs, timeline, scorecards; live annotation or static export |
 
 Judgment criteria live in `references/`: `plan-rubric.md` (quality scoring), `split-criteria.md` (when a plan is too big), `explore-before-planning.md` (bounded data exploration before authoring).
 
