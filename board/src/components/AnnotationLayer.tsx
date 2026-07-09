@@ -123,7 +123,7 @@ export default function AnnotationLayer({
 
       {pending && !composing && (
         <button
-          className="absolute z-20 -translate-x-1/2 rounded-full bg-stone-900 px-3 py-1 text-xs font-medium text-white shadow-lg hover:bg-stone-700"
+          className="absolute z-20 -translate-x-1/2 rounded-full bg-stone-900 dark:bg-stone-200 px-3 py-1 text-xs font-medium text-white dark:text-stone-900 shadow-lg hover:bg-stone-700 dark:hover:bg-stone-400"
           style={{ left: pending.x, top: pending.y }}
           onClick={() => setComposing(true)}
         >
@@ -133,10 +133,10 @@ export default function AnnotationLayer({
 
       {pending && composing && (
         <div
-          className="absolute z-20 w-72 -translate-x-1/2 rounded-lg border border-stone-300 bg-white p-2 shadow-xl"
+          className="absolute z-20 w-72 -translate-x-1/2 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-xl"
           style={{ left: Math.max(150, pending.x), top: pending.y }}
         >
-          <div className="mb-1 line-clamp-2 rounded bg-amber-50 px-2 py-1 text-xs text-stone-600">
+          <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-2 py-1 text-xs text-stone-600 dark:text-stone-400">
             “{pending.anchor?.quote}”
           </div>
           <textarea
@@ -151,11 +151,11 @@ export default function AnnotationLayer({
               }
             }}
             placeholder="Your comment… (⌘↵ to save)"
-            className="h-20 w-full resize-none rounded border border-stone-200 p-2 text-sm outline-none focus:border-stone-400"
+            className="h-20 w-full resize-none rounded border border-stone-200 dark:border-stone-800 p-2 text-sm outline-none focus:border-stone-400 dark:focus:border-stone-500"
           />
           <div className="mt-1 flex justify-end gap-2">
             <button
-              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100"
+              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
               onClick={() => {
                 setComposing(false);
                 setPending(null);
@@ -164,7 +164,7 @@ export default function AnnotationLayer({
               Cancel
             </button>
             <button
-              className="rounded bg-stone-900 px-3 py-1 text-xs font-medium text-white hover:bg-stone-700 disabled:opacity-40"
+              className="rounded bg-stone-900 dark:bg-stone-200 px-3 py-1 text-xs font-medium text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
               disabled={!text.trim()}
               onClick={save}
             >
@@ -189,7 +189,7 @@ export function GeneralCommentBox({
   if (!open) {
     return (
       <button
-        className="mt-6 rounded-md border border-dashed border-stone-300 px-3 py-1.5 text-xs text-stone-500 hover:border-stone-400 hover:text-stone-700"
+        className="mt-6 rounded-md border border-dashed border-stone-300 dark:border-stone-600 px-3 py-1.5 text-xs text-stone-500 hover:border-stone-400 dark:hover:border-stone-500 hover:text-stone-700"
         onClick={() => setOpen(true)}
       >
         + General comment on this view
@@ -197,23 +197,23 @@ export function GeneralCommentBox({
     );
   }
   return (
-    <div className="mt-6 rounded-lg border border-stone-300 bg-white p-2 shadow-sm">
+    <div className="mt-6 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-sm">
       <textarea
         autoFocus
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={`General comment on the ${view} view…`}
-        className="h-16 w-full resize-none rounded border border-stone-200 p-2 text-sm outline-none focus:border-stone-400"
+        className="h-16 w-full resize-none rounded border border-stone-200 dark:border-stone-800 p-2 text-sm outline-none focus:border-stone-400 dark:focus:border-stone-500"
       />
       <div className="mt-1 flex justify-end gap-2">
         <button
-          className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100"
+          className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
           onClick={() => setOpen(false)}
         >
           Cancel
         </button>
         <button
-          className="rounded bg-stone-900 px-3 py-1 text-xs font-medium text-white hover:bg-stone-700 disabled:opacity-40"
+          className="rounded bg-stone-900 dark:bg-stone-200 px-3 py-1 text-xs font-medium text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
           disabled={!text.trim()}
           onClick={() => {
             onAdd(view, text.trim());

@@ -14,13 +14,13 @@ import type {
 } from "../lib/types";
 
 const CHIP: Record<TrackerStatus, string> = {
-  "not started": "bg-stone-100 text-stone-600 border-stone-200",
-  planned: "bg-blue-50 text-blue-700 border-blue-200",
-  "in progress": "bg-amber-50 text-amber-800 border-amber-200",
-  done: "bg-green-50 text-green-800 border-green-200",
-  "done (verified)": "bg-green-100 text-green-900 border-green-300",
-  dropped: "bg-red-50 text-red-700 border-red-200 line-through",
-  unknown: "bg-stone-100 text-stone-500 border-stone-200",
+  "not started": "bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-800",
+  planned: "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-900",
+  "in progress": "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900",
+  done: "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900",
+  "done (verified)": "bg-green-100 dark:bg-green-900/60 text-green-900 dark:text-green-200 border-green-300 dark:border-green-800",
+  dropped: "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900 line-through",
+  unknown: "bg-stone-100 dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-800",
 };
 
 /** Archived master plans (v0.10 renewal record): each renders with the normal
@@ -56,7 +56,7 @@ export default function Archive({
 
   if (!archive) {
     return (
-      <div className="rounded-lg border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-500">
+      <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
         No archived master plans. Renewing the project's direction with{" "}
         <code>/research-plans:renew</code> archives the current plan here.
       </div>
@@ -79,8 +79,8 @@ export default function Archive({
   const body = (
     <>
       <div className="mb-1 flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold text-stone-900">{mp.title}</h1>
-        <span className="rounded bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-700">
+        <h1 className="text-xl font-bold text-stone-900 dark:text-stone-100">{mp.title}</h1>
+        <span className="rounded bg-stone-200 dark:bg-stone-700 px-2 py-0.5 text-xs font-medium text-stone-700 dark:text-stone-300">
           archived {archive.archivedOn || ""}
         </span>
       </div>
@@ -91,7 +91,7 @@ export default function Archive({
       ) : (
         <>
           <section
-            className="mb-4 rounded-lg border border-stone-200 bg-white p-4"
+            className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-4"
             data-annot-scope="context"
             data-annot-section="Project context (archived)"
           >
@@ -102,11 +102,11 @@ export default function Archive({
           </section>
 
           {mp.researchQuestions.length > 0 && (
-            <section className="mb-4 rounded-lg border border-stone-200 bg-white p-4">
+            <section className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-4">
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
                 Research questions
               </h2>
-              <ol className="space-y-1 text-sm text-stone-800">
+              <ol className="space-y-1 text-sm text-stone-800 dark:text-stone-200">
                 {mp.researchQuestions.map((q) => (
                   <li key={q.num} className="flex gap-2">
                     <span className="shrink-0 rounded bg-stone-500 px-1.5 py-0.5 text-xs font-bold text-white">
@@ -119,10 +119,10 @@ export default function Archive({
             </section>
           )}
 
-          <section className="rounded-lg border border-stone-200 bg-white">
+          <section className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500">
+                <tr className="border-b border-stone-200 dark:border-stone-800 text-left text-xs uppercase tracking-wide text-stone-500">
                   <th className="px-4 py-2">#</th>
                   <th className="px-4 py-2">Component</th>
                   <th className="px-4 py-2">Serves</th>
@@ -141,23 +141,23 @@ export default function Archive({
                   return (
                     <tr
                       key={i}
-                      className="border-b border-stone-100 last:border-0"
+                      className="border-b border-stone-100 dark:border-stone-800 last:border-0"
                       data-annot-scope={`row:${r.num}`}
                       data-annot-section={`archived row ${r.num}: ${r.component}`}
                     >
-                      <td className="px-4 py-2.5 text-stone-400">{r.num}</td>
-                      <td className="px-4 py-2.5 font-medium text-stone-800">
+                      <td className="px-4 py-2.5 text-stone-400 dark:text-stone-500">{r.num}</td>
+                      <td className="px-4 py-2.5 font-medium text-stone-800 dark:text-stone-200">
                         {r.component}
                       </td>
                       <td className="px-4 py-2.5">
                         {serves.isInfra ? (
-                          <span className="text-xs text-stone-400">infra</span>
+                          <span className="text-xs text-stone-400 dark:text-stone-500">infra</span>
                         ) : (
                           <span className="flex flex-wrap gap-1">
                             {serves.tokens.map((t) => (
                               <span
                                 key={t}
-                                className="rounded bg-stone-100 px-1.5 py-0.5 text-xs font-semibold text-stone-700"
+                                className="rounded bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 text-xs font-semibold text-stone-700 dark:text-stone-300"
                               >
                                 {t}
                               </span>
@@ -175,28 +175,28 @@ export default function Archive({
                       <td className="px-4 py-2.5">
                         {slug && g && g.versions.length > 0 ? (
                           <button
-                            className="text-xs font-medium text-blue-700 underline hover:text-blue-900"
+                            className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
                             onClick={() => onOpenComponent(slug, r.component)}
                           >
                             open plan
                           </button>
                         ) : (
-                          <span className="text-xs text-stone-400">—</span>
+                          <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5">
                         {slug && latest ? (
                           <button
-                            className="text-xs font-medium text-blue-700 underline hover:text-blue-900"
+                            className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
                             onClick={() => onOpenResults(slug)}
                           >
                             r{latest.resultsVersion}
                           </button>
                         ) : (
-                          <span className="text-xs text-stone-400">—</span>
+                          <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-stone-600">{r.notes}</td>
+                      <td className="px-4 py-2.5 text-stone-600 dark:text-stone-400">{r.notes}</td>
                     </tr>
                   );
                 })}
@@ -217,8 +217,8 @@ export default function Archive({
               key={a.path}
               className={`rounded-full border px-3 py-1 text-xs font-medium ${
                 i === Math.min(idx, archives.length - 1)
-                  ? "border-stone-900 bg-stone-900 text-white"
-                  : "border-stone-300 bg-white text-stone-600 hover:border-stone-500"
+                  ? "border-stone-900 bg-stone-900 dark:bg-stone-200 text-white dark:text-stone-900"
+                  : "border-stone-300 dark:border-stone-600 bg-white text-stone-600 hover:border-stone-500 dark:hover:border-stone-400"
               }`}
               onClick={() => setIdx(i)}
             >
@@ -240,7 +240,7 @@ export default function Archive({
         body
       )}
       {canAnnotate && (
-        <p className="mt-2 text-xs text-stone-400">
+        <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
           Select any text to attach a comment.
         </p>
       )}

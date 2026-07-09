@@ -22,17 +22,17 @@ export default function ReviewMenu({
   return (
     <div className="relative">
       <button
-        className="rounded-full border border-violet-300 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 hover:border-violet-500"
+        className="rounded-full border border-violet-300 dark:border-violet-800 bg-violet-50 dark:bg-violet-950 px-3 py-1 text-xs font-medium text-violet-700 dark:text-violet-300 hover:border-violet-500 dark:hover:border-violet-400"
         onClick={() => setOpen((o) => !o)}
       >
         Review with ▾
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-stone-200 bg-white py-1 shadow-lg">
+        <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 py-1 shadow-lg">
           {REVIEW_AGENTS.map((ag) => (
             <button
               key={ag.id}
-              className="block w-full px-3 py-1.5 text-left text-xs text-stone-700 hover:bg-stone-100"
+              className="block w-full px-3 py-1.5 text-left text-xs text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800"
               onClick={() => {
                 setOpen(false);
                 onPick(ag.id);

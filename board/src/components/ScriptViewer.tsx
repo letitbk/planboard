@@ -49,13 +49,13 @@ export default function ScriptViewer({
   };
 
   return (
-    <div className="rounded-lg border border-stone-200 bg-white">
-      <div className="flex items-center justify-between border-b border-stone-100 px-3 py-1.5">
-        <span className="font-mono text-xs text-stone-600">
+    <div className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
+      <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 px-3 py-1.5">
+        <span className="font-mono text-xs text-stone-600 dark:text-stone-400">
           {file.path.split("/results/")[1] ?? file.path}
         </span>
         {canAnnotate && (
-          <span className="text-[11px] text-stone-400">
+          <span className="text-[11px] text-stone-400 dark:text-stone-500">
             click a line (shift-click to extend) to comment
           </span>
         )}
@@ -67,10 +67,10 @@ export default function ScriptViewer({
           return (
             <div
               key={n}
-              className={`flex cursor-pointer px-0 ${selected ? "bg-amber-100" : "hover:bg-stone-50"}`}
+              className={`flex cursor-pointer px-0 ${selected ? "bg-amber-100 dark:bg-amber-900/40" : "hover:bg-stone-50 dark:hover:bg-stone-800/60"}`}
               onClick={(e) => clickLine(n, e.shiftKey)}
             >
-              <span className="w-10 shrink-0 select-none border-r border-stone-100 pr-2 text-right text-stone-400">
+              <span className="w-10 shrink-0 select-none border-r border-stone-100 dark:border-stone-800 pr-2 text-right text-stone-400 dark:text-stone-500">
                 {n}
               </span>
               <code className="whitespace-pre pl-3">{ln || " "}</code>
@@ -79,7 +79,7 @@ export default function ScriptViewer({
         })}
       </pre>
       {canAnnotate && lo !== null && hi !== null && (
-        <div className="border-t border-stone-200 p-2">
+        <div className="border-t border-stone-200 dark:border-stone-800 p-2">
           <div className="mb-1 text-[11px] text-stone-500">
             Comment on lines {lo}
             {hi !== lo ? `–${hi}` : ""}
@@ -88,12 +88,12 @@ export default function ScriptViewer({
             autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
-            className="h-16 w-full resize-none rounded border border-stone-200 p-2 text-sm outline-none focus:border-stone-400"
+            className="h-16 w-full resize-none rounded border border-stone-200 dark:border-stone-800 p-2 text-sm outline-none focus:border-stone-400 dark:focus:border-stone-500"
             placeholder="Your comment on these lines…"
           />
           <div className="mt-1 flex justify-end gap-2">
             <button
-              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100"
+              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
               onClick={() => {
                 setSelStart(null);
                 setSelEnd(null);
@@ -103,7 +103,7 @@ export default function ScriptViewer({
               Cancel
             </button>
             <button
-              className="rounded bg-stone-900 px-3 py-1 text-xs font-medium text-white hover:bg-stone-700 disabled:opacity-40"
+              className="rounded bg-stone-900 dark:bg-stone-200 px-3 py-1 text-xs font-medium text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
               disabled={!text.trim()}
               onClick={save}
             >

@@ -92,10 +92,10 @@ export default function BatchGate({ data }: { data: BoardData }) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16 text-center">
         <div className="mb-3 text-4xl">✓</div>
-        <h1 className="mb-2 text-xl font-semibold text-stone-800">
+        <h1 className="mb-2 text-xl font-semibold text-stone-800 dark:text-stone-200">
           Batch sign-off complete
         </h1>
-        <p className="text-sm text-stone-600">
+        <p className="text-sm text-stone-600 dark:text-stone-400">
           {approvedCount} approved, {rejectedCount} changes-requested,{" "}
           {pendingCount} left for later. Approved plans are being written; you can
           close this tab.
@@ -112,25 +112,25 @@ export default function BatchGate({ data }: { data: BoardData }) {
     <div className="mx-auto max-w-3xl px-6 py-6">
       {/* header + progress */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-base font-semibold text-stone-800">
+        <h1 className="text-base font-semibold text-stone-800 dark:text-stone-200">
           Batch sign-off
         </h1>
         <span className="text-sm text-stone-500">
           plan {idx + 1} of {plans.length}
         </span>
         <span className="ml-auto flex items-center gap-2 text-xs">
-          <span className="rounded bg-green-50 px-2 py-0.5 font-medium text-green-800">
+          <span className="rounded bg-green-50 dark:bg-green-950 px-2 py-0.5 font-medium text-green-800 dark:text-green-300">
             {approvedCount} approved
           </span>
-          <span className="rounded bg-red-50 px-2 py-0.5 font-medium text-red-700">
+          <span className="rounded bg-red-50 dark:bg-red-950 px-2 py-0.5 font-medium text-red-700 dark:text-red-400">
             {rejectedCount} changes
           </span>
-          <span className="rounded bg-stone-100 px-2 py-0.5 font-medium text-stone-600">
+          <span className="rounded bg-stone-100 dark:bg-stone-800 px-2 py-0.5 font-medium text-stone-600 dark:text-stone-400">
             {pendingCount} pending
           </span>
         </span>
       </div>
-      <div className="mb-4 h-1.5 w-full overflow-hidden rounded bg-stone-100">
+      <div className="mb-4 h-1.5 w-full overflow-hidden rounded bg-stone-100 dark:bg-stone-800">
         <div
           className="h-full bg-stone-800 transition-all"
           style={{ width: `${((idx + 1) / plans.length) * 100}%` }}
@@ -138,18 +138,18 @@ export default function BatchGate({ data }: { data: BoardData }) {
       </div>
 
       {/* plan card */}
-      <div className="rounded-lg border border-stone-200 bg-white p-5">
+      <div className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-5">
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-stone-800">
+          <span className="text-sm font-semibold text-stone-800 dark:text-stone-200">
             {plan.component} · proposed v{plan.proposedVersion}
           </span>
           {parsed.provenance && (
-            <span className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            <span className="rounded border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
               {parsed.provenance}
             </span>
           )}
           {parsed.serves && (
-            <span className="rounded bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">
+            <span className="rounded bg-stone-100 dark:bg-stone-800 px-2 py-0.5 text-[11px] font-medium text-stone-600 dark:text-stone-400">
               Serves: {parsed.serves}
             </span>
           )}
@@ -157,7 +157,7 @@ export default function BatchGate({ data }: { data: BoardData }) {
             <span
               className={`ml-auto rounded px-2 py-0.5 text-[11px] font-semibold ${
                 cur === "approved"
-                  ? "bg-green-100 text-green-800"
+                  ? "bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-300"
                   : "bg-red-100 text-red-700"
               }`}
             >
@@ -165,13 +165,13 @@ export default function BatchGate({ data }: { data: BoardData }) {
             </span>
           )}
         </div>
-        <div className="max-h-[52vh] overflow-y-auto rounded border border-stone-100 bg-stone-50/40 p-4">
+        <div className="max-h-[52vh] overflow-y-auto rounded border border-stone-100 dark:border-stone-800 bg-stone-50/40 p-4">
           <Markdown source={plan.content} />
         </div>
       </div>
 
       {error && (
-        <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <p className="mt-3 rounded border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 px-3 py-2 text-xs text-red-700 dark:text-red-400">
           {error}
         </p>
       )}
@@ -181,20 +181,20 @@ export default function BatchGate({ data }: { data: BoardData }) {
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         placeholder="Optional note for a change request…"
-        className="mt-4 h-16 w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
+        className="mt-4 h-16 w-full rounded-md border border-stone-300 dark:border-stone-600 px-3 py-2 text-sm outline-none focus:border-stone-500"
       />
 
       {/* action bar */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
-          className="rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-600 disabled:opacity-40 hover:border-stone-500"
+          className="rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1.5 text-sm text-stone-600 dark:text-stone-400 disabled:opacity-40 hover:border-stone-500 dark:hover:border-stone-400"
           onClick={prev}
           disabled={idx === 0 || busy}
         >
           ◀ Prev
         </button>
         <button
-          className="rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-600 disabled:opacity-40 hover:border-stone-500"
+          className="rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1.5 text-sm text-stone-600 dark:text-stone-400 disabled:opacity-40 hover:border-stone-500 dark:hover:border-stone-400"
           onClick={next}
           disabled={idx === plans.length - 1 || busy}
         >
@@ -208,14 +208,14 @@ export default function BatchGate({ data }: { data: BoardData }) {
           Approve — write v{plan.proposedVersion}
         </button>
         <button
-          className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-800 disabled:opacity-50 hover:bg-red-100"
+          className="rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 px-3 py-1.5 text-sm font-semibold text-red-800 dark:text-red-300 disabled:opacity-50 hover:bg-red-100 dark:hover:bg-red-900/40"
           onClick={() => decide("reject")}
           disabled={busy}
         >
           Request changes
         </button>
         <button
-          className="rounded-md border border-stone-400 px-3 py-1.5 text-sm font-medium text-stone-700 disabled:opacity-50 hover:bg-stone-100"
+          className="rounded-md border border-stone-400 px-3 py-1.5 text-sm font-medium text-stone-700 dark:text-stone-300 disabled:opacity-50 hover:bg-stone-100 dark:hover:bg-stone-800"
           onClick={finish}
           disabled={busy}
           title="End the session. Approved plans have already been written; the rest stay drafts for a later pass."
@@ -223,7 +223,7 @@ export default function BatchGate({ data }: { data: BoardData }) {
           Finish
         </button>
       </div>
-      <p className="mt-2 text-xs text-stone-400">
+      <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
         Each approval is saved the moment you click — closing early keeps every
         plan you already approved.
       </p>

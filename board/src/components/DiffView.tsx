@@ -19,15 +19,15 @@ export default function DiffView({
   return (
     <div>
       {supersedesReason && (
-        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="mb-3 rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
           <span className="font-semibold">Supersedes:</span> {supersedesReason}
         </div>
       )}
       <div className="mb-2 text-xs text-stone-500">
-        <span className="text-green-700">+{added}</span>{" "}
-        <span className="text-red-700">−{removed}</span> lines
+        <span className="text-green-700 dark:text-green-400">+{added}</span>{" "}
+        <span className="text-red-700 dark:text-red-400">−{removed}</span> lines
       </div>
-      <pre className="overflow-x-auto rounded-md border border-stone-200 bg-white text-[13px] leading-5">
+      <pre className="overflow-x-auto rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-[13px] leading-5">
         {parts.map((part, i) => {
           const cls = part.added ? "diff-add" : part.removed ? "diff-del" : "";
           const prefix = part.added ? "+" : part.removed ? "−" : " ";
@@ -38,7 +38,7 @@ export default function DiffView({
                 .split("\n")
                 .map((line, j) => (
                   <div key={j} className="px-3">
-                    <span className="select-none pr-2 text-stone-400">
+                    <span className="select-none pr-2 text-stone-400 dark:text-stone-500">
                       {prefix}
                     </span>
                     {line}

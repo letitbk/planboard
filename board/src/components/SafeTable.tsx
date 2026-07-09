@@ -48,7 +48,7 @@ export default function SafeTable({
   if (kind === "html") {
     if (!html) {
       return (
-        <pre className="overflow-x-auto rounded bg-stone-50 p-2 text-xs">{content}</pre>
+        <pre className="overflow-x-auto rounded bg-stone-50 dark:bg-stone-800/50 p-2 text-xs">{content}</pre>
       );
     }
     return (

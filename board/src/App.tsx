@@ -6,6 +6,7 @@ import Timeline from "./views/Timeline";
 import Scorecard from "./views/Scorecard";
 import Archive from "./views/Archive";
 import BatchGate from "./views/BatchGate";
+import ThemeToggle from "./components/ThemeToggle";
 import { allFiles, payloadContentHash } from "./lib/parse";
 import {
   buildFeedbackDocument,
@@ -518,17 +519,20 @@ export default function App({ data }: { data: BoardData }) {
 
   if (submitState === "approved" || submitState === "denied") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-50">
-        <div className="max-w-md rounded-lg border border-stone-200 bg-white p-8 text-center shadow-sm">
+      <div className="relative flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-800/50">
+        <div className="absolute right-4 top-4">
+          <ThemeToggle />
+        </div>
+        <div className="max-w-md rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-8 text-center shadow-sm">
           <div className="text-3xl">
             {submitState === "approved" ? "✓" : "✎"}
           </div>
-          <h1 className="mt-2 text-lg font-semibold text-stone-800">
+          <h1 className="mt-2 text-lg font-semibold text-stone-800 dark:text-stone-200">
             {submitState === "approved"
               ? "Approved — the version is being written"
               : "Changes requested — return to your session"}
           </h1>
-          <p className="mt-2 text-sm text-stone-600">
+          <p className="mt-2 text-sm text-stone-600 dark:text-stone-400">
             {submitState === "approved"
               ? `${gate?.component} v${gate?.proposedVersion} will land exactly as shown here, signed.`
               : "Claude received your feedback and will revise the draft; the gate reopens on the next sign-off attempt."}
@@ -540,13 +544,16 @@ export default function App({ data }: { data: BoardData }) {
 
   if (submitState === "sent") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-50">
-        <div className="max-w-md rounded-lg border border-stone-200 bg-white p-8 text-center shadow-sm">
+      <div className="relative flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-800/50">
+        <div className="absolute right-4 top-4">
+          <ThemeToggle />
+        </div>
+        <div className="max-w-md rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-8 text-center shadow-sm">
           <div className="text-3xl">✓</div>
-          <h1 className="mt-2 text-lg font-semibold text-stone-800">
+          <h1 className="mt-2 text-lg font-semibold text-stone-800 dark:text-stone-200">
             Feedback sent
           </h1>
-          <p className="mt-2 text-sm text-stone-600">
+          <p className="mt-2 text-sm text-stone-600 dark:text-stone-400">
             Return to your Claude Code session — it received your{" "}
             {annotations.length} item{annotations.length === 1 ? "" : "s"} and
             will walk through them with you.
@@ -557,14 +564,14 @@ export default function App({ data }: { data: BoardData }) {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50">
-      <header className="sticky top-0 z-30 border-b border-stone-200 bg-white/90 backdrop-blur">
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950">
+      <header className="sticky top-0 z-30 border-b border-stone-200 dark:border-stone-800 bg-white/90 dark:bg-stone-900/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center gap-4 px-5 py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-bold text-stone-900">
+            <div className="truncate text-sm font-bold text-stone-900 dark:text-stone-100">
               {data.project.name}
             </div>
-            <div className="text-[11px] text-stone-400">
+            <div className="text-[11px] text-stone-400 dark:text-stone-500">
               research-plans board · generated {data.generatedAt.slice(0, 16)}
               {data.git.available && data.git.head ? ` · ${data.git.head}` : ""}
             </div>
@@ -578,8 +585,8 @@ export default function App({ data }: { data: BoardData }) {
                 key={t.id}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium ${
                   tab === t.id
-                    ? "bg-stone-900 text-white"
-                    : "text-stone-600 hover:bg-stone-100"
+                    ? "bg-stone-900 dark:bg-stone-200 text-white dark:text-stone-900"
+                    : "text-stone-600 hover:bg-stone-100 dark:hover:bg-stone-800"
                 }`}
                 onClick={() => setTab(t.id)}
               >
@@ -587,17 +594,20 @@ export default function App({ data }: { data: BoardData }) {
               </button>
             ))}
           </nav>
-          {canAnnotate && (
-            <button
-              className="ml-auto rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 hover:border-stone-500"
-              onClick={() => setDrawerOpen((o) => !o)}
-            >
-              Feedback ({annotations.length})
-            </button>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
+            {canAnnotate && (
+              <button
+                className="rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1.5 text-sm font-medium text-stone-700 dark:text-stone-300 hover:border-stone-500 dark:hover:border-stone-400"
+                onClick={() => setDrawerOpen((o) => !o)}
+              >
+                Feedback ({annotations.length})
+              </button>
+            )}
+          </div>
         </div>
         {data.mode === "static" && (
-          <div className="border-t border-amber-200 bg-amber-50 px-5 py-1.5 text-center text-xs text-amber-900">
+          <div className="border-t border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-5 py-1.5 text-center text-xs text-amber-900 dark:text-amber-200">
             Read-only snapshot generated {data.generatedAt.slice(0, 16)}
             {data.git.available && data.git.head
               ? ` at commit ${data.git.head}`
@@ -606,7 +616,7 @@ export default function App({ data }: { data: BoardData }) {
           </div>
         )}
         {remote && (
-          <div className="border-t border-blue-200 bg-blue-50 px-5 py-2 text-xs leading-relaxed text-blue-900">
+          <div className="border-t border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950 px-5 py-2 text-xs leading-relaxed text-blue-900 dark:text-blue-200">
             <span className="font-medium">
               You’ve been asked to review this research plan.
             </span>{" "}
@@ -620,7 +630,7 @@ export default function App({ data }: { data: BoardData }) {
           </div>
         )}
         {gate && (
-          <div className="border-t border-stone-800 bg-stone-900 px-5 py-2 text-center text-sm font-semibold text-white">
+          <div className="border-t border-stone-800 bg-stone-900 dark:bg-stone-200 px-5 py-2 text-center text-sm font-semibold text-white dark:text-stone-900">
             Sign-off gate: {gate.component} v{gate.proposedVersion} — approve in
             this window, or request changes with comments
           </div>
@@ -726,13 +736,13 @@ export default function App({ data }: { data: BoardData }) {
       </main>
 
       {canAnnotate && drawerOpen && (
-        <aside className="fixed right-0 top-0 z-40 flex h-full w-80 flex-col border-l border-stone-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
-            <h2 className="text-sm font-semibold text-stone-800">
+        <aside className="fixed right-0 top-0 z-40 flex h-full w-80 flex-col border-l border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 px-4 py-3">
+            <h2 className="text-sm font-semibold text-stone-800 dark:text-stone-200">
               Feedback ({annotations.length})
             </h2>
             <button
-              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100"
+              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
               onClick={() => setDrawerOpen(false)}
             >
               Close
@@ -740,37 +750,37 @@ export default function App({ data }: { data: BoardData }) {
           </div>
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
             {annotations.length === 0 && (
-              <p className="p-4 text-center text-xs text-stone-400">
+              <p className="p-4 text-center text-xs text-stone-400 dark:text-stone-500">
                 Select text in any view or add a general comment.
               </p>
             )}
             {annotations.map((a) => (
               <div
                 key={a.id}
-                className="rounded-md border border-stone-200 p-2 text-xs"
+                className="rounded-md border border-stone-200 dark:border-stone-800 p-2 text-xs"
               >
                 <div className="mb-1 flex items-center gap-1.5 text-[11px] text-stone-500">
                   {a.type === "plan-comment" ? (
                     <>
-                      <span className="font-medium text-stone-700">
+                      <span className="font-medium text-stone-700 dark:text-stone-300">
                         {a.component} v{a.version}
                         {a.isDraft ? " (draft)" : ""}
                       </span>
                       {a.sectionHeading && <span>· {a.sectionHeading}</span>}
                       {a.author && (
-                        <span className="rounded bg-violet-100 px-1 py-0.5 font-medium text-violet-700">
+                        <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
                           via {a.author}
                         </span>
                       )}
                       {!a.anchored && (
-                        <span className="rounded bg-stone-100 px-1 py-0.5">
+                        <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
                           unanchored
                         </span>
                       )}
                     </>
                   ) : a.type === "result-comment" ? (
                     <>
-                      <span className="font-medium text-stone-700">
+                      <span className="font-medium text-stone-700 dark:text-stone-300">
                         {a.component} r{a.resultsVersion} ·{" "}
                         {a.target.kind === "artifact"
                           ? a.target.artifactId
@@ -779,45 +789,45 @@ export default function App({ data }: { data: BoardData }) {
                             : "report"}
                       </span>
                       {a.author && (
-                        <span className="rounded bg-violet-100 px-1 py-0.5 font-medium text-violet-700">
+                        <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
                           via {a.author}
                         </span>
                       )}
                       {a.anchored === false && (
-                        <span className="rounded bg-stone-100 px-1 py-0.5">
+                        <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
                           unanchored
                         </span>
                       )}
                     </>
                   ) : a.type === "script-comment" ? (
-                    <span className="font-medium text-stone-700">
+                    <span className="font-medium text-stone-700 dark:text-stone-300">
                       {a.script.split("/").pop()} L{a.lineStart}
                       {a.lineEnd !== a.lineStart ? `–${a.lineEnd}` : ""}
                     </span>
                   ) : a.type === "doc-comment" ? (
                     <>
-                      <span className="font-medium text-stone-700">
+                      <span className="font-medium text-stone-700 dark:text-stone-300">
                         {VIEW_LABEL[a.view]}
                       </span>
                       {a.sectionHeading && <span>· {a.sectionHeading}</span>}
                       {a.author && (
-                        <span className="rounded bg-violet-100 px-1 py-0.5 font-medium text-violet-700">
+                        <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
                           via {a.author}
                         </span>
                       )}
                       {!a.anchored && (
-                        <span className="rounded bg-stone-100 px-1 py-0.5">
+                        <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
                           unanchored
                         </span>
                       )}
                     </>
                   ) : (
-                    <span className="font-medium text-stone-700">
+                    <span className="font-medium text-stone-700 dark:text-stone-300">
                       {a.view} — general
                     </span>
                   )}
                   <button
-                    className="ml-auto text-stone-400 hover:text-red-600"
+                    className="ml-auto text-stone-400 dark:text-stone-500 hover:text-red-600"
                     onClick={() => removeAnnotation(a.id)}
                     title="Delete"
                   >
@@ -825,27 +835,27 @@ export default function App({ data }: { data: BoardData }) {
                   </button>
                 </div>
                 {(a.type === "plan-comment" || a.type === "doc-comment") && (
-                  <div className="mb-1 line-clamp-2 rounded bg-amber-50 px-1.5 py-1 text-[11px] italic text-stone-500">
+                  <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
                     “{a.quote}”
                   </div>
                 )}
                 {a.type === "result-comment" && a.target.quote && (
-                  <div className="mb-1 line-clamp-2 rounded bg-amber-50 px-1.5 py-1 text-[11px] italic text-stone-500">
+                  <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
                     “{a.target.quote}”
                   </div>
                 )}
                 {a.type === "script-comment" && (
-                  <pre className="mb-1 max-h-16 overflow-hidden rounded bg-stone-50 px-1.5 py-1 text-[10px] text-stone-500">
+                  <pre className="mb-1 max-h-16 overflow-hidden rounded bg-stone-50 dark:bg-stone-800/50 px-1.5 py-1 text-[10px] text-stone-500">
                     {a.excerpt}
                   </pre>
                 )}
-                <div className="text-stone-700">{a.comment}</div>
+                <div className="text-stone-700 dark:text-stone-300">{a.comment}</div>
               </div>
             ))}
           </div>
-          <div className="border-t border-stone-200 p-3">
+          <div className="border-t border-stone-200 dark:border-stone-800 p-3">
             {submitState === "failed" && (
-              <div className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+              <div className="mb-2 rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-2 text-xs text-red-800 dark:text-red-300">
                 Could not reach the board server (it may have exited).{" "}
                 <button className="font-medium underline" onClick={copyFallback}>
                   Copy feedback as markdown
@@ -869,7 +879,7 @@ export default function App({ data }: { data: BoardData }) {
                   Approve — write v{gate.proposedVersion} exactly as shown
                 </button>
                 <button
-                  className="w-full rounded-md border border-red-300 bg-red-50 py-2 text-sm font-semibold text-red-800 hover:bg-red-100 disabled:opacity-40"
+                  className="w-full rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 py-2 text-sm font-semibold text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-40"
                   disabled={annotations.length === 0 || submitState === "sending"}
                   onClick={gateDeny}
                 >
@@ -879,13 +889,13 @@ export default function App({ data }: { data: BoardData }) {
             ) : canPost ? (
               <div className="space-y-2">
                 {pendingVerdict && (
-                  <div className="rounded-md border border-stone-300 bg-stone-50 p-2 text-xs">
+                  <div className="rounded-md border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-800/50 p-2 text-xs">
                     <span className="font-semibold">
                       Verdict: {pendingVerdict.status} —{" "}
                       {pendingVerdict.component} r{pendingVerdict.resultsVersion}
                     </span>
                     <button
-                      className="ml-2 text-stone-400 hover:text-red-600"
+                      className="ml-2 text-stone-400 dark:text-stone-500 hover:text-red-600"
                       onClick={() => setPendingVerdict(null)}
                       title="Withdraw verdict"
                     >
@@ -894,7 +904,7 @@ export default function App({ data }: { data: BoardData }) {
                   </div>
                 )}
                 <button
-                  className="w-full rounded-md bg-stone-900 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+                  className="w-full rounded-md bg-stone-900 dark:bg-stone-200 py-2 text-sm font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
                   disabled={
                     (annotations.length === 0 && !pendingVerdict) ||
                     submitState === "sending"
@@ -907,19 +917,19 @@ export default function App({ data }: { data: BoardData }) {
             ) : (
               <div className="space-y-2">
                 <input
-                  className="w-full rounded-md border border-stone-300 px-2 py-1.5 text-sm"
+                  className="w-full rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1.5 text-sm"
                   placeholder="Your name (for attribution)"
                   value={reviewer}
                   onChange={(e) => setReviewer(e.target.value)}
                 />
                 {submitState === "downloaded" && (
-                  <p className="rounded-md border border-green-200 bg-green-50 p-2 text-[11px] text-green-800">
+                  <p className="rounded-md border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 p-2 text-[11px] text-green-800 dark:text-green-300">
                     Feedback file downloaded — email it back to the researcher.
                     You can keep annotating and download again.
                   </p>
                 )}
                 <button
-                  className="w-full rounded-md bg-stone-900 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+                  className="w-full rounded-md bg-stone-900 dark:bg-stone-200 py-2 text-sm font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
                   disabled={annotations.length === 0}
                   onClick={download}
                 >

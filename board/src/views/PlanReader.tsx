@@ -194,7 +194,7 @@ export default function PlanReader({
 
   if (!group || !doc) {
     return (
-      <div className="rounded-lg border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-500">
+      <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
         No execution plans yet. Scope the first component with{" "}
         <code>/research-plans:plan</code>.
       </div>
@@ -222,14 +222,14 @@ export default function PlanReader({
               <button
                 className={`w-full rounded-md px-2.5 py-1.5 text-left text-sm ${
                   g.component === group.component
-                    ? "bg-stone-900 font-medium text-white"
-                    : "text-stone-700 hover:bg-stone-100"
+                    ? "bg-stone-900 dark:bg-stone-200 font-medium text-white dark:text-stone-900"
+                    : "text-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800"
                 }`}
                 onClick={() => onSelectComponent(g.component)}
               >
                 {g.component}
                 {preRenewal.has(g.component) && (
-                  <span className="ml-1 rounded bg-stone-200 px-1 py-0.5 text-[10px] text-stone-600">
+                  <span className="ml-1 rounded bg-stone-200 dark:bg-stone-700 px-1 py-0.5 text-[10px] text-stone-600 dark:text-stone-400">
                     pre-renewal
                   </span>
                 )}
@@ -264,7 +264,7 @@ export default function PlanReader({
                   {grp.items.map((s) => (
                     <li key={s.heading}>
                       <button
-                        className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100"
+                        className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
                         onClick={() => scrollToSection(s.heading)}
                       >
                         {s.heading}
@@ -286,8 +286,8 @@ export default function PlanReader({
                 key={d.path}
                 className={`rounded-full border px-3 py-1 text-xs font-medium ${
                   i === curIdx
-                    ? "border-stone-900 bg-stone-900 text-white"
-                    : "border-stone-300 bg-white text-stone-600 hover:border-stone-500"
+                    ? "border-stone-900 bg-stone-900 dark:bg-stone-200 text-white dark:text-stone-900"
+                    : "border-stone-300 dark:border-stone-600 bg-white text-stone-600 hover:border-stone-500 dark:hover:border-stone-400"
                 } ${d.docKind === "workingDraft" ? "border-dashed" : ""}`}
                 onClick={() => setDocIdx(i)}
               >
@@ -313,7 +313,7 @@ export default function PlanReader({
               />
             )}
             {prevDoc && (
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-stone-600">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-stone-600 dark:text-stone-400">
                 <input
                   type="checkbox"
                   checked={diffOn}
@@ -327,7 +327,7 @@ export default function PlanReader({
 
         {docs.some((d) => d.docKind === "draftSnapshot") && (
           <div className="mb-3 flex flex-wrap items-center gap-1.5">
-            <span className="text-xs uppercase tracking-wide text-stone-400">
+            <span className="text-xs uppercase tracking-wide text-stone-400 dark:text-stone-500">
               iterations
             </span>
             {docs.map((d, i) =>
@@ -337,8 +337,8 @@ export default function PlanReader({
                   title="Committed draft iteration — read-only"
                   className={`rounded border px-2 py-0.5 text-xs ${
                     i === curIdx
-                      ? "border-stone-900 bg-stone-100 font-semibold text-stone-900"
-                      : "border-dashed border-stone-300 bg-white text-stone-500 hover:border-stone-500"
+                      ? "border-stone-900 bg-stone-100 font-semibold text-stone-900 dark:text-stone-100"
+                      : "border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-stone-500 hover:border-stone-500 dark:hover:border-stone-400"
                   }`}
                   onClick={() => setDocIdx(i)}
                 >
@@ -359,7 +359,7 @@ export default function PlanReader({
               .map((b) => (
                 <button
                   key={b.dir}
-                  className="rounded-full border border-stone-300 bg-white px-2 py-0.5 font-medium text-blue-700 hover:border-stone-500"
+                  className="rounded-full border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 px-2 py-0.5 font-medium text-blue-700 dark:text-blue-400 hover:border-stone-500 dark:hover:border-stone-400"
                   onClick={() => onOpenResults(group.component)}
                 >
                   r{b.resultsVersion}
@@ -375,11 +375,11 @@ export default function PlanReader({
 
         {doc.docKind === "workingDraft" && (
           <div className="mb-3 flex items-center gap-2">
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
+            <span className="rounded bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
               Unsigned draft
             </span>
             {stale && (
-              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800">
+              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:text-red-300">
                 Stale — a signed version already supersedes this draft
               </span>
             )}
@@ -388,7 +388,7 @@ export default function PlanReader({
 
         {doc.docKind === "draftSnapshot" && (
           <div className="mb-3 flex items-center gap-2">
-            <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-stone-600">
+            <span className="rounded bg-stone-100 dark:bg-stone-800 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-stone-600 dark:text-stone-400">
               Draft iteration {docLabel(doc)} · read-only
             </span>
           </div>
@@ -397,7 +397,7 @@ export default function PlanReader({
         {parsed?.ok && parsed.provenance && (
           <div className="mb-2">
             <span
-              className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+              className="rounded border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300"
               title="Written after the work it documents — a declared, evidence-cited reconstruction, not a prospective plan."
             >
               Provenance: {parsed.provenance}
@@ -415,14 +415,14 @@ export default function PlanReader({
               : [];
             return (
               <div className="mb-2">
-                <span className="rounded bg-stone-100 px-2 py-0.5 text-xs font-semibold text-stone-700">
+                <span className="rounded bg-stone-100 dark:bg-stone-800 px-2 py-0.5 text-xs font-semibold text-stone-700 dark:text-stone-300">
                   Serves: {parsed.serves}
                 </span>
                 {rqs.length > 0 && (
                   <ul className="mt-1 space-y-0.5">
                     {rqs.map((q) => (
                       <li key={q.num} className="text-[11px] leading-snug text-stone-500">
-                        <span className="font-semibold text-stone-600">
+                        <span className="font-semibold text-stone-600 dark:text-stone-400">
                           RQ{q.num}
                         </span>{" "}
                         — {q.text}
@@ -447,7 +447,7 @@ export default function PlanReader({
         ) : (
           <div
             ref={scrollRef}
-            className="rounded-lg border border-stone-200 bg-white p-6"
+            className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-6"
           >
             {annotatable ? (
               <AnnotationLayer
@@ -478,13 +478,13 @@ export default function PlanReader({
               />
             )}
             {parsed?.ok && (
-              <div className="mt-4 border-t border-stone-100 pt-3 text-xs">
+              <div className="mt-4 border-t border-stone-100 dark:border-stone-800 pt-3 text-xs">
                 {parsed.signedOff ? (
-                  <span className="rounded bg-green-50 px-2 py-1 font-medium text-green-800">
+                  <span className="rounded bg-green-50 dark:bg-green-950 px-2 py-1 font-medium text-green-800 dark:text-green-300">
                     Signed off: {parsed.signedOff}
                   </span>
                 ) : (
-                  <span className="rounded bg-amber-50 px-2 py-1 font-medium text-amber-800">
+                  <span className="rounded bg-amber-50 dark:bg-amber-950 px-2 py-1 font-medium text-amber-800 dark:text-amber-300">
                     No sign-off line
                   </span>
                 )}
@@ -493,12 +493,12 @@ export default function PlanReader({
           </div>
         )}
         {annotatable && (
-          <p className="mt-2 text-xs text-stone-400">
+          <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
             Select any text in the plan to attach a comment.
           </p>
         )}
         {canAnnotate && doc.docKind === "draftSnapshot" && (
-          <p className="mt-2 text-xs text-stone-400">
+          <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
             Draft iterations are read-only history — open the signed version or
             working draft to comment.
           </p>
@@ -554,10 +554,10 @@ function PlanBody({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="mt-4 flex w-full items-center gap-2 border-t border-stone-200 pt-4 text-left text-lg font-bold text-stone-900 hover:text-stone-600"
+        className="mt-4 flex w-full items-center gap-2 border-t border-stone-200 dark:border-stone-800 pt-4 text-left text-lg font-bold text-stone-900 dark:text-stone-100 hover:text-stone-600"
       >
         <svg
-          className={`h-4 w-4 shrink-0 text-stone-400 transition-transform ${open ? "rotate-90" : ""}`}
+          className={`h-4 w-4 shrink-0 text-stone-400 dark:text-stone-500 transition-transform ${open ? "rotate-90" : ""}`}
           viewBox="0 0 16 16"
           fill="none"
           aria-hidden="true"

@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+/* Dark mode (v0.11): class strategy — a `dark` class on <html> drives every
+   dark: utility. Set pre-paint by the inline boot script in index.html. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+}
+
+html.dark {
+  background: var(--color-stone-950);
+  color-scheme: dark;
 }
 
 code,
@@ -115,4 +124,49 @@ mark[data-annotation] {
   color: var(--color-red-900);
   text-decoration: line-through;
   text-decoration-color: var(--color-red-300);
+}
+
+/* Dark counterparts (v0.11). prose-md, annotation marks, and diffs are the
+   styles that live outside Tailwind utilities, so they get explicit rules. */
+.dark .prose-md {
+  color: var(--color-stone-200);
+}
+.dark .prose-md h2 {
+  border-bottom-color: var(--color-stone-700);
+}
+.dark .prose-md blockquote {
+  border-left-color: var(--color-stone-600);
+  color: var(--color-stone-400);
+}
+.dark .prose-md code {
+  background: var(--color-stone-800);
+}
+.dark .prose-md pre {
+  background: var(--color-stone-800);
+}
+.dark .prose-md th,
+.dark .prose-md td {
+  border-color: var(--color-stone-700);
+}
+.dark .prose-md th {
+  background: var(--color-stone-900);
+}
+.dark .prose-md hr {
+  border-top-color: var(--color-stone-700);
+}
+.dark .prose-md a {
+  color: var(--color-blue-400);
+}
+.dark mark[data-annotation] {
+  background: color-mix(in srgb, var(--color-amber-400) 30%, transparent);
+  color: inherit;
+}
+.dark .diff-add {
+  background: var(--color-green-950);
+  color: var(--color-green-200);
+}
+.dark .diff-del {
+  background: var(--color-red-950);
+  color: var(--color-red-300);
+  text-decoration-color: var(--color-red-700);
 }

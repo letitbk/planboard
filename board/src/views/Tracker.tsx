@@ -22,13 +22,13 @@ import {
 } from "../lib/parse";
 
 const CHIP: Record<TrackerStatus, string> = {
-  "not started": "bg-stone-100 text-stone-600 border-stone-200",
-  planned: "bg-blue-50 text-blue-700 border-blue-200",
-  "in progress": "bg-amber-50 text-amber-800 border-amber-200",
-  done: "bg-green-50 text-green-800 border-green-200",
-  "done (verified)": "bg-green-100 text-green-900 border-green-300",
-  dropped: "bg-red-50 text-red-700 border-red-200 line-through",
-  unknown: "bg-stone-100 text-stone-500 border-stone-200",
+  "not started": "bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-800",
+  planned: "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-900",
+  "in progress": "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900",
+  done: "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900",
+  "done (verified)": "bg-green-100 dark:bg-green-900/60 text-green-900 dark:text-green-200 border-green-300 dark:border-green-800",
+  dropped: "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900 line-through",
+  unknown: "bg-stone-100 dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-800",
 };
 
 export default function Tracker({
@@ -276,7 +276,7 @@ export default function Tracker({
   const body = (
     <>
       <div className="mb-1 flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold text-stone-900">{mp.title}</h1>
+        <h1 className="text-xl font-bold text-stone-900 dark:text-stone-100">{mp.title}</h1>
         <div className="flex items-center gap-3">
           {mp.renewed && (
             <span className="text-xs text-stone-500">
@@ -284,7 +284,7 @@ export default function Tracker({
               {mp.renewed.reason ? ` — ${mp.renewed.reason}` : ""}
               {onOpenArchive && (
                 <button
-                  className="ml-1.5 font-medium text-blue-700 underline hover:text-blue-900"
+                  className="ml-1.5 font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
                   onClick={onOpenArchive}
                 >
                   archived plan
@@ -321,7 +321,7 @@ export default function Tracker({
       </div>
 
       <section
-        className="mb-4 rounded-lg border border-stone-200 bg-white p-4"
+        className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-4"
         data-annot-scope="context"
         data-annot-section="Project context"
       >
@@ -332,11 +332,11 @@ export default function Tracker({
       </section>
 
       {hasRQs && (
-        <section className="mb-6 rounded-lg border border-stone-200 bg-white p-4">
+        <section className="mb-6 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-4">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">
             Research questions
           </h2>
-          <ol className="space-y-1 text-sm text-stone-800">
+          <ol className="space-y-1 text-sm text-stone-800 dark:text-stone-200">
             {mp.researchQuestions.map((q) => (
               <li
                 key={q.num}
@@ -344,7 +344,7 @@ export default function Tracker({
                 data-annot-scope={`rq:${q.num}`}
                 data-annot-section={`RQ${q.num}`}
               >
-                <span className="shrink-0 rounded bg-stone-900 px-1.5 py-0.5 text-xs font-bold text-white">
+                <span className="shrink-0 rounded bg-stone-900 dark:bg-stone-200 px-1.5 py-0.5 text-xs font-bold text-white dark:text-stone-900">
                   RQ{q.num}
                 </span>
                 <span>{q.text}</span>
@@ -354,10 +354,10 @@ export default function Tracker({
         </section>
       )}
 
-      <section className="rounded-lg border border-stone-200 bg-white">
+      <section className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500">
+            <tr className="border-b border-stone-200 dark:border-stone-800 text-left text-xs uppercase tracking-wide text-stone-500">
               <th className="px-4 py-2">#</th>
               <th className="px-4 py-2">Component</th>
               {hasRQs && <th className="px-4 py-2">Serves</th>}
@@ -377,31 +377,31 @@ export default function Tracker({
               return (
                 <tr
                   key={i}
-                  className="border-b border-stone-100 last:border-0"
+                  className="border-b border-stone-100 dark:border-stone-800 last:border-0"
                   data-annot-scope={`row:${r.num}`}
                   data-annot-section={`row ${r.num}: ${r.component}`}
                 >
-                  <td className="px-4 py-2.5 text-stone-400">{r.num}</td>
-                  <td className="px-4 py-2.5 font-medium text-stone-800">
+                  <td className="px-4 py-2.5 text-stone-400 dark:text-stone-500">{r.num}</td>
+                  <td className="px-4 py-2.5 font-medium text-stone-800 dark:text-stone-200">
                     {r.component}
                   </td>
                   {hasRQs && (
                     <td className="px-4 py-2.5">
                       {serves.isInfra ? (
-                        <span className="text-xs text-stone-400">infra</span>
+                        <span className="text-xs text-stone-400 dark:text-stone-500">infra</span>
                       ) : serves.tokens.length > 0 ? (
                         <span className="flex flex-wrap gap-1">
                           {serves.tokens.map((t) => (
                             <span
                               key={t}
-                              className="rounded bg-stone-100 px-1.5 py-0.5 text-xs font-semibold text-stone-700"
+                              className="rounded bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 text-xs font-semibold text-stone-700 dark:text-stone-300"
                             >
                               {t}
                             </span>
                           ))}
                           {mismatch && (
                             <span
-                              className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+                              className="rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300"
                               title="The execution plan's Serves line disagrees with this row"
                             >
                               mismatch
@@ -409,7 +409,7 @@ export default function Tracker({
                           )}
                         </span>
                       ) : (
-                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                        <span className="rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
                           unlinked
                         </span>
                       )}
@@ -425,17 +425,17 @@ export default function Tracker({
                   <td className="px-4 py-2.5">
                     {slug && !missingFile ? (
                       <button
-                        className="text-xs font-medium text-blue-700 underline hover:text-blue-900"
+                        className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
                         onClick={() => onOpenComponent(slug, r.component)}
                       >
                         open plan
                       </button>
                     ) : missingFile ? (
-                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-700">
+                      <span className="rounded bg-red-50 dark:bg-red-950 px-1.5 py-0.5 text-xs text-red-700 dark:text-red-400">
                         linked file missing
                       </span>
                     ) : (
-                      <span className="text-xs text-stone-400">—</span>
+                      <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5">
@@ -447,7 +447,7 @@ export default function Tracker({
                         : null;
                       const latest = g?.results?.[g.results.length - 1];
                       if (!latest)
-                        return <span className="text-xs text-stone-400">—</span>;
+                        return <span className="text-xs text-stone-400 dark:text-stone-500">—</span>;
                       const mark =
                         latest.verdict?.status === "accepted"
                           ? "✓"
@@ -456,7 +456,7 @@ export default function Tracker({
                             : "●";
                       return (
                         <button
-                          className="text-xs font-medium text-blue-700 underline hover:text-blue-900"
+                          className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
                           onClick={() => onOpenResults(slug!)}
                         >
                           r{latest.resultsVersion} {mark}
@@ -464,7 +464,7 @@ export default function Tracker({
                       );
                     })()}
                   </td>
-                  <td className="px-4 py-2.5 text-stone-600">{r.notes}</td>
+                  <td className="px-4 py-2.5 text-stone-600 dark:text-stone-400">{r.notes}</td>
                 </tr>
               );
             })}
@@ -474,7 +474,7 @@ export default function Tracker({
 
       {orphanGroups.length > 0 && (
         <div
-          className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800"
+          className="mt-3 rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 px-3 py-2 text-xs text-red-800 dark:text-red-300"
           data-annot-scope="drift"
           data-annot-section="drift notice"
         >
@@ -495,7 +495,7 @@ export default function Tracker({
 
       {preRenewalGroups.length > 0 && (
         <div
-          className="mt-3 rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600"
+          className="mt-3 rounded-md border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50 px-3 py-2 text-xs text-stone-600 dark:text-stone-400"
           data-annot-scope="pre-renewal"
           data-annot-section="pre-renewal components"
         >
@@ -516,11 +516,11 @@ export default function Tracker({
 
       {drift.length > 0 && (
         <div
-          className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          className="mt-3 rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
           data-annot-scope="drift-checks"
           data-annot-section="drift and hygiene"
         >
-          <div className="mb-1 font-semibold uppercase tracking-wide text-amber-700">
+          <div className="mb-1 font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
             Drift &amp; hygiene ({drift.length})
           </div>
           <ul className="list-disc space-y-0.5 pl-4">
@@ -544,7 +544,7 @@ export default function Tracker({
 
       {mp.foundationsMd && (
         <section
-          className="mt-4 rounded-lg border border-stone-200 bg-white p-4"
+          className="mt-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-4"
           data-annot-scope="foundations"
           data-annot-section="Foundations"
         >
@@ -557,7 +557,7 @@ export default function Tracker({
 
       {mp.sequencingMd && (
         <section
-          className="mt-4 rounded-lg border border-stone-200 bg-white p-4"
+          className="mt-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-4"
           data-annot-scope="sequencing"
           data-annot-section="Sequencing notes"
         >
@@ -585,7 +585,7 @@ export default function Tracker({
         body
       )}
       {canAnnotate && (
-        <p className="mt-2 text-xs text-stone-400">
+        <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
           Select any text to attach a comment.
         </p>
       )}
@@ -596,7 +596,7 @@ export default function Tracker({
 
 export function Notice({ text }: { text: string }) {
   return (
-    <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+    <div className="mb-3 rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
       {text}
     </div>
   );

@@ -30,7 +30,7 @@ const KIND_STYLE: Record<EventKind, { dot: string; label: string }> = {
   review: { dot: "bg-purple-500", label: "Review" },
   // Reconstructed pre-adoption history: hollow amber dot, dashed card — a record,
   // not a real-time log entry, and visibly so.
-  reconstructed: { dot: "border-2 border-amber-400 bg-white", label: "Reconstructed (pre-adoption)" },
+  reconstructed: { dot: "border-2 border-amber-400 bg-white dark:bg-stone-900", label: "Reconstructed (pre-adoption)" },
 };
 
 export default function Timeline({
@@ -78,8 +78,8 @@ export default function Timeline({
             key={k}
             className={`rounded-full border px-3 py-1 text-xs font-medium ${
               filter === k
-                ? "border-stone-900 bg-stone-900 text-white"
-                : "border-stone-300 bg-white text-stone-600 hover:border-stone-500"
+                ? "border-stone-900 bg-stone-900 dark:bg-stone-200 text-white dark:text-stone-900"
+                : "border-stone-300 dark:border-stone-600 bg-white text-stone-600 hover:border-stone-500 dark:hover:border-stone-400"
             }`}
             onClick={() => setFilter(k)}
           >
@@ -90,12 +90,12 @@ export default function Timeline({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search…"
-          className="ml-auto w-52 rounded-md border border-stone-300 px-2.5 py-1 text-sm outline-none focus:border-stone-500"
+          className="ml-auto w-52 rounded-md border border-stone-300 dark:border-stone-600 px-2.5 py-1 text-sm outline-none focus:border-stone-500"
         />
       </div>
 
       {visible.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-500">
+        <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
           {events.length === 0
             ? "Nothing logged yet. Entries appear here as decisions happen."
             : "No events match the current filter."}
@@ -103,7 +103,7 @@ export default function Timeline({
       ) : (
         (() => {
           const list = (
-            <ol className="relative ml-2 space-y-4 border-l border-stone-200 pl-6">
+            <ol className="relative ml-2 space-y-4 border-l border-stone-200 dark:border-stone-800 pl-6">
               {visible.map((e, i) => (
                 <li key={i} className="relative">
                   <span
@@ -113,19 +113,19 @@ export default function Timeline({
                     className={`rounded-lg border p-3 ${
                       e.kind === "reconstructed"
                         ? "border-dashed border-amber-300 bg-amber-50/40"
-                        : "border-stone-200 bg-white"
+                        : "border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900"
                     }`}
                     data-annot-scope={`evt:${e.kind}:${e.sortKey}:${e.title}`}
                     data-annot-section={`${KIND_STYLE[e.kind].label} ${e.sortKey.replace(/ 00:00$/, "")}${e.title ? ` — ${e.title}` : ""}`}
                   >
                     <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-stone-500">
-                      <span className="font-medium text-stone-700">
+                      <span className="font-medium text-stone-700 dark:text-stone-300">
                         {KIND_STYLE[e.kind].label}
                       </span>
                       <span>{e.sortKey}</span>
-                      <span className="font-medium text-stone-700">{e.title}</span>
+                      <span className="font-medium text-stone-700 dark:text-stone-300">{e.title}</span>
                       {e.badge && (
-                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                        <span className="rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
                           {e.badge}
                         </span>
                       )}
@@ -152,7 +152,7 @@ export default function Timeline({
       )}
 
       {canAnnotate && (
-        <p className="mt-2 text-xs text-stone-400">
+        <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
           Select any text to attach a comment.
         </p>
       )}
