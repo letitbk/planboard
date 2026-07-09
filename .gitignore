@@ -5,3 +5,4 @@ board/node_modules/
 board/dist/
 .superpowers/
 __pycache__/
+.playwright-mcp/

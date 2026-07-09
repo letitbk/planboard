@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.11.0 (2026-07-09)
+
+UI release — dark mode, readable paragraphs, and a provenance flow diagram.
+
+- **Dark mode.** A sun/moon toggle in the board header (also on the batch
+  sign-off and terminal screens). First visit follows the OS preference; the
+  toggle overrides it and persists. An inline pre-paint boot script means no
+  flash of the wrong theme, and exported/shared snapshot files carry the
+  toggle too. Every view, chip, diff, annotation highlight, and the script
+  viewer are themed.
+- **Soft-unwrap for hard-wrapped documents.** Paragraphs that were
+  hard-wrapped in the source (agent-written reports, pasted docs) now flow
+  to the container width instead of breaking mid-sentence at every source
+  newline. Intentional line-oriented breaks survive: `Label:` lines, list
+  items, tables, headings, code blocks, and explicit two-space breaks are
+  never joined; only clear sentence continuations are.
+- **Provenance flow diagram.** The Results view's "How these were produced"
+  text list is now a script→artifact flow diagram: script nodes (language,
+  line count) connect by curved edges to artifact nodes (thumbnails,
+  source paths, .tex/data chips). Click a script to read its snapshot in
+  the line-numbered viewer and comment on specific lines; click an artifact
+  to open its lightbox or jump to its card. Node text is drag-selectable —
+  comments on the diagram route like any other, and highlights repaint on
+  the surface where they were made.
+
 ## 0.10.0 (2026-07-09)
 
 Feature release — journal-ready outputs, project renewal, shareable reports, and validation at capture.
