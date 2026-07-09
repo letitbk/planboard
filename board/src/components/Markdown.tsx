@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Marked } from "marked";
+import { unwrapSoftBreaks } from "../lib/markdownText";
 
 // HTML policy: comments are stripped; any other raw HTML in artifacts is
 // ESCAPED, never executed — a committed/shared board.html must be inert even
@@ -13,6 +14,9 @@ function escapeHtml(s: string): string {
 
 // breaks: true — research plans and reports are written line-oriented
 // (Serves:, Success:, sign-off lines); single newlines must render as breaks.
+// Hard-wrapped paragraphs are soft-unwrapped BEFORE parsing (v0.11), so
+// sentence continuations flow to the container width while the intentional
+// line-oriented breaks above survive. See lib/markdownText.ts.
 const marked = new Marked({
   gfm: true,
   breaks: true,
@@ -32,7 +36,10 @@ export default function Markdown({
   source: string;
   className?: string;
 }) {
-  const html = useMemo(() => marked.parse(source) as string, [source]);
+  const html = useMemo(
+    () => marked.parse(unwrapSoftBreaks(source)) as string,
+    [source],
+  );
   return (
     <div
       className={`prose-md ${className}`}
