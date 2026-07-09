@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.10.0 (2026-07-09)
+
+Feature release — journal-ready outputs, project renewal, shareable reports, and validation at capture.
+
+- **Journal-quality outputs, end to end.** Init (and renew) interview for a
+  target journal and write output conventions into the project's CLAUDE.md
+  block (rule 7): analysis deliverables are journal-ready figures (vector PDF
+  + PNG preview) and typeset tables (.png render + .tex source), produced via
+  the /journal-figures and /journal-tables skills when available, standard
+  tooling otherwise — a CSV of estimates is an intermediate, never the
+  deliverable. Table artifacts carry `tex` and `data` source attachments
+  (validated at finalize); the board displays a table's typeset render like a
+  figure (lightbox included) with the sources as quiet links. **Behavior
+  change:** the board no longer auto-inlines CSV/TSV/tex/json/txt artifact
+  contents — legacy bundles whose table artifact is a bare CSV now render as
+  a click-to-open card instead of an inline dump (.html/.md tables still
+  inline, sanitized). `.xlsx` files are now discovered at capture.
+- **`/research-plans:renew` — change the project's direction.** Archives the
+  master plan to `plans/archive/master-plan-<date>.md` (immutable —
+  hook-enforced like signed versions), writes a fresh master plan for the new
+  target (new context and RQs), carries forward the prior components you
+  still rely on (numbers, slugs, dirs, results untouched; numbering continues
+  across renewals, never reused), preserves `Initialized:` unchanged, and
+  records the pivot in a `Renewed:` line, a `Foundations` section, and one
+  decision-log entry. Works on never-initialized exploratory repos too, and
+  is the preferred entry there; adopt remains the backward-looking
+  reconstruction and consumes carried rows that need retrospective plans.
+  The board grows an **Archive** view rendering each archived plan with its
+  tracker; pre-renewal components get quiet badges (never red drift) and
+  are skipped by the source-drift checks.
+- **`/research-plans:report` and a Generate report board button.** Assembles
+  a standalone shareable report for a results bundle — background and goal
+  from the plan, data and methods, findings, embedded figures/tables,
+  validation summary, provenance appendix — as markdown under
+  `plans/reports/` (committed, regeneratable), plus PDF and DOCX via pandoc
+  when available (honest degradation otherwise). The button rides the same
+  feedback channel as agent reviews: submit, board closes, report generates,
+  board reopens on the bundle.
+- **Automatic plan-vs-execution validation at capture.** Every planned
+  capture spawns one independent subagent that compares the signed plan
+  against the staged scripts, artifacts, report, decision log, and git
+  evidence, producing per-build-step and per-success-criterion verdicts with
+  evidence. The overall status is derived mechanically (`conforms` /
+  `conforms-with-amendments` / `deviations-found` / `unverifiable`) and
+  sealed into the bundle as `manifest.validation` + a readable
+  `validation.md`; retrofit bundles record `not-applicable`, headless runs
+  `skipped` — never silent. The board's Results view renders the audit with
+  per-step marks; the Tracker flags `deviations-found`. Advisory by design:
+  capture never blocks, and the remedy for an unrecorded deviation is a plan
+  revision via sync.
+
 ## 0.9.2 (2026-07-08)
 
 - **Relicensed from MIT to the PolyForm Noncommercial License 1.0.0.**

@@ -11,7 +11,7 @@ In any Claude Code session:
 /plugin install research-plans@research-plans
 ```
 
-Restart Claude Code. Type `/research-plans` and the eight commands should appear in the menu. Use the full namespaced names (`/research-plans:init`, not `/init`, which is a different built-in command).
+Restart Claude Code. Type `/research-plans` and the commands should appear in the menu. Use the full namespaced names (`/research-plans:init`, not `/init`, which is a different built-in command).
 
 ## 2. Initialize your project
 
@@ -85,7 +85,7 @@ To get feedback from a collaborator who does not use Claude Code, `/research-pla
 
 **My project is not a git repository.** Everything works, but the plugin loses git-based evidence (commit timing, staleness checks) and will say so. A git repository is strongly recommended since the version history is part of the point.
 
-**I already did half the work before adopting this.** Mid-session and mid-project adoption is supported: prior work informs the plan (context, research questions, statuses, scope reasons), never the decision log. The log starts at initialization and is never backfilled. For substantial already-done work, `/research-plans:adopt` goes further — it decomposes the work into components, drafts a full **retrospective** plan for each (honestly labeled, reviewed together in one board batch), and reconstructs the pre-adoption decisions into `plans/history.md`, kept out of the real-time log.
+**I already did half the work before adopting this.** Mid-session and mid-project adoption is supported: prior work informs the plan (context, research questions, statuses, scope reasons), never the decision log. The log starts at initialization and is never backfilled. For substantial already-done work, `/research-plans:adopt` goes further — it decomposes the work into components, drafts a full **retrospective** plan for each (honestly labeled, reviewed together in one board batch), and reconstructs the pre-adoption decisions into `plans/history.md`, kept out of the real-time log. And when the point of starting the workflow is to take the existing exploration in a NEW direction — a new target, new questions — use `/research-plans:renew` instead: it writes a fresh master plan for the new direction (archiving the old one if the project was initialized), keeps your accomplishments as carried components, and leaves adopt for the pieces you want retro-planned.
 
 **I use Claude Code's plan mode.** Fine. If a plan gets approved through plan mode, Claude copies it into the component's next version slot so the repository record stays complete.
 
