@@ -19,6 +19,52 @@ In Claude Code:
 
 Then restart Claude Code. See [QUICKSTART.md](QUICKSTART.md) for a walkthrough.
 
+## Updating
+
+When a new version ships, a one-time notice appears at session start naming the exact command. To update:
+
+```
+/plugin update research-plans@research-plans
+/reload-plugins
+```
+
+(then restart Claude Code if a component doesn't pick up).
+
+To update automatically instead, enable auto-update once: open `/plugin`, go to **Marketplaces**, select **research-plans**, and turn on auto-update. Claude Code then updates the plugin at startup and prompts you to run `/reload-plugins`.
+
+To silence the update notice (e.g. on an intentionally pinned install), set `RESEARCH_PLANS_NO_UPDATE_CHECK=1` in the `env` block of `~/.claude/settings.json` (not `.zshrc` — a hook launched by Claude Code may not source your shell profile):
+
+```
+{ "env": { "RESEARCH_PLANS_NO_UPDATE_CHECK": "1" } }
+```
+
+## Installing a specific version
+
+Every release is a git tag (`v0.1.0` … `v0.12.0`). To pin an older version, add a local marketplace file whose entry pins the tag, then install from it:
+
+Create `rp-pinned/.claude-plugin/marketplace.json`:
+
+```
+{
+  "name": "research-plans-pinned",
+  "plugins": [
+    {
+      "name": "research-plans",
+      "source": { "source": "github", "repo": "letitbk/research-plans", "ref": "v0.9.0" }
+    }
+  ]
+}
+```
+
+Then:
+
+```
+/plugin marketplace add ./rp-pinned
+/plugin install research-plans@research-plans-pinned
+```
+
+If your Claude Code build prefers it, the equivalent fallback is to check out the tag locally (`git checkout v0.9.0`) and `/plugin marketplace add` the repo's local path. On a pinned install, set `RESEARCH_PLANS_NO_UPDATE_CHECK=1` (see Updating) so you aren't reminded about newer releases you deliberately skipped.
+
 ## Commands
 
 | Command | What it does |
