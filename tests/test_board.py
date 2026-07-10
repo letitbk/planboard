@@ -212,6 +212,35 @@ class TestShareHash(unittest.TestCase):
         ]))
 
 
+class TestCollaboratorFacingPayload(unittest.TestCase):
+    def _payload(self, root, mode):
+        return board.collect_payload(root, mode, None)
+
+    def test_hosted_matches_remote_capability(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            hosted = self._payload(root, "hosted")
+            remote = self._payload(root, "remote")
+            self.assertIn("shareHash", hosted)
+            self.assertNotIn("drift", hosted)
+            self.assertEqual(set(hosted) - {"shareHash"} | {"shareHash"},
+                             set(remote) - {"shareHash"} | {"shareHash"})
+
+    def test_project_root_only_when_live(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            self.assertIn("root", self._payload(root, "live")["project"])
+            for m in ("remote", "hosted", "static"):
+                self.assertNotIn("root", self._payload(root, m)["project"])
+
+    def test_static_still_carries_drift_and_no_shareHash(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            static = self._payload(root, "static")
+            self.assertIn("drift", static)
+            self.assertNotIn("shareHash", static)
+
+
 class TestRemotePayload(unittest.TestCase):
     def test_remote_payload_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

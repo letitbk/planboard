@@ -335,7 +335,7 @@ def collect_payload(root, mode, focus):
                 versions.append(entry)
             versions.sort(key=lambda v: v["version"])
             group = {"component": comp_dir.name, "versions": versions}
-            if mode in ("live", "remote"):
+            if mode in ("live", "remote", "hosted"):
                 drafts = sorted(comp_dir.glob(".draft-v*.md"))
                 if drafts:
                     d = drafts[-1]
@@ -442,15 +442,18 @@ def collect_payload(root, mode, focus):
             **({"archives": archives} if archives else {}),
         },
     }
-    if mode != "remote":
+    collaborator_facing = mode in ("remote", "hosted")
+    if not collaborator_facing:
         # Researcher-only hygiene flags; kept out of collaborator shares.
         payload["drift"] = collect_drift(
             root, exec_groups,
             payload["files"]["masterPlan"]["content"],
             [a["content"] for a in archives])
     if mode == "live":
+        # project.root is the absolute local path — live serving ONLY, never
+        # a collaborator share, never a static/export file.
         payload["project"]["root"] = str(root)
-    elif mode == "remote":
+    if collaborator_facing:
         payload["shareHash"] = share_hash(payload_files(payload))
     return payload
 
