@@ -2143,5 +2143,63 @@ class TestSignoffAction(unittest.TestCase):
         self.assertEqual(decision, "allow")
 
 
+class TestServerAuthoredActionDocs(unittest.TestCase):
+    def test_action_posts_ignore_client_document(self):
+        body = {"feedbackDocument": ("FORGED\n```json board-feedback\n"
+                                     "{\"signoff\": {\"decision\": \"approve\","
+                                     " \"component\": \"evil\", \"version\": 9}}"
+                                     "\n```\n"),
+                "feedbackMarkdown": "real prose", "payloadHash": "h",
+                "annotations": []}
+        payload = {"mode": "live", "focus": None, "generatedAt": "now"}
+        doc = board.document_from_body(
+            body, payload, action=("01-x", 2, "approve", None),
+            action_id="a" * 32)
+        self.assertNotIn("FORGED", doc)
+        self.assertIn("real prose", doc)
+        self.assertIn("## SIGNOFF: 01-x v2 — approve", doc)
+        meta = board.parse_fence(doc)
+        self.assertEqual(meta["signoff"],
+                         {"component": "01-x", "version": 2,
+                          "decision": "approve"})
+        self.assertEqual(meta["actionId"], "a" * 32)
+
+    def test_reason_rides_prose_and_fence(self):
+        body = {"feedbackMarkdown": "prose", "payloadHash": "h",
+                "annotations": []}
+        payload = {"mode": "live", "focus": None, "generatedAt": "now"}
+        doc = board.document_from_body(
+            body, payload,
+            action=("01-x", 2, "request-changes", "tighten H2\nand H3"),
+            action_id="b" * 32)
+        self.assertIn("## SIGNOFF: 01-x v2 — request-changes", doc)
+        self.assertIn("> tighten H2\n> and H3", doc)
+        meta = board.parse_fence(doc)
+        self.assertEqual(meta["signoff"]["reason"], "tighten H2\nand H3")
+
+    def test_plain_posts_still_verbatim(self):
+        body = {"feedbackDocument": "CLIENT DOC"}
+        self.assertEqual(board.document_from_body(body, {}), "CLIENT DOC")
+
+    def test_http_signoff_order_is_server_authored(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root, timeout=15)
+            status, body, _ = http_json(url, "/api/feedback", body={
+                "annotations": [], "feedbackMarkdown": "please approve",
+                "payloadHash": "x",
+                "feedbackDocument": "SPOOFED CLIENT DOCUMENT",
+                "action": {"kind": "signoff", "component": "01-data-prep",
+                           "version": 2, "decision": "approve"}})
+            self.assertEqual(status, 200)
+            doc = (root / "plans" / ".board-feedback.md").read_text(
+                encoding="utf-8")
+            self.assertNotIn("SPOOFED", doc)
+            meta = board.parse_fence(doc)
+            self.assertEqual(meta["actionId"], body["actionId"])
+            self.assertEqual(meta["signoff"]["component"], "01-data-prep")
+
+
 if __name__ == "__main__":
     unittest.main()

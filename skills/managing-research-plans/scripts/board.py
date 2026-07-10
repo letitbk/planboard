@@ -652,7 +652,7 @@ def acquire_lock(plans_dir, force, meta=None):
     return lock
 
 
-def build_feedback_document(body, payload):
+def build_feedback_document(body, payload, action=None, action_id=None):
     feedback_md = body.get("feedbackMarkdown") or "# Board Feedback\n\n(no markdown)"
     meta = {
         "sessionId": str(uuid.uuid4()),
@@ -662,6 +662,20 @@ def build_feedback_document(body, payload):
         "payloadHash": body.get("payloadHash", ""),
         "annotations": body.get("annotations", []),
     }
+    if action_id:
+        meta["actionId"] = action_id
+    if action is not None:
+        # Authoritative order fields come ONLY from the server-validated
+        # tuple — never from client-supplied meta.
+        slug, ver, decision, reason = action
+        so = {"component": slug, "version": ver, "decision": decision}
+        if reason:
+            so["reason"] = reason
+        meta["signoff"] = so
+        head = "## SIGNOFF: %s v%d — %s\n\n" % (slug, ver, decision)
+        if reason:
+            head += "> %s\n\n" % reason.replace("\n", "\n> ")
+        feedback_md = head + feedback_md
     return (
         feedback_md.rstrip()
         + "\n\n```json board-feedback\n"
@@ -735,11 +749,15 @@ def inject_fence_key(doc, key, value):
     return doc[:last.start()] + new_block + doc[last.end():]
 
 
-def document_from_body(body, payload, action_id=None):
+def document_from_body(body, payload, action=None, action_id=None):
     """Prefer the client-assembled feedback document (schemaVersion 1 clients
     send feedbackDocument); fall back to server-side assembly for older
-    templates and the gate flow. Durable live orders carry a server-generated
-    actionId in the fence regardless of who assembled the document."""
+    templates and the gate flow. Action-carrying orders are ALWAYS assembled
+    server-side from the validated action tuple (the client document is
+    ignored), and every durable live order carries a server actionId."""
+    if action is not None:
+        return build_feedback_document(body, payload, action=action,
+                                       action_id=action_id)
     doc = body.get("feedbackDocument")
     if not (isinstance(doc, str) and doc.strip()):
         doc = build_feedback_document(body, payload)
@@ -881,13 +899,14 @@ def serve(root, payload, args):
                     return
                 action = body.get("action")
                 ticket_args = None
+                validated = None
                 if action is not None:
                     try:
-                        slug_a, ver_a, decision_a, _reason_a = \
-                            validate_signoff_action(action, draft_map)
+                        validated = validate_signoff_action(action, draft_map)
                     except ValueError:
                         self._json(400, {"error": "bad-action"})
                         return
+                    slug_a, ver_a, decision_a, _reason_a = validated
                     if decision_a == "approve":
                         entry = draft_map[(slug_a, ver_a)]
                         try:
@@ -917,7 +936,9 @@ def serve(root, payload, args):
                             return
                         ticket_args = (slug_a, ver_a, dtext)
                 aid = accept_order(
-                    lambda aid: document_from_body(body, payload, action_id=aid),
+                    lambda aid: document_from_body(body, payload,
+                                                   action=validated,
+                                                   action_id=aid),
                     0, True)
                 if aid is None:
                     self._json(409, {"error": "already-accepted",
