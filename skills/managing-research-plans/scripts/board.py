@@ -7,13 +7,17 @@ Stdlib only, Python 3.9+. Modes:
   --share [PATH]     write an annotatable remote board for collaborators
                      (default plans/board-share.html; --focus prunes to one component)
   --publish          push the static board to the repo's GitHub Pages (gh-pages)
-  --collect          print and delete pending feedback from an interrupted session
+  --collect          print pending feedback from an interrupted session (a
+                     non-destructive peek; delete it with --ack after routing)
   --collect FILE     print a collaborator's feedback file (never deletes it;
-                     stderr notes STALE if plans changed since the share)
+                     researcher-action keys/headings are stripped; stderr
+                     notes STALE if plans changed since the share)
+  --ack              acknowledge (delete) the routed pending order
 
 Exit codes: 0 feedback delivered / export or share written / feedback collected;
-1 usage or environment error; 2 timeout with no feedback; 3 nothing to collect;
-130 cancelled.
+1 usage or environment error; 2 timeout with no feedback; 3 nothing to
+collect/acknowledge; 4 stale payload (an approve targeted a draft that changed
+on disk — relaunch to regenerate); 130 cancelled.
 """
 
 import argparse
