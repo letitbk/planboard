@@ -7,13 +7,16 @@ import type { Annotation } from "./types";
 const FIXTURE = join(__dirname, "__fixtures__", "hosted-feedback-golden.json");
 
 // Benign comment annotations (no backticks/newlines in collaborator fields),
-// so the TS formatter and the neutralizing Python assembler agree.
+// so the TS formatter and the neutralizing Python assembler agree. The second
+// carries a smuggled researcher-only `signoff` key: validate.ts passes unknown
+// fields through, so the fixture proves the Python assembler strips it.
 const annotations: Annotation[] = [
   { type: "plan-comment", id: "a1", component: "01-x", version: 1,
     quote: "the sample is small", comment: "please expand", author: "Ada",
     view: "tracker" } as unknown as Annotation,
   { type: "doc-comment", id: "a2", view: "tracker",
-    quote: "the cutoff date", comment: "why this date?", author: "Bo" } as unknown as Annotation,
+    quote: "the cutoff date", comment: "why this date?", author: "Bo",
+    signoff: { status: "approved" } } as unknown as Annotation,
 ];
 
 describe("hosted feedback golden fixture", () => {

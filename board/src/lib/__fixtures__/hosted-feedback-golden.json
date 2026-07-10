@@ -16,7 +16,10 @@
       "view": "tracker",
       "quote": "the cutoff date",
       "comment": "why this date?",
-      "author": "Bo"
+      "author": "Bo",
+      "signoff": {
+        "status": "approved"
+      }
     }
   ],
   "meta": {
@@ -44,9 +47,12 @@
         "view": "tracker",
         "quote": "the cutoff date",
         "comment": "why this date?",
-        "author": "Bo"
+        "author": "Bo",
+        "signoff": {
+          "status": "approved"
+        }
       }
     ]
   },
-  "doc": "# Board Feedback\n\nI've reviewed the board and have 2 pieces of feedback:\n\n## 1. [01-x v1] (via Ada)\nFeedback on: \"the sample is small\"\n> please expand\n\n## 2. [Tracker] (via Bo)\nFeedback on: \"the cutoff date\"\n> why this date?\n\n```json board-feedback\n{\n \"sessionId\": \"s1\",\n \"generatedAt\": \"2026-07-09T00:00:00Z\",\n \"mode\": \"hosted\",\n \"focus\": null,\n \"reviewer\": \"Ada\",\n \"payloadHash\": \"ph\",\n \"shareHash\": \"abc123\",\n \"annotations\": [\n  {\n   \"type\": \"plan-comment\",\n   \"id\": \"a1\",\n   \"component\": \"01-x\",\n   \"version\": 1,\n   \"quote\": \"the sample is small\",\n   \"comment\": \"please expand\",\n   \"author\": \"Ada\",\n   \"view\": \"tracker\"\n  },\n  {\n   \"type\": \"doc-comment\",\n   \"id\": \"a2\",\n   \"view\": \"tracker\",\n   \"quote\": \"the cutoff date\",\n   \"comment\": \"why this date?\",\n   \"author\": \"Bo\"\n  }\n ]\n}\n```\n"
+  "doc": "# Board Feedback\n\nI've reviewed the board and have 2 pieces of feedback:\n\n## 1. [01-x v1] (via Ada)\nFeedback on: \"the sample is small\"\n> please expand\n\n## 2. [Tracker] (via Bo)\nFeedback on: \"the cutoff date\"\n> why this date?\n\n```json board-feedback\n{\n \"sessionId\": \"s1\",\n \"generatedAt\": \"2026-07-09T00:00:00Z\",\n \"mode\": \"hosted\",\n \"focus\": null,\n \"reviewer\": \"Ada\",\n \"payloadHash\": \"ph\",\n \"shareHash\": \"abc123\",\n \"annotations\": [\n  {\n   \"type\": \"plan-comment\",\n   \"id\": \"a1\",\n   \"component\": \"01-x\",\n   \"version\": 1,\n   \"quote\": \"the sample is small\",\n   \"comment\": \"please expand\",\n   \"author\": \"Ada\",\n   \"view\": \"tracker\"\n  },\n  {\n   \"type\": \"doc-comment\",\n   \"id\": \"a2\",\n   \"view\": \"tracker\",\n   \"quote\": \"the cutoff date\",\n   \"comment\": \"why this date?\",\n   \"author\": \"Bo\",\n   \"signoff\": {\n    \"status\": \"approved\"\n   }\n  }\n ]\n}\n```\n"
 }

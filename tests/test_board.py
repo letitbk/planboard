@@ -1097,16 +1097,21 @@ class TestAssembleHosted(unittest.TestCase):
         self.assertIsNotNone(meta)
 
     def test_smuggled_verdict_key_stripped_from_pulled_annotation(self):
+        # signoff is stripped preemptively: it becomes a researcher-only action
+        # key in the board control surface (v0.15 spec), and the hosted pull
+        # path must never forward it before that lands.
         poisoned = {"type": "plan-comment", "component": "01-x", "version": 1,
                     "quote": "q", "comment": "c",
                     "verdict": {"status": "accepted"},
                     "reviewRequest": {"foo": "bar"},
-                    "reportRequest": {"foo": "bar"}}
+                    "reportRequest": {"foo": "bar"},
+                    "signoff": {"foo": "bar"}}
         doc = board.assemble_hosted_document([poisoned], self.META)
         ann = board.parse_fence(doc)["annotations"][0]
         self.assertNotIn("verdict", ann)
         self.assertNotIn("reviewRequest", ann)
         self.assertNotIn("reportRequest", ann)
+        self.assertNotIn("signoff", ann)
 
 
 class TestInspectFeedbackDocument(unittest.TestCase):
@@ -1163,6 +1168,11 @@ class TestGoldenFeedbackContract(unittest.TestCase):
             return [(a.get("type"), a.get("quote") or (a.get("target") or {}).get("quote"),
                      a.get("comment"), a.get("author")) for a in anns]
         self.assertEqual(key(py_meta["annotations"]), key(ts_meta["annotations"]))
+        # The fixture smuggles a researcher-only `signoff` key through the TS
+        # side (validate.ts passes unknown fields); the assembler must strip it.
+        self.assertTrue(any("signoff" in a for a in data["annotations"]),
+                        "fixture must carry the smuggled signoff key")
+        self.assertFalse(any("signoff" in a for a in py_meta["annotations"]))
 
 
 class TestPull(unittest.TestCase):
