@@ -14,6 +14,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 SCRIPTS = (
@@ -1756,6 +1757,88 @@ class TestHarness(unittest.TestCase):
                 self.assertEqual(proc.wait(timeout=15), 2)
             finally:
                 proc.terminate()
+
+
+class TestPortDerivation(unittest.TestCase):
+    def test_deterministic_and_in_range(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            p1 = board.derive_port(root)
+            p2 = board.derive_port(root)
+            self.assertEqual(p1, p2)
+            self.assertGreaterEqual(p1, 41000)
+            self.assertLess(p1, 42000)
+
+    def test_canonical_path_invariance(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            crooked = root / ".." / root.name
+            self.assertEqual(board.derive_port(root), board.derive_port(crooked))
+
+
+class TestBindRetry(unittest.TestCase):
+    def test_probes_past_busy_derived_port(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            base = board.derive_port(root)
+            blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                blocker.bind(("127.0.0.1", base))
+                blocker.listen(1)
+                server = board.bind_server(root, 0, BaseHTTPRequestHandler)
+                try:
+                    picked = server.server_address[1]
+                    self.assertNotEqual(picked, base)
+                    self.assertTrue(
+                        base < picked <= base + 9 or picked >= 1024,
+                        "picked=%d base=%d" % (picked, base))
+                finally:
+                    server.server_close()
+            finally:
+                blocker.close()
+
+    def test_pinned_port_retries_until_free(self):
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        pinned = blocker.getsockname()[1]
+        threading.Timer(0.5, blocker.close).start()
+        with tempfile.TemporaryDirectory() as td:
+            server = board.bind_server(Path(td), pinned, BaseHTTPRequestHandler)
+            try:
+                self.assertEqual(server.server_address[1], pinned)
+            finally:
+                server.server_close()
+
+
+class TestLockMeta(unittest.TestCase):
+    def test_lock_written_as_json_with_meta(self):
+        with tempfile.TemporaryDirectory() as td:
+            plans = Path(td) / "plans"
+            plans.mkdir()
+            board.acquire_lock(plans, False, meta={"port": 41234, "bootId": "abc"})
+            info = board.read_lock(plans)
+            self.assertEqual(info["pid"], os.getpid())
+            self.assertEqual(info["port"], 41234)
+            self.assertEqual(info["bootId"], "abc")
+
+    def test_read_lock_legacy_plain_pid(self):
+        with tempfile.TemporaryDirectory() as td:
+            plans = Path(td) / "plans"
+            plans.mkdir()
+            (plans / ".board.lock").write_text("4242")
+            info = board.read_lock(plans)
+            self.assertEqual(info, {"pid": 4242, "port": 0, "bootId": ""})
+
+    def test_serve_lock_carries_port_and_boot_id(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            self.assertEqual(info["port"], int(url.rsplit(":", 1)[1]))
+            self.assertEqual(len(info.get("bootId", "")), 32)
 
 
 if __name__ == "__main__":

@@ -551,13 +551,64 @@ def ensure_gitignore(plans_dir):
         gi.write_text("\n".join(content).strip() + "\n", encoding="utf-8")
 
 
-def acquire_lock(plans_dir, force):
+def derive_port(root):
+    """Stable per-project default port: 41000 + sha256(canonical root) % 1000."""
+    digest = hashlib.sha256(str(Path(root).resolve()).encode("utf-8")).hexdigest()
+    return 41000 + int(digest, 16) % 1000
+
+
+def bind_server(root, requested, handler_cls):
+    """Bind-with-retry (never check-then-bind). A requested port is pinned —
+    a relaunch may race the prior socket's close, so retry it; otherwise probe
+    the derived window once each and fall back to an OS-assigned port."""
+    if requested:
+        last = None
+        for _ in range(10):
+            try:
+                return ThreadingHTTPServer(("127.0.0.1", requested), handler_cls)
+            except OSError as e:
+                last = e
+                time.sleep(0.2)
+        die("port %d is busy (%s); close the process using it or drop --port"
+            % (requested, last), code=1)
+    base = derive_port(root)
+    for cand in range(base, base + 10):
+        try:
+            return ThreadingHTTPServer(("127.0.0.1", cand), handler_cls)
+        except OSError:
+            continue
+    return ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
+
+
+def read_lock(plans_dir):
+    """Lock metadata {pid, port, bootId}; legacy plain-PID locks read as
+    port 0 / empty bootId. None when absent or unreadable."""
+    lock = plans_dir / ".board.lock"
+    if not lock.is_file():
+        return None
+    try:
+        raw = lock.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        info = json.loads(raw)
+        if isinstance(info, dict) and "pid" in info:
+            return {"pid": int(info["pid"]),
+                    "port": int(info.get("port", 0)),
+                    "bootId": str(info.get("bootId", ""))}
+    except (ValueError, TypeError):
+        pass
+    try:
+        return {"pid": int(raw), "port": 0, "bootId": ""}
+    except ValueError:
+        return None
+
+
+def acquire_lock(plans_dir, force, meta=None):
     lock = plans_dir / ".board.lock"
     if lock.is_file():
-        try:
-            pid = int(lock.read_text().strip())
-        except Exception:
-            pid = None
+        info = read_lock(plans_dir)
+        pid = info["pid"] if info else None
         alive = False
         if pid is not None:
             try:
@@ -574,7 +625,8 @@ def acquire_lock(plans_dir, force):
                 "another board is open (PID %s); close it or pass --force" % pid,
                 code=1,
             )
-    lock.write_text(str(os.getpid()), encoding="utf-8")
+    lock.write_text(json.dumps({"pid": os.getpid(), **(meta or {})}),
+                    encoding="utf-8")
     return lock
 
 
@@ -622,6 +674,7 @@ def serve(root, payload, args):
     gate_mode = payload.get("gate") is not None
     batch_mode = payload.get("gateBatch") is not None
     batch_id = uuid.uuid4().hex[:8]
+    boot_id = uuid.uuid4().hex
     amap = artifact_map(root, payload)
     publish_token = hashlib.sha256(os.urandom(32)).hexdigest()
     payload["publishToken"] = publish_token  # board reads window.__RP_PUBLISH_TOKEN__ from this
@@ -788,8 +841,10 @@ def serve(root, payload, args):
             self.send_response(404)
             self.end_headers()
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = bind_server(root, args.port, Handler)
     port = server.server_address[1]
+    lock.write_text(json.dumps({"pid": os.getpid(), "port": port,
+                                "bootId": boot_id}), encoding="utf-8")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -829,6 +884,10 @@ def serve(root, payload, args):
         server.shutdown()
         sys.exit(130)
     finally:
+        try:
+            server.server_close()  # release the socket promptly for pinned relaunch
+        except Exception:
+            pass
         try:
             lock.unlink()
         except OSError:
