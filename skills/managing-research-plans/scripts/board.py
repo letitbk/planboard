@@ -1377,7 +1377,7 @@ def load_seed_annotations(path):
     return valid
 
 
-def main():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description="research-plans board")
     ap.add_argument("--focus", default=None, metavar="NN-slug")
     ap.add_argument("--export", nargs="?", const="DEFAULT", default=None, metavar="PATH")
@@ -1395,7 +1395,40 @@ def main():
     ap.add_argument("--seed-annotations", default=None, metavar="FILE",
                     help="inject reviewer-produced comments (JSON list) as pending "
                          "annotations — agent plan review (v0.9)")
-    args = ap.parse_args()
+    ap.add_argument("--publish-web", action="store_true")
+    ap.add_argument("--pull", action="store_true")
+    ap.add_argument("--web-connect", action="store_true")
+    ap.add_argument("--web-clear", action="store_true")
+    ap.add_argument("--set-password", action="store_true")
+    return ap.parse_args(argv)
+
+
+_ACTION_FLAGS = ("export", "share", "publish", "publish_web", "pull",
+                 "web_connect", "web_clear", "set_password")
+
+
+def selected_actions(args):
+    out = []
+    for name in _ACTION_FLAGS:
+        v = getattr(args, name, None)
+        if v not in (None, False):
+            out.append(name)
+    if getattr(args, "collect", None) is not None:
+        out.append("collect")
+    return out
+
+
+def check_action_exclusivity(args):
+    acts = selected_actions(args)
+    if len(acts) > 1:
+        die("choose one action at a time (got: %s)" % ", ".join(acts))
+    if getattr(args, "publish_web", False) and args.focus:
+        die("--publish-web publishes the full board; --focus is not supported for hosted boards.")
+
+
+def main():
+    args = parse_args()
+    check_action_exclusivity(args)
 
     root = find_root()
     if not (root / "plans" / "master-plan.md").is_file():
@@ -1416,6 +1449,16 @@ def main():
         export(root, args)
     elif args.publish:
         publish_pages(root, args)
+    elif args.publish_web:
+        publish_web(root, args)
+    elif args.pull:
+        pull(root, args)
+    elif args.web_connect:
+        web_connect(root, args)
+    elif args.web_clear:
+        web_clear(root, args)
+    elif args.set_password:
+        set_password(root, args)
     else:
         slug, focus_results = split_focus(args.focus)
         payload = collect_payload(root, "live", slug)

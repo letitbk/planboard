@@ -1076,5 +1076,18 @@ class TestGoldenFeedbackContract(unittest.TestCase):
         self.assertEqual(key(py_meta["annotations"]), key(ts_meta["annotations"]))
 
 
+class TestArgGuards(unittest.TestCase):
+    def test_multiple_actions_rejected(self):
+        with self.assertRaises(SystemExit):
+            board.check_action_exclusivity(board.parse_args(["--publish-web", "--pull"]))
+
+    def test_publish_web_with_focus_rejected(self):
+        with self.assertRaises(SystemExit):
+            board.check_action_exclusivity(board.parse_args(["--publish-web", "--focus", "01-x"]))
+
+    def test_single_action_ok(self):
+        board.check_action_exclusivity(board.parse_args(["--pull"]))  # no raise
+
+
 if __name__ == "__main__":
     unittest.main()
