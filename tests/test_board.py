@@ -2313,5 +2313,63 @@ class TestAckFlow(unittest.TestCase):
             self.assertEqual(r.returncode, 3)
 
 
+class TestRelaunchE2E(unittest.TestCase):
+    def test_order_durability_slot_ack_and_reload_signal(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            pending = root / "plans" / ".board-feedback.md"
+            proc_a, url_a = spawn_board(root, "--timeout", "25")
+            try:
+                info_a = board.read_lock(root / "plans")
+                tok_a = board_token_of(url_a)
+                s1, b1, _ = http_json(url_a, "/api/feedback", body={
+                    "annotations": [], "feedbackMarkdown": "round one",
+                    "payloadHash": "x", "boardToken": tok_a})
+                self.assertEqual(s1, 200)
+                # Durable before any routing:
+                self.assertIn("round one", pending.read_text(encoding="utf-8"))
+                # Second submission: 409 is the contract, but server A may
+                # already be shutting down — refusal/reset is acceptable;
+                # a silent overwrite is the only failure.
+                try:
+                    s2, b2, _ = http_json(url_a, "/api/feedback", body={
+                        "annotations": [], "feedbackMarkdown": "round two",
+                        "payloadHash": "x", "boardToken": tok_a})
+                    self.assertEqual(s2, 409)
+                    self.assertEqual(b2["error"], "already-accepted")
+                except OSError:
+                    pass
+                doc = pending.read_text(encoding="utf-8")
+                self.assertIn("round one", doc)
+                self.assertNotIn("round two", doc)
+                self.assertEqual(proc_a.wait(timeout=15), 0)
+                # Loop contract: route, THEN ack, THEN relaunch on the SAME port.
+                rc = subprocess.run(
+                    [sys.executable, str(BOARD), "--ack"], cwd=str(root),
+                    capture_output=True, text=True).returncode
+                self.assertEqual(rc, 0)
+                self.assertFalse(pending.exists())
+                proc_b, url_b = spawn_board(
+                    root, "--timeout", "25", "--port", str(info_a["port"]))
+                try:
+                    self.assertEqual(url_b, url_a)  # pinned port, same origin
+                    s3, health, _ = http_json(url_b, "/api/health")
+                    self.assertEqual(s3, 200)
+                    self.assertEqual(health["projectId"], b1["projectId"])
+                    self.assertNotEqual(health["bootId"], b1["bootId"])
+                    # exactly the (same projectId, new bootId) pair
+                    # shouldReload() reloads on (board/src/lib/reconnect.ts)
+                finally:
+                    proc_b.terminate()
+                    proc_b.wait(timeout=10)
+            finally:
+                proc_a.terminate()
+                try:
+                    proc_a.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc_a.kill()
+
+
 if __name__ == "__main__":
     unittest.main()
