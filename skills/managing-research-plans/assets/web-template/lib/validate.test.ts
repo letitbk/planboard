@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateCommentBody, MAX_COMMENT_LEN } from "./validate";
+import { validateCommentBody, MAX_COMMENT_LEN, MAX_TOTAL_BYTES } from "./validate";
 
 const good = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -29,5 +29,16 @@ describe("validateCommentBody", () => {
   });
   it("rejects a non-uuid id", () => {
     expect(validateCommentBody({ ...good, id: "not-a-uuid" }).ok).toBe(false);
+  });
+  it("accepts the well-formed comment well under the total-size cap", () => {
+    expect(JSON.stringify(good).length).toBeLessThan(MAX_TOTAL_BYTES);
+    expect(validateCommentBody(good).ok).toBe(true);
+  });
+  it("rejects a body whose annotation carries a huge extra field", () => {
+    const oversized = {
+      ...good,
+      annotation: { ...good.annotation, junk: "x".repeat(MAX_TOTAL_BYTES) },
+    };
+    expect(validateCommentBody(oversized).ok).toBe(false);
   });
 });

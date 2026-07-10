@@ -1,6 +1,7 @@
 export const MAX_COMMENT_LEN = 4000;
 export const MAX_FIELD_LEN = 2000;
 export const MAX_AUTHOR_LEN = 120;
+export const MAX_TOTAL_BYTES = 16000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALLOWED_TYPES = new Set([
   "plan-comment", "result-comment", "script-comment", "doc-comment", "general",
@@ -20,6 +21,10 @@ export function validateCommentBody(
   body: unknown,
 ): { ok: true; value: CommentBody } | { ok: false; error: string } {
   if (typeof body !== "object" || body === null) return { ok: false, error: "not an object" };
+  let serialized: string;
+  try { serialized = JSON.stringify(body); }
+  catch { return { ok: false, error: "unserializable" }; }
+  if (serialized.length > MAX_TOTAL_BYTES) return { ok: false, error: "too large" };
   const b = body as Record<string, unknown>;
   if (typeof b.id !== "string" || !UUID_RE.test(b.id)) return { ok: false, error: "bad id" };
   if (!isStr(b.clientId, 200)) return { ok: false, error: "bad clientId" };
