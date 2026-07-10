@@ -20,6 +20,7 @@ import argparse
 import base64
 import datetime
 import hashlib
+import hmac
 import json
 import mimetypes
 import os
@@ -562,6 +563,13 @@ def project_id(root):
     return hashlib.sha256(str(Path(root).resolve()).encode("utf-8")).hexdigest()[:16]
 
 
+def token_ok(body, expected):
+    """Constant-time per-boot board token check for mutating routes.
+    NOT yet enforced in do_POST — enforcement flips atomically with the
+    client senders + template rebuild (plan 2/3 Task 6)."""
+    return hmac.compare_digest(str(body.get("boardToken", "")), expected)
+
+
 def payload_generation(payload):
     """Content identity of the served payload, excluding per-boot secrets."""
     trimmed = {k: v for k, v in payload.items()
@@ -694,6 +702,8 @@ def serve(root, payload, args):
     payload["publishToken"] = publish_token  # board reads window.__RP_PUBLISH_TOKEN__ from this
     payload["projectId"] = project_id(root)
     proj_id = payload["projectId"]
+    board_token = hashlib.sha256(os.urandom(32)).hexdigest()
+    payload["boardToken"] = board_token
     generation = payload_generation(payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     html_bytes = html.encode("utf-8")

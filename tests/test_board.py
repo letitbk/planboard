@@ -1892,5 +1892,36 @@ class TestServeHTTP(unittest.TestCase):
         self.assertEqual(payload["projectId"], board.project_id(self.root))
 
 
+class TestBoardTokenPlumbing(unittest.TestCase):
+    def test_token_ok_truth_table(self):
+        self.assertTrue(board.token_ok({"boardToken": "abc"}, "abc"))
+        self.assertFalse(board.token_ok({"boardToken": "abd"}, "abc"))
+        self.assertFalse(board.token_ok({}, "abc"))
+        self.assertFalse(board.token_ok({"boardToken": 42}, "abc"))
+
+    def test_served_payload_carries_board_token(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            req = urllib.request.Request(url + "/", method="GET")
+            with urllib.request.urlopen(req, timeout=5) as r:
+                payload = extract_payload(r.read().decode("utf-8"))
+            self.assertRegex(payload["boardToken"], r"^[0-9a-f]{64}$")
+
+    def test_post_without_token_still_accepted_until_atomic_flip(self):
+        # Pinned pre-enforcement contract: plan 2/3 Task 6 flips this test to
+        # its 403 counterpart in the SAME commit that adds every client sender.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            status, body, _ = http_json(url, "/api/feedback", body={
+                "annotations": [], "feedbackMarkdown": "no token yet",
+                "payloadHash": "x",
+            })
+            self.assertEqual(status, 200)
+
+
 if __name__ == "__main__":
     unittest.main()
