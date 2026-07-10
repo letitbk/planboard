@@ -835,6 +835,54 @@ def materialize_web_dir(root):
     return out
 
 
+def _vercel(argv, cwd=None):
+    try:
+        r = subprocess.run(["vercel", *argv], cwd=cwd, capture_output=True, text=True, timeout=600)
+        return r.returncode, (r.stdout or "").strip() + (r.stderr or "")
+    except (OSError, subprocess.SubprocessError) as e:
+        return 1, str(e)
+
+
+def _first_url(text):
+    """First https://*.vercel.app URL found in `text`, or None."""
+    m = re.search(r"https://\S+\.vercel\.app\S*", text or "")
+    return m.group(0) if m else None
+
+
+def _count_unpulled(root, cfg):
+    """Best-effort count of comments not yet pulled locally. Returns 0 on ANY
+    error (network, auth, parsing) and never raises — publish_web's report
+    line is a nice-to-have, not a reason to fail the deploy. There is no
+    local pulled-id bookkeeping yet (that lands with --pull), so this is a
+    stub returning 0 until that lands; --pull can enrich it then."""
+    try:
+        return 0
+    except Exception:
+        return 0
+
+
+def publish_web(root, args):
+    msg = node_preflight()
+    if msg:
+        die(msg)
+    cfg = read_web_config(root)
+    if cfg is None:
+        die("No web board configured yet. First-run setup is interactive (it needs "
+            "`vercel login` in your own terminal). Run /research-plans:board --publish-web "
+            "in Claude Code, which walks you through signup, login, and the first deploy.")
+    out = materialize_web_dir(root)
+    rc, deploy_out = _vercel(["deploy", "--prod", "--yes"], cwd=str(out))
+    if rc != 0:
+        die("vercel deploy failed:\n%s" % deploy_out)
+    url = cfg.get("url") or _first_url(deploy_out)
+    unpulled = _count_unpulled(root, cfg)  # best-effort; 0 on any error
+    print("Published to %s" % url)
+    print("  password: the one you set (share it in a separate message)")
+    if unpulled:
+        print("  %d new comment%s waiting — run /research-plans:board --pull"
+              % (unpulled, "" if unpulled == 1 else "s"))
+
+
 def export(root, args):
     html = render_static_html(root, args.focus)
     out = Path(args.export) if args.export != "DEFAULT" else root / "plans" / "board.html"

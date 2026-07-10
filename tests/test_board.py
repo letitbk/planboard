@@ -588,6 +588,45 @@ class TestMaterializeWebDir(unittest.TestCase):
             self.assertIn('"mode": "hosted"', idx)  # hosted payload injected
 
 
+class TestPublishWeb(unittest.TestCase):
+    def setUp(self):
+        # save so patches in individual tests never leak to other tests
+        self._orig_vercel = board._vercel
+        self._orig_node_preflight = board.node_preflight
+        self._orig_read_web_config = board.read_web_config
+
+    def tearDown(self):
+        board._vercel = self._orig_vercel
+        board.node_preflight = self._orig_node_preflight
+        board.read_web_config = self._orig_read_web_config
+
+    def test_deploys_and_writes_config(self):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            os.environ["CLAUDE_PLUGIN_DATA"] = str(root / "data")
+            board._vercel = lambda argv, cwd=None: (0, "https://proj-board.vercel.app")
+            board.node_preflight = lambda: None
+            board.read_web_config = lambda r: {"url": "https://proj-board.vercel.app",
+                                               "projectName": "proj-board", "pullKey": "k"}
+            try:
+                import io, contextlib
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    board.publish_web(root, board.parse_args(["--publish-web"]))
+                self.assertIn("vercel.app", out.getvalue())
+                self.assertTrue((root / "plans" / ".board-web" / "index.html").exists())
+            finally:
+                del os.environ["CLAUDE_PLUGIN_DATA"]
+
+    def test_stops_when_node_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            board.node_preflight = lambda: "install node"
+            with self.assertRaises(SystemExit):
+                board.publish_web(root, board.parse_args(["--publish-web"]))
+
+
 class TestDocumentFromBody(unittest.TestCase):
     PAYLOAD = {"generatedAt": "2026-07-03T12:00:00", "mode": "live", "focus": None}
 
