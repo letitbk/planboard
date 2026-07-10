@@ -605,11 +605,13 @@ class TestPublishWeb(unittest.TestCase):
         self._orig_vercel = board._vercel
         self._orig_node_preflight = board.node_preflight
         self._orig_read_web_config = board.read_web_config
+        self._orig_http_get_json = board._http_get_json
 
     def tearDown(self):
         board._vercel = self._orig_vercel
         board.node_preflight = self._orig_node_preflight
         board.read_web_config = self._orig_read_web_config
+        board._http_get_json = self._orig_http_get_json
 
     def test_deploys_and_writes_config(self):
         import os
@@ -636,6 +638,30 @@ class TestPublishWeb(unittest.TestCase):
             board.node_preflight = lambda: "install node"
             with self.assertRaises(SystemExit):
                 board.publish_web(root, board.parse_args(["--publish-web"]))
+
+    def test_records_url_into_config_when_missing(self):
+        # A config written by web_connect carries url:"" when BOARD_URL was
+        # never set on the Vercel project. A successful deploy knows the real
+        # URL — persist it so --pull/--web-clear work afterwards.
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            os.environ["CLAUDE_PLUGIN_DATA"] = str(root / "data")
+            board._vercel = lambda argv, cwd=None: (0, "https://proj-board.vercel.app")
+            board.node_preflight = lambda: None
+
+            def _offline(url, headers):
+                raise OSError("offline")
+            board._http_get_json = _offline
+            board.write_web_config(root, {"url": "", "projectName": "p", "pullKey": "k"})
+            try:
+                import io, contextlib
+                with contextlib.redirect_stdout(io.StringIO()):
+                    board.publish_web(root, board.parse_args(["--publish-web"]))
+                self.assertEqual(board.read_web_config(root)["url"],
+                                 "https://proj-board.vercel.app")
+            finally:
+                del os.environ["CLAUDE_PLUGIN_DATA"]
 
 
 class TestDocumentFromBody(unittest.TestCase):
@@ -1268,6 +1294,25 @@ class TestPull(unittest.TestCase):
             finally:
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
+    def test_pull_empty_url_dies_with_guidance(self):
+        # web_connect writes url:"" when BOARD_URL was never set on the Vercel
+        # project. Pull must name the actual remedy, not report the misleading
+        # "unreachable (the project may be deleted)".
+        with tempfile.TemporaryDirectory() as d:
+            import os
+            root = Path(d); make_project(root)
+            os.environ["CLAUDE_PLUGIN_DATA"] = str(root / "data")
+            board.write_web_config(root, {"url": "", "projectName": "p", "pullKey": "k"})
+            board._http_get_json = lambda url, headers: self.fail("must not attempt a fetch")
+            try:
+                import io, contextlib
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+                    board.pull(root, board.parse_args(["--pull"]))
+                self.assertIn("--publish-web", err.getvalue())
+            finally:
+                del os.environ["CLAUDE_PLUGIN_DATA"]
+
 
 class TestArgGuards(unittest.TestCase):
     def test_multiple_actions_rejected(self):
@@ -1438,6 +1483,53 @@ class TestLifecycle(unittest.TestCase):
                 gi_path = root / "plans" / ".gitignore"
                 self.assertTrue(gi_path.exists())
                 self.assertIn("/.board-web/", gi_path.read_text(encoding="utf-8"))
+            finally:
+                del os.environ["CLAUDE_PLUGIN_DATA"]
+
+    def test_web_connect_missing_board_url_writes_config_and_says_so(self):
+        # Boards whose first-run setup never set BOARD_URL on the project: the
+        # pull key is still worth recovering, but the gap must be said out loud
+        # (the next --publish-web records the URL) — never a silent url:"".
+        with tempfile.TemporaryDirectory() as d:
+            import os
+            root = Path(d); make_project(root)
+            os.environ["CLAUDE_PLUGIN_DATA"] = str(root / "data")
+            board.node_preflight = lambda: None
+
+            def fake_vercel(argv, cwd=None):
+                if argv[0] == "link":
+                    return 0, "Linked"
+                if argv[0] == "env":
+                    (Path(cwd) / ".env.local").write_text(
+                        'BOARD_PULL_KEY="recovered-key"\n', encoding="utf-8")
+                    return 0, "pulled"
+                return 1, "unexpected argv"
+
+            board._vercel = fake_vercel
+            try:
+                import io, contextlib
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    board.web_connect(root, board.parse_args(["--web-connect"]))
+                cfg = board.read_web_config(root)
+                self.assertEqual(cfg["pullKey"], "recovered-key")
+                self.assertEqual(cfg["url"], "")
+                self.assertIn("--publish-web", out.getvalue())
+            finally:
+                del os.environ["CLAUDE_PLUGIN_DATA"]
+
+    def test_web_clear_empty_url_dies_with_guidance(self):
+        with tempfile.TemporaryDirectory() as d:
+            import os
+            root = Path(d); make_project(root)
+            os.environ["CLAUDE_PLUGIN_DATA"] = str(root / "data")
+            board.write_web_config(root, {"url": "", "projectName": "p", "pullKey": "k"})
+            try:
+                import io, contextlib
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+                    board.web_clear(root, board.parse_args(["--web-clear", "--force"]))
+                self.assertIn("--publish-web", err.getvalue())
             finally:
                 del os.environ["CLAUDE_PLUGIN_DATA"]
 

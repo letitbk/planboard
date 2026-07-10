@@ -694,7 +694,7 @@ def serve(root, payload, args):
                     if rc != 0:
                         self._json(500, {"error": deploy_out[:400]})
                         return
-                    self._json(200, {"url": cfg.get("url") or _first_url(deploy_out),
+                    self._json(200, {"url": _remember_url(root, cfg, deploy_out),
                                      "unpulled": _count_unpulled(root, cfg)})
                 except SystemExit as e:
                     self._json(500, {"error": str(e)})
@@ -887,6 +887,16 @@ def _first_url(text):
     return m.group(0) if m else None
 
 
+def _remember_url(root, cfg, deploy_out):
+    """Board URL from the config, else from the deploy output — persisted when
+    the config lacks one. web_connect writes url:"" when BOARD_URL was never
+    set on the Vercel project, and --pull/--web-clear need a URL to work."""
+    url = cfg.get("url") or _first_url(deploy_out)
+    if url and not cfg.get("url"):
+        write_web_config(root, dict(cfg, url=url))
+    return url
+
+
 def _http_get_json(url, headers):
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=15) as resp:
@@ -938,7 +948,7 @@ def publish_web(root, args):
     rc, deploy_out = _vercel(["deploy", "--prod", "--yes"], cwd=str(out))
     if rc != 0:
         die("vercel deploy failed:\n%s" % deploy_out)
-    url = cfg.get("url") or _first_url(deploy_out)
+    url = _remember_url(root, cfg, deploy_out)
     unpulled = _count_unpulled(root, cfg)  # best-effort; 0 on any error
     print("Published to %s" % url)
     print("  password: the one you set (share it in a separate message)")
@@ -961,6 +971,10 @@ def pull(root, args):
     cfg = read_web_config(root)
     if cfg is None:
         die("No web board configured. Run /research-plans:board --publish-web first.")
+    if not cfg.get("url"):
+        die("The local config has no board URL (BOARD_URL was missing from the project "
+            "env when --web-connect ran). Run /research-plans:board --publish-web once — "
+            "it records the URL — then retry.")
     url = cfg["url"].rstrip("/") + "/api/comments"
     try:
         data = _http_get_json(url, {"x-board-key": cfg["pullKey"]})
@@ -1044,6 +1058,10 @@ def web_connect(root, args):
     write_web_config(root, {"url": (url_m.group(1) if url_m else ""),
                             "projectName": out.name, "pullKey": m.group(1)})
     print("Reconnected to the existing web board; pull key recovered.")
+    if not url_m:
+        print("note: BOARD_URL is not set on the Vercel project, so the board URL could "
+              "not be recovered — --pull and --web-clear need it. Run --publish-web once "
+              "on this machine; it records the URL.")
 
 
 def web_clear(root, args):
@@ -1052,6 +1070,10 @@ def web_clear(root, args):
         die("No web board configured.")
     if not getattr(args, "force", False):
         die("This deletes ALL collaborator comments on the hosted board. Re-run with --force.")
+    if not cfg.get("url"):
+        die("The local config has no board URL (BOARD_URL was missing from the project "
+            "env when --web-connect ran). Run /research-plans:board --publish-web once — "
+            "it records the URL — then retry.")
     url = cfg["url"].rstrip("/") + "/api/clear"
     try:
         req = urllib.request.Request(url, method="POST", headers={"x-board-key": cfg["pullKey"]})
