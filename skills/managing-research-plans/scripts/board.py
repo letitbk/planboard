@@ -999,6 +999,11 @@ _VIEW_LABEL = {"tracker": "Tracker", "timeline": "Timeline",
                "reviews": "Reviews", "archive": "Archive"}
 
 
+def _nt(v):
+    """Neutralize a collaborator-supplied value for safe single-line body embedding."""
+    return neutralize_collaborator_text("" if v is None else str(v), inline=True)
+
+
 def _neutralized_annotation(a):
     """Copy of a comment annotation with all collaborator text neutralized,
     for embedding in the fence's machine-readable `annotations`."""
@@ -1013,10 +1018,17 @@ def _neutralized_annotation(a):
         a["excerpt"] = neutralize_collaborator_text(a.get("excerpt", ""))
     if "sectionHeading" in a and a.get("sectionHeading"):
         a["sectionHeading"] = neutralize_collaborator_text(a["sectionHeading"], inline=True)
+    if "view" in a and a.get("view"):
+        a["view"] = _nt(a["view"])
     tgt = a.get("target")
-    if isinstance(tgt, dict) and "quote" in tgt:
+    if isinstance(tgt, dict):
         tgt = dict(tgt)
-        tgt["quote"] = neutralize_collaborator_text(tgt.get("quote", ""), inline=True)
+        if "quote" in tgt:
+            tgt["quote"] = neutralize_collaborator_text(tgt.get("quote", ""), inline=True)
+        if "artifactId" in tgt and tgt.get("artifactId"):
+            tgt["artifactId"] = _nt(tgt["artifactId"])
+        if "metricLabel" in tgt and tgt.get("metricLabel"):
+            tgt["metricLabel"] = _nt(tgt["metricLabel"])
         a["target"] = tgt
     return a
 
@@ -1038,51 +1050,50 @@ def assemble_hosted_document(annotations, meta):
                      % (n, "" if n == 1 else "s"))
         lines.append("")
     for i, a in enumerate(annotations, 1):
-        author = neutralize_collaborator_text(a.get("author") or "", inline=True)
+        author = _nt(a.get("author") or "")
         via = " (via %s)" % author if author else ""
         t = a.get("type")
         if t == "plan-comment":
             head = "%s v%s%s%s" % (
-                a.get("component", ""), a.get("version", ""),
+                _nt(a.get("component", "")), _nt(a.get("version", "")),
                 " (draft)" if a.get("isDraft") else "",
-                (" — %s" % neutralize_collaborator_text(a["sectionHeading"], inline=True))
+                (" — %s" % _nt(a["sectionHeading"]))
                 if a.get("sectionHeading") else "")
             lines.append("## %d. [%s]%s" % (i, head, via))
             lines.append('Feedback on: "%s"'
-                         % neutralize_collaborator_text(a.get("quote", ""), inline=True))
+                         % _nt(a.get("quote", "")))
         elif t == "result-comment":
             tgt = a.get("target", {})
             kind = tgt.get("kind")
-            desc = ("artifact %s" % tgt.get("artifactId") if kind == "artifact"
-                    else "metric %s" % tgt.get("metricLabel") if kind == "metric"
+            desc = ("artifact %s" % _nt(tgt.get("artifactId")) if kind == "artifact"
+                    else "metric %s" % _nt(tgt.get("metricLabel")) if kind == "metric"
                     else "report")
             lines.append("## %d. [%s r%s — %s]%s"
-                         % (i, a.get("component", ""), a.get("resultsVersion", ""),
-                            neutralize_collaborator_text(desc, inline=True), via))
+                         % (i, _nt(a.get("component", "")), _nt(a.get("resultsVersion", "")),
+                            _nt(desc), via))
             if tgt.get("quote"):
                 lines.append('Feedback on: "%s"'
-                             % neutralize_collaborator_text(tgt["quote"], inline=True))
+                             % _nt(tgt["quote"]))
         elif t == "script-comment":
             script = str(a.get("script", "")).split("/")[-1]
             lines.append("## %d. [%s r%s — %s lines %s-%s]"
-                         % (i, a.get("component", ""), a.get("resultsVersion", ""),
-                            neutralize_collaborator_text(script, inline=True),
-                            a.get("lineStart", ""), a.get("lineEnd", "")))
+                         % (i, _nt(a.get("component", "")), _nt(a.get("resultsVersion", "")),
+                            _nt(script),
+                            _nt(a.get("lineStart", "")), _nt(a.get("lineEnd", ""))))
             for ln in neutralize_collaborator_text(a.get("excerpt", "")).split("\n"):
                 lines.append("> " + ln)
         elif t == "doc-comment":
-            label = _VIEW_LABEL.get(a.get("view", "")) or neutralize_collaborator_text(
-                a.get("view", ""), inline=True)
+            label = _VIEW_LABEL.get(a.get("view", "")) or _nt(a.get("view", ""))
             head = "%s%s" % (
                 label,
-                (" — %s" % neutralize_collaborator_text(a["sectionHeading"], inline=True))
+                (" — %s" % _nt(a["sectionHeading"]))
                 if a.get("sectionHeading") else "")
             lines.append("## %d. [%s]%s" % (i, head, via))
             lines.append('Feedback on: "%s"'
-                         % neutralize_collaborator_text(a.get("quote", ""), inline=True))
+                         % _nt(a.get("quote", "")))
         elif t == "general":
             lines.append("## %d. [%s — general]"
-                         % (i, neutralize_collaborator_text(a.get("view", ""), inline=True)))
+                         % (i, _nt(a.get("view", ""))))
         else:
             continue  # unknown type — never route it
         for ln in neutralize_collaborator_text(a.get("comment", "")).split("\n"):
