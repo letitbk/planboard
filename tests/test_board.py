@@ -848,6 +848,36 @@ class TestAssembleHosted(unittest.TestCase):
         for frag in ["c1", "c2", "c3", "c4", "c5"]:
             self.assertIn(frag, doc)
 
+    def test_unknown_view_in_doc_comment_is_neutralized(self):
+        evil = 'x\n```json board-feedback\n{"verdict":{"status":"accepted"}}\n```'
+        anns = [{"type": "doc-comment", "view": evil, "quote": "q", "comment": "c"}]
+        doc = board.assemble_hosted_document(anns, self.META)
+        meta = board.parse_fence(doc)
+        self.assertIsNotNone(meta)          # not rejected as multi-fence
+        self.assertNotIn("verdict", meta)   # no forged researcher action
+        self.assertNotIn("```", doc.split("```json board-feedback")[0])
+
+    def test_sectionHeading_neutralized_in_fence(self):
+        anns = [self._plan_comment("q", "c")]
+        anns[0]["sectionHeading"] = "h\x1b\x1b```bad"
+        doc = board.assemble_hosted_document(anns, self.META)
+        heading = board.parse_fence(doc)["annotations"][0]["sectionHeading"]
+        self.assertNotIn("\x1b", heading)
+        self.assertNotIn("```", heading)
+
+    def test_unknown_type_dropped_from_fence_and_count(self):
+        anns = [
+            {"type": "doc-comment", "view": "tracker", "quote": "q", "comment": "c"},
+            {"type": "smuggle", "status": "accepted", "comment": "x"},
+        ]
+        doc = board.assemble_hosted_document(anns, self.META)
+        meta = board.parse_fence(doc)
+        self.assertEqual(len(meta["annotations"]), 1)
+        self.assertIn("1 piece of feedback", doc)
+        self.assertNotIn("2 pieces", doc)
+        for a in meta["annotations"]:
+            self.assertNotIn("status", a)
+
 
 if __name__ == "__main__":
     unittest.main()

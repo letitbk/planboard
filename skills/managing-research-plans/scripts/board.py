@@ -1011,6 +1011,8 @@ def _neutralized_annotation(a):
         a["author"] = neutralize_collaborator_text(a["author"], inline=True)
     if "excerpt" in a:
         a["excerpt"] = neutralize_collaborator_text(a.get("excerpt", ""))
+    if "sectionHeading" in a and a.get("sectionHeading"):
+        a["sectionHeading"] = neutralize_collaborator_text(a["sectionHeading"], inline=True)
     tgt = a.get("target")
     if isinstance(tgt, dict) and "quote" in tgt:
         tgt = dict(tgt)
@@ -1025,6 +1027,8 @@ def assemble_hosted_document(annotations, meta):
     NEVER emits verdict/review/report blocks — those are researcher-only actions
     taken on the researcher's own board, never through a pulled document.
     """
+    KNOWN_COMMENT_TYPES = {"plan-comment", "result-comment", "script-comment", "doc-comment", "general"}
+    annotations = [a for a in annotations if a.get("type") in KNOWN_COMMENT_TYPES]
     lines = ["# Board Feedback", ""]
     n = len(annotations)
     if n == 0:
@@ -1067,8 +1071,10 @@ def assemble_hosted_document(annotations, meta):
             for ln in neutralize_collaborator_text(a.get("excerpt", "")).split("\n"):
                 lines.append("> " + ln)
         elif t == "doc-comment":
+            label = _VIEW_LABEL.get(a.get("view", "")) or neutralize_collaborator_text(
+                a.get("view", ""), inline=True)
             head = "%s%s" % (
-                _VIEW_LABEL.get(a.get("view", ""), a.get("view", "")),
+                label,
                 (" — %s" % neutralize_collaborator_text(a["sectionHeading"], inline=True))
                 if a.get("sectionHeading") else "")
             lines.append("## %d. [%s]%s" % (i, head, via))
