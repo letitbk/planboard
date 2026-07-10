@@ -23,6 +23,8 @@ import {
   partitionComments,
 } from "./lib/hostedComments";
 import { liveDraftKey, loadDrafts, clearSubmitted } from "./lib/drafts";
+import FeedbackPanel, { type SubmitState } from "./components/FeedbackPanel";
+import { useHeaderOffset, useMediaQuery } from "./lib/layoutHooks";
 import type {
   Annotation,
   BoardData,
@@ -122,133 +124,6 @@ function seedToAnnotation(s: SeededAnnotation): Annotation {
   };
 }
 
-// One annotation's card in the drawer list. Shared by local pending items
-// (deletable, optionally with a hosted Save action) and read-only server
-// comments (hosted mode: no delete — comments can't be edited or deleted
-// once sent).
-function AnnotationCard({
-  a,
-  sentBy,
-  stale,
-  onDelete,
-  saveAction,
-}: {
-  a: Annotation;
-  sentBy?: string;
-  stale?: boolean;
-  onDelete?: () => void;
-  saveAction?: ReactNode;
-}) {
-  return (
-    <div className="rounded-md border border-stone-200 dark:border-stone-800 p-2 text-xs">
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-stone-500">
-        {a.type === "plan-comment" ? (
-          <>
-            <span className="font-medium text-stone-700 dark:text-stone-300">
-              {a.component} v{a.version}
-              {a.isDraft ? " (draft)" : ""}
-            </span>
-            {a.sectionHeading && <span>· {a.sectionHeading}</span>}
-            {a.author && (
-              <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
-                via {a.author}
-              </span>
-            )}
-            {!a.anchored && (
-              <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
-                unanchored
-              </span>
-            )}
-          </>
-        ) : a.type === "result-comment" ? (
-          <>
-            <span className="font-medium text-stone-700 dark:text-stone-300">
-              {a.component} r{a.resultsVersion} ·{" "}
-              {a.target.kind === "artifact"
-                ? a.target.artifactId
-                : a.target.kind === "metric"
-                  ? a.target.metricLabel
-                  : "report"}
-            </span>
-            {a.author && (
-              <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
-                via {a.author}
-              </span>
-            )}
-            {a.anchored === false && (
-              <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
-                unanchored
-              </span>
-            )}
-          </>
-        ) : a.type === "script-comment" ? (
-          <span className="font-medium text-stone-700 dark:text-stone-300">
-            {a.script.split("/").pop()} L{a.lineStart}
-            {a.lineEnd !== a.lineStart ? `–${a.lineEnd}` : ""}
-          </span>
-        ) : a.type === "doc-comment" ? (
-          <>
-            <span className="font-medium text-stone-700 dark:text-stone-300">
-              {VIEW_LABEL[a.view]}
-            </span>
-            {a.sectionHeading && <span>· {a.sectionHeading}</span>}
-            {a.author && (
-              <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
-                via {a.author}
-              </span>
-            )}
-            {!a.anchored && (
-              <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
-                unanchored
-              </span>
-            )}
-          </>
-        ) : (
-          <span className="font-medium text-stone-700 dark:text-stone-300">
-            {a.view} — general
-          </span>
-        )}
-        {sentBy && (
-          <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5 font-medium text-stone-600 dark:text-stone-300">
-            {sentBy}
-          </span>
-        )}
-        {stale && (
-          <span className="rounded bg-amber-100 dark:bg-amber-900/50 px-1 py-0.5 font-medium text-amber-700 dark:text-amber-300">
-            outdated
-          </span>
-        )}
-        {onDelete && (
-          <button
-            className="ml-auto text-stone-400 dark:text-stone-500 hover:text-red-600"
-            onClick={onDelete}
-            title="Delete"
-          >
-            ✕
-          </button>
-        )}
-      </div>
-      {(a.type === "plan-comment" || a.type === "doc-comment") && (
-        <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
-          “{a.quote}”
-        </div>
-      )}
-      {a.type === "result-comment" && a.target.quote && (
-        <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
-          “{a.target.quote}”
-        </div>
-      )}
-      {a.type === "script-comment" && (
-        <pre className="mb-1 max-h-16 overflow-hidden rounded bg-stone-50 dark:bg-stone-800/50 px-1.5 py-1 text-[10px] text-stone-500">
-          {a.excerpt}
-        </pre>
-      )}
-      <div className="text-stone-700 dark:text-stone-300">{a.comment}</div>
-      {saveAction}
-    </div>
-  );
-}
-
 export default function App({ data }: { data: BoardData }) {
   // Batch sign-off is a full-screen wizard, isolated from the normal board's
   // tabs/annotation state. The payload is static, so this early return is stable
@@ -320,9 +195,7 @@ export default function App({ data }: { data: BoardData }) {
   const [drawerOpen, setDrawerOpen] = useState(
     gate !== null || (data.seededAnnotations?.length ?? 0) > 0,
   );
-  const [submitState, setSubmitState] = useState<
-    "idle" | "sending" | "sent" | "approved" | "denied" | "failed" | "downloaded"
-  >("idle");
+  const [submitState, setSubmitState] = useState<SubmitState>("idle");
   // Reviewer name: remote persists it under the payload-hashed storageKey
   // (fine — a remote reviewer downloads one board once); hosted persists it
   // under webKey so a republish doesn't blank the name field.
@@ -815,10 +688,37 @@ export default function App({ data }: { data: BoardData }) {
     );
   }
 
+  const headerRef = useRef<HTMLElement | null>(null);
+  const headerOffset = useHeaderOffset(headerRef);
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const panelOpen = canAnnotate && drawerOpen;
+  const panelProps = {
+    annotations,
+    serverLive: live,
+    serverStale: stale,
+    hosted,
+    gate,
+    canPost,
+    submitState,
+    pendingVerdict,
+    reviewer,
+    savingIds,
+    onReviewerChange: setReviewer,
+    onWithdrawVerdict: () => setPendingVerdict(null),
+    onRemove: removeAnnotation,
+    onSaveHosted: saveHosted,
+    onClose: () => setDrawerOpen(false),
+    onSubmit: submit,
+    onGateApprove: gateApprove,
+    onGateDeny: gateDeny,
+    onDownload: download,
+    onCopyFallback: copyFallback,
+  };
+
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-stone-950">
-      <header className="sticky top-0 z-30 border-b border-stone-200 dark:border-stone-800 bg-white/90 dark:bg-stone-900/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center gap-4 px-5 py-3">
+      <header ref={headerRef} className="sticky top-0 z-30 border-b border-stone-200 dark:border-stone-800 bg-white/90 dark:bg-stone-900/90 backdrop-blur">
+        <div className="mx-auto flex max-w-[1440px] items-center gap-4 px-5 py-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-stone-900 dark:text-stone-100">
               {data.project.name}
@@ -925,7 +825,9 @@ export default function App({ data }: { data: BoardData }) {
         )}
       </header>
 
-      <main className="mx-auto max-w-5xl px-5 py-6">
+      <div className="mx-auto flex w-full max-w-[1440px]">
+        <main className="min-w-0 flex-1 px-5 py-6">
+          <div className="mx-auto max-w-5xl">
         {tab === "tracker" && (
           <Tracker
             data={data}
@@ -1021,188 +923,25 @@ export default function App({ data }: { data: BoardData }) {
             onAddGeneral={addGeneral}
           />
         )}
-      </main>
+          </div>
+        </main>
+        {panelOpen && isDesktop && (
+          <FeedbackPanel
+            variant="docked"
+            style={{ top: headerOffset, height: `calc(100vh - ${headerOffset}px)` }}
+            {...panelProps}
+          />
+        )}
+      </div>
 
-      {canAnnotate && drawerOpen && (
-        <aside className="fixed right-0 top-0 z-40 flex h-full w-80 flex-col border-l border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-2xl">
-          <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 px-4 py-3">
-            <h2 className="text-sm font-semibold text-stone-800 dark:text-stone-200">
-              Feedback ({annotations.length})
-            </h2>
-            <button
-              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
-              onClick={() => setDrawerOpen(false)}
-            >
-              Close
-            </button>
-          </div>
-          <div className="flex-1 space-y-2 overflow-y-auto p-3">
-            {annotations.length === 0 && live.length === 0 && stale.length === 0 && (
-              <p className="p-4 text-center text-xs text-stone-400 dark:text-stone-500">
-                Select text in any view or add a general comment.
-              </p>
-            )}
-            {annotations.map((a) => (
-              <AnnotationCard
-                key={a.id}
-                a={a}
-                onDelete={() => removeAnnotation(a.id)}
-                saveAction={
-                  hosted ? (
-                    <div className="mt-1.5 flex items-center gap-2 border-t border-stone-100 dark:border-stone-800 pt-1.5">
-                      <button
-                        className="rounded-md bg-stone-900 dark:bg-stone-200 px-2 py-1 text-[11px] font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
-                        disabled={!reviewer.trim() || savingIds.has(a.id)}
-                        onClick={() => saveHosted(a)}
-                      >
-                        {savingIds.has(a.id) ? "Saving…" : "Save"}
-                      </button>
-                      <span className="text-[10px] text-stone-400 dark:text-stone-500">
-                        Comments can’t be edited or deleted once sent.
-                      </span>
-                    </div>
-                  ) : undefined
-                }
-              />
-            ))}
-            {hosted && live.length > 0 && (
-              <div className="pt-2">
-                <h3 className="px-0.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400 dark:text-stone-500">
-                  Sent
-                </h3>
-                <div className="space-y-2">
-                  {live.map((c) => (
-                    <AnnotationCard key={c.id} a={c.annotation} sentBy={c.author} />
-                  ))}
-                </div>
-              </div>
-            )}
-            {hosted && stale.length > 0 && (
-              <div className="pt-2">
-                <h3 className="px-0.5 pb-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
-                  Written before the board was last updated — the researcher
-                  still has a copy of all comments
-                </h3>
-                <div className="space-y-2">
-                  {stale.map((c) => (
-                    <AnnotationCard
-                      key={c.id}
-                      a={c.annotation}
-                      sentBy={c.author}
-                      stale
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="border-t border-stone-200 dark:border-stone-800 p-3">
-            {submitState === "failed" && (
-              <div className="mb-2 rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-2 text-xs text-red-800 dark:text-red-300">
-                Could not reach the board server (it may have exited).{" "}
-                <button className="font-medium underline" onClick={copyFallback}>
-                  Copy feedback as markdown
-                </button>{" "}
-                and paste it into your session instead.
-              </div>
-            )}
-            {gate ? (
-              <div className="space-y-2">
-                {annotations.length > 0 && (
-                  <p className="text-[11px] text-stone-500">
-                    You have unsent comments — send them as "Request changes",
-                    or delete them to approve.
-                  </p>
-                )}
-                <button
-                  className="w-full rounded-md bg-green-700 py-2 text-sm font-semibold text-white hover:bg-green-600 disabled:opacity-40"
-                  disabled={annotations.length > 0 || submitState === "sending"}
-                  onClick={gateApprove}
-                >
-                  Approve — write v{gate.proposedVersion} exactly as shown
-                </button>
-                <button
-                  className="w-full rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 py-2 text-sm font-semibold text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-40"
-                  disabled={annotations.length === 0 || submitState === "sending"}
-                  onClick={gateDeny}
-                >
-                  Request changes ({annotations.length})
-                </button>
-              </div>
-            ) : canPost ? (
-              <div className="space-y-2">
-                {pendingVerdict && (
-                  <div className="rounded-md border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-800/50 p-2 text-xs">
-                    <span className="font-semibold">
-                      Verdict: {pendingVerdict.status} —{" "}
-                      {pendingVerdict.component} r{pendingVerdict.resultsVersion}
-                    </span>
-                    <button
-                      className="ml-2 text-stone-400 dark:text-stone-500 hover:text-red-600"
-                      onClick={() => setPendingVerdict(null)}
-                      title="Withdraw verdict"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                <button
-                  className="w-full rounded-md bg-stone-900 dark:bg-stone-200 py-2 text-sm font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
-                  disabled={
-                    (annotations.length === 0 && !pendingVerdict) ||
-                    submitState === "sending"
-                  }
-                  onClick={submit}
-                >
-                  {submitState === "sending" ? "Sending…" : "Send to Claude"}
-                </button>
-              </div>
-            ) : hosted ? (
-              <div className="space-y-2">
-                <input
-                  className="w-full rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1.5 text-sm"
-                  placeholder="Your name (shown on your comments)"
-                  value={reviewer}
-                  onChange={(e) => setReviewer(e.target.value)}
-                  maxLength={120}
-                />
-                {!reviewer.trim() && annotations.length > 0 && (
-                  <p className="text-[11px] text-stone-500">
-                    Enter your name to save comments below.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <input
-                  className="w-full rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1.5 text-sm"
-                  placeholder="Your name (for attribution)"
-                  value={reviewer}
-                  onChange={(e) => setReviewer(e.target.value)}
-                />
-                {submitState === "downloaded" && (
-                  <p className="rounded-md border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 p-2 text-[11px] text-green-800 dark:text-green-300">
-                    Feedback file downloaded — email it back to the researcher.
-                    You can keep annotating and download again.
-                  </p>
-                )}
-                <button
-                  className="w-full rounded-md bg-stone-900 dark:bg-stone-200 py-2 text-sm font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
-                  disabled={annotations.length === 0}
-                  onClick={download}
-                >
-                  Download feedback file
-                </button>
-                <button
-                  className="block w-full text-center text-[11px] text-stone-500 underline hover:text-stone-700"
-                  onClick={copyFallback}
-                >
-                  or copy feedback to clipboard
-                </button>
-              </div>
-            )}
-          </div>
-        </aside>
+      {panelOpen && !isDesktop && (
+        <>
+          <div
+            className="fixed inset-0 z-30 bg-black/30"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <FeedbackPanel variant="overlay" {...panelProps} />
+        </>
       )}
     </div>
   );
