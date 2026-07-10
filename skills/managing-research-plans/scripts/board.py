@@ -678,14 +678,37 @@ def publish_token_ok(body, token):
     return body.get("token") == token
 
 
-def document_from_body(body, payload):
+def inject_fence_key(doc, key, value):
+    """Set one key in the document's board-feedback fence, preserving all
+    surrounding text. Fence-less documents gain a minimal fence at the end.
+    Multi-fence documents (forgery signal — parse_fence refuses them) are
+    returned untouched so downstream routing keeps refusing them."""
+    meta = parse_fence(doc)
+    if meta is None:
+        if FENCE_RE.findall(doc):
+            return doc
+        return doc.rstrip("\n") + (
+            "\n\n```json board-feedback\n%s\n```\n"
+            % json.dumps({key: value}, indent=1))
+    meta[key] = value
+    last = None
+    for last in FENCE_RE.finditer(doc):
+        pass
+    new_block = "```json board-feedback\n%s\n```" % json.dumps(meta, indent=1)
+    return doc[:last.start()] + new_block + doc[last.end():]
+
+
+def document_from_body(body, payload, action_id=None):
     """Prefer the client-assembled feedback document (schemaVersion 1 clients
     send feedbackDocument); fall back to server-side assembly for older
-    templates and the gate flow."""
+    templates and the gate flow. Durable live orders carry a server-generated
+    actionId in the fence regardless of who assembled the document."""
     doc = body.get("feedbackDocument")
-    if isinstance(doc, str) and doc.strip():
-        return doc
-    return build_feedback_document(body, payload)
+    if not (isinstance(doc, str) and doc.strip()):
+        doc = build_feedback_document(body, payload)
+    if action_id:
+        doc = inject_fence_key(doc, "actionId", action_id)
+    return doc
 
 
 def serve(root, payload, args):
@@ -709,6 +732,27 @@ def serve(root, payload, args):
     html_bytes = html.encode("utf-8")
     done = threading.Event()
     result = {"approved": [], "rejected": []}
+    slot = {"actionId": None}
+    slot_lock = threading.Lock()
+
+    def accept_order(build_doc, exit_code, write_file):
+        """Single-slot order acceptance: reserve the id, build the document,
+        write it durably (atomic replace), stage the result. Returns the
+        actionId, or None when this round already accepted an order."""
+        with slot_lock:
+            if slot["actionId"] is not None:
+                return None
+            slot["actionId"] = uuid.uuid4().hex
+        aid = slot["actionId"]
+        doc = build_doc(aid)
+        if write_file:
+            # File FIRST (survives a dead parent bash call), then unblock.
+            tmp = plans_dir / ".board-feedback.md.tmp"
+            tmp.write_text(doc, encoding="utf-8")
+            os.replace(tmp, plans_dir / ".board-feedback.md")
+        result["doc"] = doc
+        result["exit"] = exit_code
+        return aid
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet
@@ -797,12 +841,15 @@ def serve(root, payload, args):
                     self.send_response(400)
                     self.end_headers()
                     return
-                doc = document_from_body(body, payload)
-                # File FIRST (survives a dead parent bash call), then unblock.
-                (plans_dir / ".board-feedback.md").write_text(doc, encoding="utf-8")
-                result["doc"] = doc
-                result["exit"] = 0
-                self._json(200, {"ok": True})
+                aid = accept_order(
+                    lambda aid: document_from_body(body, payload, action_id=aid),
+                    0, True)
+                if aid is None:
+                    self._json(409, {"error": "already-accepted",
+                                     "actionId": slot["actionId"]})
+                    return
+                self._json(200, {"ok": True, "actionId": aid,
+                                 "bootId": boot_id, "projectId": proj_id})
                 done.set()
                 return
             if self.path == "/api/approve" and gate_mode:
@@ -811,15 +858,25 @@ def serve(root, payload, args):
                 except Exception:
                     body = {}
                 comment = (body.get("comment") or "").strip()
-                doc = "APPROVED: %s v%d" % (
-                    payload["gate"]["component"],
-                    payload["gate"]["proposedVersion"],
-                )
-                if comment:
-                    doc += "\nResearcher comment: %s" % comment
-                result["doc"] = doc
-                result["exit"] = 0
-                self._json(200, {"ok": True})
+
+                def _approve_doc(aid):
+                    doc = "APPROVED: %s v%d" % (
+                        payload["gate"]["component"],
+                        payload["gate"]["proposedVersion"],
+                    )
+                    if comment:
+                        doc += "\nResearcher comment: %s" % comment
+                    return doc
+
+                # Gate approve is stdout-only by protocol: the blocking hook
+                # consumes the exit code; a pending file would go stale.
+                aid = accept_order(_approve_doc, 0, False)
+                if aid is None:
+                    self._json(409, {"error": "already-accepted",
+                                     "actionId": slot["actionId"]})
+                    return
+                self._json(200, {"ok": True, "actionId": aid,
+                                 "bootId": boot_id, "projectId": proj_id})
                 done.set()
                 return
             if self.path == "/api/deny" and gate_mode:
@@ -829,11 +886,15 @@ def serve(root, payload, args):
                     self.send_response(400)
                     self.end_headers()
                     return
-                doc = document_from_body(body, payload)
-                (plans_dir / ".board-feedback.md").write_text(doc, encoding="utf-8")
-                result["doc"] = doc
-                result["exit"] = 3
-                self._json(200, {"ok": True})
+                aid = accept_order(
+                    lambda aid: document_from_body(body, payload, action_id=aid),
+                    3, True)
+                if aid is None:
+                    self._json(409, {"error": "already-accepted",
+                                     "actionId": slot["actionId"]})
+                    return
+                self._json(200, {"ok": True, "actionId": aid,
+                                 "bootId": boot_id, "projectId": proj_id})
                 done.set()
                 return
             # ---- Batch sign-off wizard: each approval writes its ticket NOW

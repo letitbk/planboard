@@ -1687,7 +1687,8 @@ def spawn_board(root, *argv, timeout=30):
     if url is None:
         out, err = proc.communicate(timeout=5)
         raise AssertionError(
-            "no 'Board:' line; exit=%s stderr=%r" % (proc.returncode, err))
+            "no 'Board:' line; exit=%s stdout=%r stderr=%r"
+            % (proc.returncode, out, err))
     return proc, url
 
 
@@ -1921,6 +1922,107 @@ class TestBoardTokenPlumbing(unittest.TestCase):
                 "payloadHash": "x",
             })
             self.assertEqual(status, 200)
+
+
+class TestOrderSlot(unittest.TestCase):
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.root = Path(self.td.name)
+        make_project(self.root)
+        self.pending = self.root / "plans" / ".board-feedback.md"
+
+    def tearDown(self):
+        self.td.cleanup()
+
+    def test_accepted_post_returns_action_identity(self):
+        url, info, t = serve_in_thread(self.root, timeout=15)
+        status, body, _ = http_json(url, "/api/feedback", body={
+            "annotations": [], "feedbackMarkdown": "hello", "payloadHash": "x"})
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["actionId"]), 32)
+        self.assertEqual(body["bootId"], info["bootId"])
+        self.assertEqual(body["projectId"], board.project_id(self.root))
+        self.assertIn("hello", self.pending.read_text(encoding="utf-8"))
+
+    def test_second_action_post_never_overwrites(self):
+        url, info, t = serve_in_thread(self.root, timeout=15)
+        s1, b1, _ = http_json(url, "/api/feedback", body={
+            "annotations": [], "feedbackMarkdown": "round one", "payloadHash": "x"})
+        self.assertEqual(s1, 200)
+        try:
+            s2, b2, _ = http_json(url, "/api/feedback", body={
+                "annotations": [], "feedbackMarkdown": "round two",
+                "payloadHash": "x"})
+            self.assertEqual(s2, 409)
+            self.assertEqual(b2["error"], "already-accepted")
+            self.assertEqual(b2["actionId"], b1["actionId"])
+        except OSError:
+            # Server already shutting down after the accepted order — refusal
+            # and reset are both fine; silent overwrite is the only failure.
+            pass
+        doc = self.pending.read_text(encoding="utf-8")
+        self.assertIn("round one", doc)
+        self.assertNotIn("round two", doc)
+
+    def test_verbatim_client_doc_gains_action_id_fence(self):
+        url, info, t = serve_in_thread(self.root, timeout=15)
+        client_doc = ("# Feedback\n\nprose marker\n\n"
+                      "```json board-feedback\n{\"payloadHash\": \"h\"}\n```\n")
+        status, body, _ = http_json(url, "/api/feedback", body={
+            "feedbackDocument": client_doc, "annotations": [],
+            "feedbackMarkdown": "x", "payloadHash": "h"})
+        self.assertEqual(status, 200)
+        doc = self.pending.read_text(encoding="utf-8")
+        self.assertIn("prose marker", doc)
+        meta = board.parse_fence(doc)
+        self.assertEqual(meta["actionId"], body["actionId"])
+        self.assertEqual(meta["payloadHash"], "h")
+
+    def test_fenceless_client_doc_gains_appended_fence(self):
+        url, info, t = serve_in_thread(self.root, timeout=15)
+        status, body, _ = http_json(url, "/api/feedback", body={
+            "feedbackDocument": "JUST PROSE\n", "annotations": [],
+            "feedbackMarkdown": "x", "payloadHash": "x"})
+        self.assertEqual(status, 200)
+        doc = self.pending.read_text(encoding="utf-8")
+        self.assertIn("JUST PROSE", doc)
+        meta = board.parse_fence(doc)
+        self.assertEqual(meta["actionId"], body["actionId"])
+
+    def _seed_gate(self):
+        gf = self.root / "plans" / "execution" / "01-data-prep" / ".gate-v2.md"
+        gf.write_text("<!-- gate reserved -->\n# Data prep v2 draft\n\n"
+                      "Do it better.\n", encoding="utf-8")
+
+    def test_gate_approve_stdout_only_no_pending_file(self):
+        self._seed_gate()
+        proc, url = spawn_board(self.root, "--gate", "01-data-prep/v2",
+                                "--timeout", "15")
+        try:
+            status, body, _ = http_json(url, "/api/approve", body={})
+            self.assertEqual(status, 200)
+            self.assertEqual(len(body["actionId"]), 32)
+            out, err = proc.communicate(timeout=15)
+            self.assertEqual(proc.returncode, 0)
+            self.assertIn("APPROVED: 01-data-prep v2", out)
+            self.assertFalse(self.pending.exists())
+        finally:
+            proc.terminate()
+
+    def test_gate_deny_writes_pending_and_exits_3(self):
+        self._seed_gate()
+        proc, url = spawn_board(self.root, "--gate", "01-data-prep/v2",
+                                "--timeout", "15")
+        try:
+            status, body, _ = http_json(url, "/api/deny", body={
+                "annotations": [], "feedbackMarkdown": "needs work",
+                "payloadHash": "x"})
+            self.assertEqual(status, 200)
+            out, err = proc.communicate(timeout=15)
+            self.assertEqual(proc.returncode, 3)
+            self.assertIn("needs work", self.pending.read_text(encoding="utf-8"))
+        finally:
+            proc.terminate()
 
 
 if __name__ == "__main__":
