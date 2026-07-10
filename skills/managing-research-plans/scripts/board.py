@@ -995,6 +995,107 @@ def neutralize_collaborator_text(s, inline=False):
     return s
 
 
+_VIEW_LABEL = {"tracker": "Tracker", "timeline": "Timeline",
+               "reviews": "Reviews", "archive": "Archive"}
+
+
+def _neutralized_annotation(a):
+    """Copy of a comment annotation with all collaborator text neutralized,
+    for embedding in the fence's machine-readable `annotations`."""
+    a = dict(a)
+    if "quote" in a:
+        a["quote"] = neutralize_collaborator_text(a.get("quote", ""), inline=True)
+    if "comment" in a:
+        a["comment"] = neutralize_collaborator_text(a.get("comment", ""))
+    if "author" in a and a.get("author"):
+        a["author"] = neutralize_collaborator_text(a["author"], inline=True)
+    if "excerpt" in a:
+        a["excerpt"] = neutralize_collaborator_text(a.get("excerpt", ""))
+    tgt = a.get("target")
+    if isinstance(tgt, dict) and "quote" in tgt:
+        tgt = dict(tgt)
+        tgt["quote"] = neutralize_collaborator_text(tgt.get("quote", ""), inline=True)
+        a["target"] = tgt
+    return a
+
+
+def assemble_hosted_document(annotations, meta):
+    """Assemble ONE collaborator feedback document (comment annotations only).
+
+    NEVER emits verdict/review/report blocks — those are researcher-only actions
+    taken on the researcher's own board, never through a pulled document.
+    """
+    lines = ["# Board Feedback", ""]
+    n = len(annotations)
+    if n == 0:
+        lines.append("No feedback.")
+    else:
+        lines.append("I've reviewed the board and have %d piece%s of feedback:"
+                     % (n, "" if n == 1 else "s"))
+        lines.append("")
+    for i, a in enumerate(annotations, 1):
+        author = neutralize_collaborator_text(a.get("author") or "", inline=True)
+        via = " (via %s)" % author if author else ""
+        t = a.get("type")
+        if t == "plan-comment":
+            head = "%s v%s%s%s" % (
+                a.get("component", ""), a.get("version", ""),
+                " (draft)" if a.get("isDraft") else "",
+                (" — %s" % neutralize_collaborator_text(a["sectionHeading"], inline=True))
+                if a.get("sectionHeading") else "")
+            lines.append("## %d. [%s]%s" % (i, head, via))
+            lines.append('Feedback on: "%s"'
+                         % neutralize_collaborator_text(a.get("quote", ""), inline=True))
+        elif t == "result-comment":
+            tgt = a.get("target", {})
+            kind = tgt.get("kind")
+            desc = ("artifact %s" % tgt.get("artifactId") if kind == "artifact"
+                    else "metric %s" % tgt.get("metricLabel") if kind == "metric"
+                    else "report")
+            lines.append("## %d. [%s r%s — %s]%s"
+                         % (i, a.get("component", ""), a.get("resultsVersion", ""),
+                            neutralize_collaborator_text(desc, inline=True), via))
+            if tgt.get("quote"):
+                lines.append('Feedback on: "%s"'
+                             % neutralize_collaborator_text(tgt["quote"], inline=True))
+        elif t == "script-comment":
+            script = str(a.get("script", "")).split("/")[-1]
+            lines.append("## %d. [%s r%s — %s lines %s-%s]"
+                         % (i, a.get("component", ""), a.get("resultsVersion", ""),
+                            neutralize_collaborator_text(script, inline=True),
+                            a.get("lineStart", ""), a.get("lineEnd", "")))
+            for ln in neutralize_collaborator_text(a.get("excerpt", "")).split("\n"):
+                lines.append("> " + ln)
+        elif t == "doc-comment":
+            head = "%s%s" % (
+                _VIEW_LABEL.get(a.get("view", ""), a.get("view", "")),
+                (" — %s" % neutralize_collaborator_text(a["sectionHeading"], inline=True))
+                if a.get("sectionHeading") else "")
+            lines.append("## %d. [%s]%s" % (i, head, via))
+            lines.append('Feedback on: "%s"'
+                         % neutralize_collaborator_text(a.get("quote", ""), inline=True))
+        elif t == "general":
+            lines.append("## %d. [%s — general]"
+                         % (i, neutralize_collaborator_text(a.get("view", ""), inline=True)))
+        else:
+            continue  # unknown type — never route it
+        for ln in neutralize_collaborator_text(a.get("comment", "")).split("\n"):
+            lines.append("> " + ln)
+        lines.append("")
+    body = "\n".join(lines).rstrip()
+    fence_meta = {
+        "sessionId": meta.get("sessionId"),
+        "generatedAt": meta.get("generatedAt"),
+        "mode": "hosted",
+        "focus": meta.get("focus"),
+        "reviewer": meta.get("reviewer"),
+        "shareHash": meta.get("shareHash"),
+        "annotations": [_neutralized_annotation(a) for a in annotations],
+    }
+    return (body + "\n\n```json board-feedback\n"
+            + json.dumps(fence_meta, indent=1, ensure_ascii=False) + "\n```\n")
+
+
 def collect_file(root, path):
     p = Path(path)
     if not p.is_absolute():
