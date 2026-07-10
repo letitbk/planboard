@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Tracker from "./views/Tracker";
 import PlanReader from "./views/PlanReader";
 import Results from "./views/Results";
@@ -19,6 +19,7 @@ import {
   applyPostResult,
   buildCommentBody,
   getClientId,
+  newUuid,
   partitionComments,
 } from "./lib/hostedComments";
 import type {
@@ -336,8 +337,18 @@ export default function App({ data }: { data: BoardData }) {
   // Hosted-only state: server-known comments (separate population from the
   // local pending `annotations`), a per-visitor clientId, and save feedback.
   const [serverComments, setServerComments] = useState<StoredComment[]>([]);
-  const [saveError, setSaveError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOnce, setSavedOnce] = useState(false);
+  // In-flight guard (mirrors the Publish-to-web button's publishState pattern):
+  // which annotation ids currently have a Save POST in flight, so a double-click
+  // or a slow response can't fire a second POST for the same annotation.
+  const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
+  // Stable per-annotation comment uuid: buildCommentBody mints a fresh uuid
+  // whenever the annotation id isn't UUID-shaped (board annotation ids are
+  // `ann-…`, never UUID), so without this a retry after a lost response would
+  // post a second blob with a different id. Reusing the same uuid makes the
+  // API's allowOverwrite upsert dedup a retry against the first attempt.
+  const commentUuids = useRef<Map<string, string>>(new Map());
   const clientId = useMemo(() => (hosted ? getClientId(localStorage) : ""), [hosted]);
 
   useEffect(() => {
@@ -354,21 +365,44 @@ export default function App({ data }: { data: BoardData }) {
 
   async function saveHosted(a: Annotation) {
     const name = reviewer.trim();
-    if (!name) return;
-    setSaveError(false);
-    const body = buildCommentBody(a, data, name, clientId);
+    if (!name || savingIds.has(a.id)) return;
+    setSaveError(null);
+    setSavingIds((prev) => new Set(prev).add(a.id));
+    // Resolve (and remember) a stable uuid for this annotation, so a double-click
+    // or a retry after a lost response posts the SAME blob id — the upsert dedups
+    // it — instead of a fresh newUuid() minting a permanent duplicate comment.
+    let uuid = commentUuids.current.get(a.id);
+    if (!uuid) {
+      uuid = newUuid();
+      commentUuids.current.set(a.id, uuid);
+    }
+    const body = { ...buildCommentBody(a, data, name, clientId), id: uuid };
     try {
       const res = await fetch("/api/comments", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) {
+        // comment stays in `annotations` (pending) — not lost, either way
+        setSaveError(
+          res.status === 400
+            ? "Couldn’t save — your comment may be too long. Shorten it and try again."
+            : "Couldn’t save — re-enter the password; your unsent comments are kept",
+        );
+        return;
+      }
       setAnnotations((prev) => applyPostResult(prev, a.id, true));
       setServerComments((prev) => [...prev, { ...body, receivedAt: "" }]);
       setSavedOnce(true);
     } catch {
-      setSaveError(true); // comment stays in `annotations` (pending) — not lost
+      setSaveError("Couldn’t save — re-enter the password; your unsent comments are kept");
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
     }
   }
 
@@ -862,7 +896,7 @@ export default function App({ data }: { data: BoardData }) {
         )}
         {hosted && saveError && (
           <div className="border-t border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 px-5 py-1.5 text-center text-xs text-red-800 dark:text-red-300">
-            Couldn’t save — re-enter the password; your unsent comments are kept
+            {saveError}
           </div>
         )}
         {hosted && savedOnce && !saveError && (
@@ -1005,10 +1039,10 @@ export default function App({ data }: { data: BoardData }) {
                     <div className="mt-1.5 flex items-center gap-2 border-t border-stone-100 dark:border-stone-800 pt-1.5">
                       <button
                         className="rounded-md bg-stone-900 dark:bg-stone-200 px-2 py-1 text-[11px] font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
-                        disabled={!reviewer.trim()}
+                        disabled={!reviewer.trim() || savingIds.has(a.id)}
                         onClick={() => saveHosted(a)}
                       >
-                        Save
+                        {savingIds.has(a.id) ? "Saving…" : "Save"}
                       </button>
                       <span className="text-[10px] text-stone-400 dark:text-stone-500">
                         Comments can’t be edited or deleted once sent.
@@ -1117,6 +1151,7 @@ export default function App({ data }: { data: BoardData }) {
                   placeholder="Your name (shown on your comments)"
                   value={reviewer}
                   onChange={(e) => setReviewer(e.target.value)}
+                  maxLength={120}
                 />
                 {!reviewer.trim() && annotations.length > 0 && (
                   <p className="text-[11px] text-stone-500">
