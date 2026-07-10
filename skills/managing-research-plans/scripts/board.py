@@ -801,7 +801,10 @@ def serve(root, payload, args):
         except Exception:
             pass
 
-    signal.signal(signal.SIGTERM, lambda *a: (_ for _ in ()).throw(SystemExit(130)))
+    # signal.signal is main-thread-only; in-process harnesses run serve() on a
+    # worker thread and rely on the timeout/done paths instead of SIGTERM.
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, lambda *a: (_ for _ in ()).throw(SystemExit(130)))
 
     try:
         got = done.wait(timeout=args.timeout)

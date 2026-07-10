@@ -1,12 +1,19 @@
 """Tests for board.py remote-share features. Run:
     python3 -m unittest tests.test_board -v
 """
+import argparse
 import json
+import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 SCRIPTS = (
@@ -1590,6 +1597,165 @@ class TestLifecycle(unittest.TestCase):
                 self.assertIn("vercel env add", out.getvalue())
             finally:
                 del os.environ["CLAUDE_PLUGIN_DATA"]
+
+
+# ---------------------------------------------------------------------------
+# Real-server test harnesses (control-surface work, plan 1/3 Task 0).
+# serve_in_thread = in-process handler-level tests; spawn_board = subprocess
+# end-to-end tests with real exit codes.
+
+def _free_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def live_payload(root):
+    return board.collect_payload(root, "live", None)
+
+
+def _swallow_exit(fn, *a):
+    try:
+        fn(*a)
+    except SystemExit:
+        pass
+
+
+def _wait_healthy(url, tries=200):
+    for _ in range(tries):
+        try:
+            with urllib.request.urlopen(url + "/api/health", timeout=1) as r:
+                if r.status == 200:
+                    return
+        except Exception:
+            time.sleep(0.02)
+    raise AssertionError("board server did not come up at %s" % url)
+
+
+def _read_lock_lenient(plans_dir):
+    lock = plans_dir / ".board.lock"
+    if not lock.exists():
+        return {}
+    raw = lock.read_text(encoding="utf-8").strip()
+    try:
+        v = json.loads(raw)
+        if isinstance(v, dict):
+            return v
+    except ValueError:
+        pass
+    try:
+        return {"pid": int(raw)}
+    except ValueError:
+        return {}
+
+
+def serve_in_thread(root, payload=None, **argkw):
+    """Run board.serve() in a daemon thread. Returns (url, lock_info, thread)."""
+    if payload is None:
+        payload = live_payload(root)
+    if "port" not in argkw:
+        argkw["port"] = _free_port()
+    args = argparse.Namespace(port=0, timeout=30, no_open=True, force=False)
+    for k, v in argkw.items():
+        setattr(args, k, v)
+    t = threading.Thread(
+        target=lambda: _swallow_exit(board.serve, root, payload, args), daemon=True)
+    t.start()
+    url = "http://127.0.0.1:%d" % args.port
+    _wait_healthy(url)
+    info = _read_lock_lenient(root / "plans")
+    info.setdefault("port", args.port)
+    return url, info, t
+
+
+def spawn_board(root, *argv, timeout=30):
+    """Subprocess board server. Returns (Popen, url). Callers terminate()."""
+    proc = subprocess.Popen(
+        [sys.executable, str(BOARD), "--no-open", "--timeout", str(timeout), *argv],
+        cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    url = None
+    for _ in range(400):
+        line = proc.stderr.readline()
+        if line.startswith("Board: "):
+            url = line.split("Board: ", 1)[1].strip()
+            break
+        if proc.poll() is not None:
+            break
+    if url is None:
+        out, err = proc.communicate(timeout=5)
+        raise AssertionError(
+            "no 'Board:' line; exit=%s stderr=%r" % (proc.returncode, err))
+    return proc, url
+
+
+def http_json(url, path, body=None, headers=None):
+    """JSON request helper. Returns (status, parsed_body, headers)."""
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url + path, data=data, method="POST" if data is not None else "GET")
+    req.add_header("Content-Type", "application/json")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, json.loads(r.read().decode("utf-8") or "{}"), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8") or "{}"
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = {"raw": raw}
+        return e.code, parsed, dict(e.headers)
+
+
+def gate_project(root):
+    """make_project + the dual opt-in markers signoff_gate requires."""
+    make_project(root)
+    (root / "CLAUDE.md").write_text(
+        "<!-- research-plans:start -->\n", encoding="utf-8")
+
+
+class TestHarness(unittest.TestCase):
+    def test_serve_in_thread_answers_health(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            status, body, _ = http_json(url, "/api/health")
+            self.assertEqual(status, 200)
+            self.assertTrue(body["ok"])
+
+    def test_serve_in_thread_runs_full_lifecycle(self):
+        # Pins the main-thread signal guard: without it, signal.signal raises
+        # ValueError mid-serve(), the done-wait/shutdown tail never runs, and
+        # the inner daemon server keeps answering after a submission.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root, timeout=10)
+            status, body, _ = http_json(url, "/api/feedback", body={
+                "annotations": [], "feedbackMarkdown": "lifecycle",
+                "payloadHash": "x",
+            })
+            self.assertEqual(status, 200)
+            t.join(timeout=8)
+            self.assertFalse(t.is_alive())
+            with self.assertRaises(Exception):
+                urllib.request.urlopen(url + "/api/health", timeout=1)
+
+    def test_spawn_board_prints_url_and_times_out_clean(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            proc, url = spawn_board(root, "--timeout", "2")
+            try:
+                status, body, _ = http_json(url, "/api/health")
+                self.assertEqual(status, 200)
+                self.assertEqual(proc.wait(timeout=15), 2)
+            finally:
+                proc.terminate()
 
 
 if __name__ == "__main__":
