@@ -126,7 +126,7 @@ export function buildFeedbackMarkdown(
       }
       case "script-comment": {
         lines.push(
-          `## ${i + 1}. [${a.component} r${a.resultsVersion} — ${a.script.split("/").pop()} lines ${a.lineStart}-${a.lineEnd}]`,
+          `## ${i + 1}. [${a.component} r${a.resultsVersion} — ${a.script.split("/").pop()} lines ${a.lineStart}-${a.lineEnd}]${a.author ? ` (via ${a.author})` : ""}`,
         );
         lines.push("```", a.excerpt, "```");
         break;
@@ -138,7 +138,7 @@ export function buildFeedbackMarkdown(
         break;
       }
       case "general": {
-        lines.push(`## ${i + 1}. [${a.view} — general]`);
+        lines.push(`## ${i + 1}. [${a.view} — general]${a.author ? ` (via ${a.author})` : ""}`);
         break;
       }
       default: {

@@ -77,7 +77,7 @@ If your Claude Code build prefers it, the equivalent fallback is to check out th
 | `/research-plans:review` | Two-stage review: first a pass/fail threshold (is this a plan at all: goal and success criteria, reasoned scope decisions, executable steps, a named verification plan, prospectivity, recorded revisions), then a quality grade if it passes. Always includes a split assessment. |
 | `/research-plans:results` | Capture a versioned results bundle for a component — brief report, figure/table snapshots, key numbers, script snapshots, and an automatic plan-vs-execution validation. `--adopt` brings pre-existing artifacts under verification. |
 | `/research-plans:report` | Generate a shareable report for a bundle (markdown always; PDF/DOCX via pandoc) into `plans/reports/` — also available as the board's Generate report button. |
-| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish` to a GitHub Pages URL. |
+| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish-web` to a private, password-protected link for collaborators. |
 
 Everything is opt-in. The plugin does nothing in projects you have not initialized.
 
@@ -88,6 +88,12 @@ The board renders the whole project in your browser, in five views — six after
 The board follows your OS light/dark preference, with a header toggle to override it (exports and shares carry the toggle too). On the Results view, a provenance flow diagram maps each producing script to its artifacts — click a script to read the snapshot line by line (and comment on lines), click an artifact to zoom or jump to its card.
 
 It runs in two modes. **Live**: `/research-plans:board` starts a small local server (python3 only, nothing to install), opens your browser, and waits. Select text in a plan to attach a comment, or leave general comments on any view, then press "Send to Claude" — the feedback lands back in your session, drives plan revisions, and is recorded in the decision log. Or let an agent do the reviewing: the **Review with** button on any plan version, the master plan, or a results bundle runs Codex, Gemini, a Claude subagent, or a three-lens subagent panel and seeds its section-anchored comments onto the board — attributed to the reviewer — for you to curate before they route the same way. **Snapshot**: `/research-plans:board --export` writes a single self-contained `plans/board.html` that anyone can open without Claude Code or an internet connection (figures are inlined). Snapshots are read-only. Treat the file like publishing your plans: it contains everything under `plans/`, including result figures, tables, and script snapshots.
+
+## Share the board privately (Vercel)
+
+For collaborators who only have a browser, `/research-plans:board --publish-web` publishes the full board to a private, password-protected URL on Vercel: they read it and comment from their own browser, and their comments flow back into your session on request. One-time setup takes about 20 minutes and needs Node.js in addition to python3; every publish after that is one click. The full walkthrough, including a copy-paste collaborator invitation you can send as-is, lives in [`docs/hosting-the-board.md`](docs/hosting-the-board.md).
+
+**If you used the old GitHub Pages publish:** earlier versions used `/research-plans:board --publish` to push the board to a public GitHub Pages URL with no password and no access control — anyone who found the link could read it, indefinitely. If that applies to you, take it down: delete the `gh-pages` branch (`git push origin --delete gh-pages`), or disable it in the repo's Settings > Pages (set Source to None). Deleting the branch is the more complete cleanup; a disabled-but-present `gh-pages` branch can be quietly re-enabled by anyone with repo-settings access.
 
 ## Results
 
@@ -152,7 +158,7 @@ The workflow comes out of a methods paper on plan-based human-AI research partne
 
 ## Developing the board
 
-The board UI is a React app in `board/`, built once into a single committed HTML template at `skills/managing-research-plans/assets/board-template.html`. Researchers never need node; `board.py` only injects data into the prebuilt template. To change the UI:
+The board UI is a React app in `board/`, built once into a single committed HTML template at `skills/managing-research-plans/assets/board-template.html`. The core plan-execute-sync workflow needs only python3 — `board.py` just injects data into the prebuilt template; web sharing (`--publish-web` and friends, see [Share the board privately (Vercel)](#share-the-board-privately-vercel) above) additionally needs Node.js, for the Vercel CLI. Changing the UI itself, covered in this section, also needs Node, to rebuild that template:
 
 ```
 cd board

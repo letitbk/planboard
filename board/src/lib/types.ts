@@ -3,7 +3,7 @@
 export interface BoardData {
   schemaVersion: number;
   generatedAt: string;
-  mode: "live" | "static" | "remote";
+  mode: "live" | "static" | "remote" | "hosted";
   focus: string | null;
   focusResults?: number | null; // --focus slug:rN opens the Results view on rN
   drift?: {
@@ -33,6 +33,7 @@ export interface BoardData {
     history?: BoardFile; // reconstructed pre-adoption history; present only when it exists
     archives?: ArchiveFile[]; // archived master plans (v0.10 renewal); present-only
   };
+  publishToken?: string;
 }
 
 export interface BoardFile {
@@ -379,6 +380,7 @@ export interface GeneralAnnotation {
   type: "general";
   view: string;
   comment: string;
+  author?: string;
 }
 
 export interface ResultCommentAnnotation {
@@ -415,6 +417,17 @@ export interface ScriptCommentAnnotation {
   lineEnd: number;
   excerpt: string;
   comment: string;
+  author?: string;
+}
+
+export interface StoredComment {
+  id: string;
+  clientId: string;
+  author: string;
+  shareHash: string;
+  docHash: string | null;
+  annotation: Annotation;
+  receivedAt: string;
 }
 
 export type Annotation =

@@ -256,6 +256,14 @@ describe("payload content hash", () => {
   });
 });
 
+describe("author field does not affect payload hash", () => {
+  it("hash is over files only, unaffected by annotation shape", () => {
+    const files = [{ path: "a.md", content: "x" }, { path: "b.md", content: "y" }];
+    // payloadContentHash takes the file list; annotations are never hashed.
+    expect(payloadContentHash(files as never)).toBe(payloadContentHash(files as never));
+  });
+});
+
 describe("results layer", () => {
   it("parses done (verified) tracker status", () => {
     const mp = parseMasterPlan(

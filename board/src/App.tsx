@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Tracker from "./views/Tracker";
 import PlanReader from "./views/PlanReader";
 import Results from "./views/Results";
@@ -15,6 +15,13 @@ import {
   newSessionId,
   VIEW_LABEL,
 } from "./lib/feedback";
+import {
+  applyPostResult,
+  buildCommentBody,
+  getClientId,
+  newUuid,
+  partitionComments,
+} from "./lib/hostedComments";
 import type {
   Annotation,
   BoardData,
@@ -25,6 +32,7 @@ import type {
   ReviewRequest,
   ScriptCommentAnnotation,
   SeededAnnotation,
+  StoredComment,
   VerdictRequest,
 } from "./lib/types";
 
@@ -113,18 +121,151 @@ function seedToAnnotation(s: SeededAnnotation): Annotation {
   };
 }
 
+// One annotation's card in the drawer list. Shared by local pending items
+// (deletable, optionally with a hosted Save action) and read-only server
+// comments (hosted mode: no delete — comments can't be edited or deleted
+// once sent).
+function AnnotationCard({
+  a,
+  sentBy,
+  stale,
+  onDelete,
+  saveAction,
+}: {
+  a: Annotation;
+  sentBy?: string;
+  stale?: boolean;
+  onDelete?: () => void;
+  saveAction?: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-stone-200 dark:border-stone-800 p-2 text-xs">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-stone-500">
+        {a.type === "plan-comment" ? (
+          <>
+            <span className="font-medium text-stone-700 dark:text-stone-300">
+              {a.component} v{a.version}
+              {a.isDraft ? " (draft)" : ""}
+            </span>
+            {a.sectionHeading && <span>· {a.sectionHeading}</span>}
+            {a.author && (
+              <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
+                via {a.author}
+              </span>
+            )}
+            {!a.anchored && (
+              <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
+                unanchored
+              </span>
+            )}
+          </>
+        ) : a.type === "result-comment" ? (
+          <>
+            <span className="font-medium text-stone-700 dark:text-stone-300">
+              {a.component} r{a.resultsVersion} ·{" "}
+              {a.target.kind === "artifact"
+                ? a.target.artifactId
+                : a.target.kind === "metric"
+                  ? a.target.metricLabel
+                  : "report"}
+            </span>
+            {a.author && (
+              <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
+                via {a.author}
+              </span>
+            )}
+            {a.anchored === false && (
+              <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
+                unanchored
+              </span>
+            )}
+          </>
+        ) : a.type === "script-comment" ? (
+          <span className="font-medium text-stone-700 dark:text-stone-300">
+            {a.script.split("/").pop()} L{a.lineStart}
+            {a.lineEnd !== a.lineStart ? `–${a.lineEnd}` : ""}
+          </span>
+        ) : a.type === "doc-comment" ? (
+          <>
+            <span className="font-medium text-stone-700 dark:text-stone-300">
+              {VIEW_LABEL[a.view]}
+            </span>
+            {a.sectionHeading && <span>· {a.sectionHeading}</span>}
+            {a.author && (
+              <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
+                via {a.author}
+              </span>
+            )}
+            {!a.anchored && (
+              <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
+                unanchored
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="font-medium text-stone-700 dark:text-stone-300">
+            {a.view} — general
+          </span>
+        )}
+        {sentBy && (
+          <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5 font-medium text-stone-600 dark:text-stone-300">
+            {sentBy}
+          </span>
+        )}
+        {stale && (
+          <span className="rounded bg-amber-100 dark:bg-amber-900/50 px-1 py-0.5 font-medium text-amber-700 dark:text-amber-300">
+            outdated
+          </span>
+        )}
+        {onDelete && (
+          <button
+            className="ml-auto text-stone-400 dark:text-stone-500 hover:text-red-600"
+            onClick={onDelete}
+            title="Delete"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {(a.type === "plan-comment" || a.type === "doc-comment") && (
+        <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
+          “{a.quote}”
+        </div>
+      )}
+      {a.type === "result-comment" && a.target.quote && (
+        <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
+          “{a.target.quote}”
+        </div>
+      )}
+      {a.type === "script-comment" && (
+        <pre className="mb-1 max-h-16 overflow-hidden rounded bg-stone-50 dark:bg-stone-800/50 px-1.5 py-1 text-[10px] text-stone-500">
+          {a.excerpt}
+        </pre>
+      )}
+      <div className="text-stone-700 dark:text-stone-300">{a.comment}</div>
+      {saveAction}
+    </div>
+  );
+}
+
 export default function App({ data }: { data: BoardData }) {
   // Batch sign-off is a full-screen wizard, isolated from the normal board's
   // tabs/annotation state. The payload is static, so this early return is stable
   // (hook order never changes within a session).
   if (data.gateBatch) return <BatchGate data={data} />;
 
-  const canAnnotate = data.mode === "live" || data.mode === "remote";
+  const hosted = data.mode === "hosted";
+  const canAnnotate = data.mode === "live" || data.mode === "remote" || hosted;
   const canPost = data.mode === "live";
   const remote = data.mode === "remote";
   const gate = data.gate ?? null;
   const payloadHash = useMemo(() => payloadContentHash(allFiles(data)), [data]);
   const storageKey = `rp-board:${data.project.name}:${payloadHash}`;
+  // Hosted persistence is keyed by project + board URL (stable across a
+  // republish), not payloadHash — so redeploying the board never orphans a
+  // visitor's unsent drafts or resets their name.
+  const webKey = hosted ? `rp-hosted:${data.project.name}:${location.origin}` : null;
+  const pendingKey = hosted ? (webKey as string) : storageKey;
   const sessionId = useMemo(() => newSessionId(), []);
 
   const [tab, setTab] = useState<Tab>(
@@ -143,20 +284,20 @@ export default function App({ data }: { data: BoardData }) {
     if (!canAnnotate) return [];
     let base: Annotation[] = [];
     try {
-      const saved = localStorage.getItem(storageKey);
+      const saved = localStorage.getItem(pendingKey);
       base = saved ? (JSON.parse(saved) as Annotation[]) : [];
     } catch {
       base = [];
     }
     // Agent plan review (v0.9): reviewer comments arrive unanchored and paint
     // in-browser at first quote match (see seedToAnnotation). One-shot per board
-    // session: `${storageKey}:seeded` records which reviewer comments have already
+    // session: `${pendingKey}:seeded` records which reviewer comments have already
     // been ingested, so deleting one and reloading before Send does not re-add it
     // (curation must stick), and reopening never doubles.
     let ingested: Set<string>;
     try {
       ingested = new Set(
-        JSON.parse(localStorage.getItem(`${storageKey}:seeded`) ?? "[]") as string[],
+        JSON.parse(localStorage.getItem(`${pendingKey}:seeded`) ?? "[]") as string[],
       );
     } catch {
       ingested = new Set();
@@ -172,32 +313,109 @@ export default function App({ data }: { data: BoardData }) {
   const [submitState, setSubmitState] = useState<
     "idle" | "sending" | "sent" | "approved" | "denied" | "failed" | "downloaded"
   >("idle");
+  // Reviewer name: remote persists it under the payload-hashed storageKey
+  // (fine — a remote reviewer downloads one board once); hosted persists it
+  // under webKey so a republish doesn't blank the name field.
   const [reviewer, setReviewer] = useState<string>(() => {
-    if (!remote) return "";
+    if (!remote && !hosted) return "";
     try {
-      return localStorage.getItem(`${storageKey}:reviewer`) ?? "";
+      return localStorage.getItem(hosted ? `${webKey}:name` : `${storageKey}:reviewer`) ?? "";
     } catch {
       return "";
     }
   });
 
   useEffect(() => {
-    if (!remote) return;
+    if (!remote && !hosted) return;
     try {
-      localStorage.setItem(`${storageKey}:reviewer`, reviewer);
+      localStorage.setItem(hosted ? `${webKey}:name` : `${storageKey}:reviewer`, reviewer);
     } catch {
       // storage unavailable — name still lives in memory
     }
-  }, [reviewer, remote, storageKey]);
+  }, [reviewer, remote, hosted, webKey, storageKey]);
+
+  // Hosted-only state: server-known comments (separate population from the
+  // local pending `annotations`), a per-visitor clientId, and save feedback.
+  const [serverComments, setServerComments] = useState<StoredComment[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedOnce, setSavedOnce] = useState(false);
+  // In-flight guard (mirrors the Publish-to-web button's publishState pattern):
+  // which annotation ids currently have a Save POST in flight, so a double-click
+  // or a slow response can't fire a second POST for the same annotation.
+  const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
+  // Stable per-annotation comment uuid: buildCommentBody mints a fresh uuid
+  // whenever the annotation id isn't UUID-shaped (board annotation ids are
+  // `ann-…`, never UUID), so without this a retry after a lost response would
+  // post a second blob with a different id. Reusing the same uuid makes the
+  // API's allowOverwrite upsert dedup a retry against the first attempt.
+  const commentUuids = useRef<Map<string, string>>(new Map());
+  const clientId = useMemo(() => (hosted ? getClientId(localStorage) : ""), [hosted]);
+
+  useEffect(() => {
+    if (!hosted) return;
+    fetch("/api/comments")
+      .then((r) => (r.ok ? r.json() : { comments: [] }))
+      .then((d) => setServerComments(d.comments ?? []))
+      .catch(() => setServerComments([]));
+  }, [hosted]);
+
+  const { live, stale } = hosted
+    ? partitionComments(serverComments, data)
+    : { live: [] as StoredComment[], stale: [] as StoredComment[] };
+
+  async function saveHosted(a: Annotation) {
+    const name = reviewer.trim();
+    if (!name || savingIds.has(a.id)) return;
+    setSaveError(null);
+    setSavingIds((prev) => new Set(prev).add(a.id));
+    // Resolve (and remember) a stable uuid for this annotation, so a double-click
+    // or a retry after a lost response posts the SAME blob id — the upsert dedups
+    // it — instead of a fresh newUuid() minting a permanent duplicate comment.
+    let uuid = commentUuids.current.get(a.id);
+    if (!uuid) {
+      uuid = newUuid();
+      commentUuids.current.set(a.id, uuid);
+    }
+    const body = { ...buildCommentBody(a, data, name, clientId), id: uuid };
+    try {
+      const res = await fetch("/api/comments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        // comment stays in `annotations` (pending) — not lost, either way
+        setSaveError(
+          res.status === 400
+            ? "Couldn’t save — your comment may be too long. Shorten it and try again."
+            : "Couldn’t save — re-enter the password; your unsent comments are kept",
+        );
+        return;
+      }
+      setAnnotations((prev) => applyPostResult(prev, a.id, true));
+      setServerComments((prev) => [...prev, { ...body, receivedAt: "" }]);
+      setSavedOnce(true);
+    } catch {
+      setSaveError("Couldn’t save — re-enter the password; your unsent comments are kept");
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
+    }
+  }
+
+  const isTouch = hosted && !!window.matchMedia?.("(pointer: coarse)")?.matches;
 
   useEffect(() => {
     if (!canAnnotate) return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(annotations));
+      localStorage.setItem(pendingKey, JSON.stringify(annotations));
     } catch {
       // storage full/unavailable — annotations still live in memory
     }
-  }, [annotations, canAnnotate, storageKey]);
+  }, [annotations, canAnnotate, pendingKey]);
 
   // Record seeded reviewer comments as ingested (one-shot) — see the annotations
   // initializer. Runs once so a dismissed seed is not re-added on reload.
@@ -206,10 +424,10 @@ export default function App({ data }: { data: BoardData }) {
     if (!canAnnotate || seeds.length === 0) return;
     try {
       const prev = new Set<string>(
-        JSON.parse(localStorage.getItem(`${storageKey}:seeded`) ?? "[]"),
+        JSON.parse(localStorage.getItem(`${pendingKey}:seeded`) ?? "[]"),
       );
       for (const s of seeds) prev.add(seedDedupKey(s));
-      localStorage.setItem(`${storageKey}:seeded`, JSON.stringify([...prev]));
+      localStorage.setItem(`${pendingKey}:seeded`, JSON.stringify([...prev]));
     } catch {
       // storage unavailable — one-shot degrades to memory only
     }
@@ -517,6 +735,27 @@ export default function App({ data }: { data: BoardData }) {
     }
   };
 
+  // Publish-to-web (live mode only): the local server injects a per-session
+  // token as data.publishToken (sub-plan 4). Without it, there's no local
+  // endpoint to post to yet — show the CLI hint instead.
+  const [publishState, setPublishState] = useState<
+    "idle" | "publishing" | "published" | "failed"
+  >("idle");
+  const publishToWeb = async () => {
+    setPublishState("publishing");
+    try {
+      const res = await fetch("/publish-web", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: data.publishToken }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setPublishState("published");
+    } catch {
+      setPublishState("failed");
+    }
+  };
+
   if (submitState === "approved" || submitState === "denied") {
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-800/50">
@@ -596,6 +835,26 @@ export default function App({ data }: { data: BoardData }) {
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
+            {canPost &&
+              (data.publishToken ? (
+                <button
+                  className="rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1.5 text-sm font-medium text-stone-700 dark:text-stone-300 hover:border-stone-500 dark:hover:border-stone-400 disabled:opacity-40"
+                  disabled={publishState === "publishing"}
+                  onClick={publishToWeb}
+                >
+                  {publishState === "publishing"
+                    ? "Publishing…"
+                    : publishState === "published"
+                      ? "Published"
+                      : publishState === "failed"
+                        ? "Publish failed — retry"
+                        : "Publish to web"}
+                </button>
+              ) : (
+                <span className="text-[11px] text-stone-400 dark:text-stone-500">
+                  Run /research-plans:board --publish-web in Claude Code
+                </span>
+              ))}
             {canAnnotate && (
               <button
                 className="rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1.5 text-sm font-medium text-stone-700 dark:text-stone-300 hover:border-stone-500 dark:hover:border-stone-400"
@@ -633,6 +892,22 @@ export default function App({ data }: { data: BoardData }) {
           <div className="border-t border-stone-800 bg-stone-900 dark:bg-stone-200 px-5 py-2 text-center text-sm font-semibold text-white dark:text-stone-900">
             Sign-off gate: {gate.component} v{gate.proposedVersion} — approve in
             this window, or request changes with comments
+          </div>
+        )}
+        {hosted && saveError && (
+          <div className="border-t border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 px-5 py-1.5 text-center text-xs text-red-800 dark:text-red-300">
+            {saveError}
+          </div>
+        )}
+        {hosted && savedOnce && !saveError && (
+          <div className="border-t border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 px-5 py-1.5 text-center text-xs text-green-800 dark:text-green-300">
+            Sent — visible to everyone with this link; the researcher picks up
+            comments in Claude Code
+          </div>
+        )}
+        {isTouch && (
+          <div className="border-t border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950 px-5 py-1.5 text-center text-xs text-blue-900 dark:text-blue-200">
+            Reading works here; commenting works best on a computer
           </div>
         )}
       </header>
@@ -749,109 +1024,64 @@ export default function App({ data }: { data: BoardData }) {
             </button>
           </div>
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
-            {annotations.length === 0 && (
+            {annotations.length === 0 && live.length === 0 && stale.length === 0 && (
               <p className="p-4 text-center text-xs text-stone-400 dark:text-stone-500">
                 Select text in any view or add a general comment.
               </p>
             )}
             {annotations.map((a) => (
-              <div
+              <AnnotationCard
                 key={a.id}
-                className="rounded-md border border-stone-200 dark:border-stone-800 p-2 text-xs"
-              >
-                <div className="mb-1 flex items-center gap-1.5 text-[11px] text-stone-500">
-                  {a.type === "plan-comment" ? (
-                    <>
-                      <span className="font-medium text-stone-700 dark:text-stone-300">
-                        {a.component} v{a.version}
-                        {a.isDraft ? " (draft)" : ""}
+                a={a}
+                onDelete={() => removeAnnotation(a.id)}
+                saveAction={
+                  hosted ? (
+                    <div className="mt-1.5 flex items-center gap-2 border-t border-stone-100 dark:border-stone-800 pt-1.5">
+                      <button
+                        className="rounded-md bg-stone-900 dark:bg-stone-200 px-2 py-1 text-[11px] font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
+                        disabled={!reviewer.trim() || savingIds.has(a.id)}
+                        onClick={() => saveHosted(a)}
+                      >
+                        {savingIds.has(a.id) ? "Saving…" : "Save"}
+                      </button>
+                      <span className="text-[10px] text-stone-400 dark:text-stone-500">
+                        Comments can’t be edited or deleted once sent.
                       </span>
-                      {a.sectionHeading && <span>· {a.sectionHeading}</span>}
-                      {a.author && (
-                        <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
-                          via {a.author}
-                        </span>
-                      )}
-                      {!a.anchored && (
-                        <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
-                          unanchored
-                        </span>
-                      )}
-                    </>
-                  ) : a.type === "result-comment" ? (
-                    <>
-                      <span className="font-medium text-stone-700 dark:text-stone-300">
-                        {a.component} r{a.resultsVersion} ·{" "}
-                        {a.target.kind === "artifact"
-                          ? a.target.artifactId
-                          : a.target.kind === "metric"
-                            ? a.target.metricLabel
-                            : "report"}
-                      </span>
-                      {a.author && (
-                        <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
-                          via {a.author}
-                        </span>
-                      )}
-                      {a.anchored === false && (
-                        <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
-                          unanchored
-                        </span>
-                      )}
-                    </>
-                  ) : a.type === "script-comment" ? (
-                    <span className="font-medium text-stone-700 dark:text-stone-300">
-                      {a.script.split("/").pop()} L{a.lineStart}
-                      {a.lineEnd !== a.lineStart ? `–${a.lineEnd}` : ""}
-                    </span>
-                  ) : a.type === "doc-comment" ? (
-                    <>
-                      <span className="font-medium text-stone-700 dark:text-stone-300">
-                        {VIEW_LABEL[a.view]}
-                      </span>
-                      {a.sectionHeading && <span>· {a.sectionHeading}</span>}
-                      {a.author && (
-                        <span className="rounded bg-violet-100 dark:bg-violet-900/50 px-1 py-0.5 font-medium text-violet-700 dark:text-violet-300">
-                          via {a.author}
-                        </span>
-                      )}
-                      {!a.anchored && (
-                        <span className="rounded bg-stone-100 dark:bg-stone-800 px-1 py-0.5">
-                          unanchored
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="font-medium text-stone-700 dark:text-stone-300">
-                      {a.view} — general
-                    </span>
-                  )}
-                  <button
-                    className="ml-auto text-stone-400 dark:text-stone-500 hover:text-red-600"
-                    onClick={() => removeAnnotation(a.id)}
-                    title="Delete"
-                  >
-                    ✕
-                  </button>
-                </div>
-                {(a.type === "plan-comment" || a.type === "doc-comment") && (
-                  <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
-                    “{a.quote}”
-                  </div>
-                )}
-                {a.type === "result-comment" && a.target.quote && (
-                  <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
-                    “{a.target.quote}”
-                  </div>
-                )}
-                {a.type === "script-comment" && (
-                  <pre className="mb-1 max-h-16 overflow-hidden rounded bg-stone-50 dark:bg-stone-800/50 px-1.5 py-1 text-[10px] text-stone-500">
-                    {a.excerpt}
-                  </pre>
-                )}
-                <div className="text-stone-700 dark:text-stone-300">{a.comment}</div>
-              </div>
+                    </div>
+                  ) : undefined
+                }
+              />
             ))}
+            {hosted && live.length > 0 && (
+              <div className="pt-2">
+                <h3 className="px-0.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400 dark:text-stone-500">
+                  Sent
+                </h3>
+                <div className="space-y-2">
+                  {live.map((c) => (
+                    <AnnotationCard key={c.id} a={c.annotation} sentBy={c.author} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {hosted && stale.length > 0 && (
+              <div className="pt-2">
+                <h3 className="px-0.5 pb-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                  Written before the board was last updated — the researcher
+                  still has a copy of all comments
+                </h3>
+                <div className="space-y-2">
+                  {stale.map((c) => (
+                    <AnnotationCard
+                      key={c.id}
+                      a={c.annotation}
+                      sentBy={c.author}
+                      stale
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="border-t border-stone-200 dark:border-stone-800 p-3">
             {submitState === "failed" && (
@@ -913,6 +1143,21 @@ export default function App({ data }: { data: BoardData }) {
                 >
                   {submitState === "sending" ? "Sending…" : "Send to Claude"}
                 </button>
+              </div>
+            ) : hosted ? (
+              <div className="space-y-2">
+                <input
+                  className="w-full rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1.5 text-sm"
+                  placeholder="Your name (shown on your comments)"
+                  value={reviewer}
+                  onChange={(e) => setReviewer(e.target.value)}
+                  maxLength={120}
+                />
+                {!reviewer.trim() && annotations.length > 0 && (
+                  <p className="text-[11px] text-stone-500">
+                    Enter your name to save comments below.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="space-y-2">

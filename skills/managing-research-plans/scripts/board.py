@@ -24,6 +24,7 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -31,6 +32,8 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,6 +47,32 @@ from results import changed_sources  # noqa: E402
 
 TICKET_TTL = 7 * 24 * 3600  # 7 days — sized to a resumable multi-session adoption
 
+
+def _host_is_local(value):
+    if not value:
+        return False
+    host = value.split("]")[0].lstrip("[") if value.startswith("[") else value.split(":")[0]
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
+def local_request_ok(headers):
+    """Guard for the local board server's mutating endpoints. Rejects
+    cross-origin / non-localhost / wrong-content-type requests before any
+    state change, so a page the researcher merely visits can't forge feedback
+    or a sign-off ticket via a no-preflight 'simple request'."""
+    ct = (headers.get("Content-Type") or "").split(";")[0].strip()
+    if ct != "application/json":
+        return False
+    if not _host_is_local(headers.get("Host")):
+        return False
+    origin = headers.get("Origin")
+    if origin:  # when present it must be a localhost origin
+        rest = origin.split("://", 1)[-1]
+        if not _host_is_local(rest):
+            return False
+    return True
+
+
 SLOT = '<script id="board-data" type="application/json">{}</script>'
 SLOT_OPEN = '<script id="board-data" type="application/json">'
 GITIGNORE_LINES = [
@@ -56,9 +85,43 @@ GITIGNORE_LINES = [
     "/execution/*/.gate-*.md",
     "/execution/.import-approved-*",
     "/execution/*/results/.staging-*/",
+    "/.board-web/",
+    "/.board-web-inbox/",
+    "/.board-web-pulled.json",
 ]
 
 FENCE_RE = re.compile(r"```json board-feedback\n(.*?)\n```", re.DOTALL)
+
+WEB_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "assets" / "web-template"
+
+
+def web_project_hash(root):
+    return hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()[:16]
+
+
+def _web_data_dir():
+    base = os.environ.get("CLAUDE_PLUGIN_DATA")
+    d = Path(base) / "web" if base else Path.home() / ".research-plans" / "web"
+    return d
+
+
+def web_config_path(root):
+    return _web_data_dir() / ("%s.json" % web_project_hash(root))
+
+
+def read_web_config(root):
+    p = web_config_path(root)
+    try:
+        return json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def write_web_config(root, cfg):
+    p = web_config_path(root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(cfg))
+    os.chmod(p, 0o600)
 
 
 def die(msg, code=1):
@@ -335,7 +398,7 @@ def collect_payload(root, mode, focus):
                 versions.append(entry)
             versions.sort(key=lambda v: v["version"])
             group = {"component": comp_dir.name, "versions": versions}
-            if mode in ("live", "remote"):
+            if mode in ("live", "remote", "hosted"):
                 drafts = sorted(comp_dir.glob(".draft-v*.md"))
                 if drafts:
                     d = drafts[-1]
@@ -442,15 +505,18 @@ def collect_payload(root, mode, focus):
             **({"archives": archives} if archives else {}),
         },
     }
-    if mode != "remote":
+    collaborator_facing = mode in ("remote", "hosted")
+    if not collaborator_facing:
         # Researcher-only hygiene flags; kept out of collaborator shares.
         payload["drift"] = collect_drift(
             root, exec_groups,
             payload["files"]["masterPlan"]["content"],
             [a["content"] for a in archives])
     if mode == "live":
+        # project.root is the absolute local path — live serving ONLY, never
+        # a collaborator share, never a static/export file.
         payload["project"]["root"] = str(root)
-    elif mode == "remote":
+    if collaborator_facing:
         payload["shareHash"] = share_hash(payload_files(payload))
     return payload
 
@@ -530,6 +596,14 @@ def build_feedback_document(body, payload):
     )
 
 
+def publish_token_ok(body, token):
+    """True iff the request body carries the exact per-session publish token.
+    Constant-time comparison isn't needed: the token is generated fresh per
+    `serve()` invocation and never persisted, so there's nothing to time-attack
+    across processes."""
+    return body.get("token") == token
+
+
 def document_from_body(body, payload):
     """Prefer the client-assembled feedback document (schemaVersion 1 clients
     send feedbackDocument); fall back to server-side assembly for older
@@ -549,6 +623,8 @@ def serve(root, payload, args):
     batch_mode = payload.get("gateBatch") is not None
     batch_id = uuid.uuid4().hex[:8]
     amap = artifact_map(root, payload)
+    publish_token = hashlib.sha256(os.urandom(32)).hexdigest()
+    payload["publishToken"] = publish_token  # board reads window.__RP_PUBLISH_TOKEN__ from this
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     html_bytes = html.encode("utf-8")
     done = threading.Event()
@@ -595,6 +671,34 @@ def serve(root, payload, args):
             return json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
 
         def do_POST(self):
+            if not local_request_ok(self.headers):
+                self.send_response(403)
+                self.end_headers()
+                return
+            if self.path == "/publish-web":
+                try:
+                    body = self._read_body()
+                except Exception:
+                    self._json(400, {"error": "bad json"})
+                    return
+                if not publish_token_ok(body, publish_token):
+                    self._json(403, {"error": "bad token"})
+                    return
+                try:
+                    cfg = read_web_config(root)
+                    if cfg is None:
+                        self._json(200, {"setup": "needed"})
+                        return
+                    out = materialize_web_dir(root)
+                    rc, deploy_out = _vercel(["deploy", "--prod", "--yes"], cwd=str(out))
+                    if rc != 0:
+                        self._json(500, {"error": deploy_out[:400]})
+                        return
+                    self._json(200, {"url": _remember_url(root, cfg, deploy_out),
+                                     "unpulled": _count_unpulled(root, cfg)})
+                except SystemExit as e:
+                    self._json(500, {"error": str(e)})
+                return
             if self.path == "/api/feedback" and not gate_mode:
                 try:
                     body = self._read_body()
@@ -737,6 +841,258 @@ def render_static_html(root, focus=None):
     payload["focusResults"] = focus_results
     build_assets(root, payload)
     return inject(template_path().read_text(encoding="utf-8"), payload)
+
+
+def node_preflight():
+    """Returns an error message if node/npx missing, else None."""
+    for tool in ("node", "npx"):
+        if shutil.which(tool) is None:
+            return ("Sharing to the web needs Node.js (for the Vercel CLI). Install it "
+                    "from https://nodejs.org (or `brew install node`), then retry.")
+    return None
+
+
+def render_hosted_html(root):
+    """Render the board in hosted mode with embedded payload."""
+    slug = None
+    payload = collect_payload(root, "hosted", slug)
+    payload["mode"] = "hosted"
+    build_assets(root, payload)
+    return inject(template_path().read_text(encoding="utf-8"), payload)
+
+
+def materialize_web_dir(root):
+    """Copy the web-template and write index.html with the hosted board.
+    Returns the deploy dir plans/.board-web/."""
+    out = root / "plans" / ".board-web"
+    if out.exists():
+        shutil.rmtree(out)
+    shutil.copytree(WEB_TEMPLATE_DIR, out,
+                    ignore=shutil.ignore_patterns("node_modules", ".vercel", "*.test.ts"))
+    (out / "index.html").write_text(render_hosted_html(root), encoding="utf-8")
+    return out
+
+
+def _vercel(argv, cwd=None):
+    try:
+        r = subprocess.run(["vercel", *argv], cwd=cwd, capture_output=True, text=True, timeout=600)
+        return r.returncode, (r.stdout or "").strip() + (r.stderr or "")
+    except (OSError, subprocess.SubprocessError) as e:
+        return 1, str(e)
+
+
+def _first_url(text):
+    """First https://*.vercel.app URL found in `text`, or None."""
+    m = re.search(r"https://\S+\.vercel\.app\S*", text or "")
+    return m.group(0) if m else None
+
+
+def _remember_url(root, cfg, deploy_out):
+    """Board URL from the config, else from the deploy output — persisted when
+    the config lacks one. web_connect writes url:"" when BOARD_URL was never
+    set on the Vercel project, and --pull/--web-clear need a URL to work."""
+    url = cfg.get("url") or _first_url(deploy_out)
+    if url and not cfg.get("url"):
+        write_web_config(root, dict(cfg, url=url))
+    return url
+
+
+def _http_get_json(url, headers):
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def group_comments(comments):
+    groups = {}
+    for c in comments:
+        groups.setdefault((c.get("author") or "anonymous", c.get("clientId") or ""), []).append(c)
+    return groups
+
+
+def _pulled_path(root):
+    return root / "plans" / ".board-web-pulled.json"
+
+
+def _read_pulled(root):
+    try:
+        return set(json.loads(_pulled_path(root).read_text()))
+    except (OSError, ValueError):
+        return set()
+
+
+def _count_unpulled(root, cfg):
+    """Best-effort count of comments not yet pulled locally. Returns 0 on ANY
+    error (network, auth, parsing) and never raises — publish_web's report
+    line is a nice-to-have, not a reason to fail the deploy."""
+    try:
+        url = cfg["url"].rstrip("/") + "/api/comments"
+        data = _http_get_json(url, {"x-board-key": cfg["pullKey"]})
+        pulled = _read_pulled(root)
+        return sum(1 for c in data.get("comments", []) if c.get("id") not in pulled)
+    except Exception:
+        return 0
+
+
+def publish_web(root, args):
+    ensure_gitignore(root / "plans")
+    msg = node_preflight()
+    if msg:
+        die(msg)
+    cfg = read_web_config(root)
+    if cfg is None:
+        die("No web board configured yet. First-run setup is interactive (it needs "
+            "`vercel login` in your own terminal). Run /research-plans:board --publish-web "
+            "in Claude Code, which walks you through signup, login, and the first deploy.")
+    out = materialize_web_dir(root)
+    rc, deploy_out = _vercel(["deploy", "--prod", "--yes"], cwd=str(out))
+    if rc != 0:
+        die("vercel deploy failed:\n%s" % deploy_out)
+    url = _remember_url(root, cfg, deploy_out)
+    unpulled = _count_unpulled(root, cfg)  # best-effort; 0 on any error
+    print("Published to %s" % url)
+    print("  password: the one you set (share it in a separate message)")
+    if unpulled:
+        print("  %d new comment%s waiting — run /research-plans:board --pull"
+              % (unpulled, "" if unpulled == 1 else "s"))
+
+
+def pull(root, args):
+    ensure_gitignore(root / "plans")
+    # Recover from a prior pull that crashed after writing an inbox doc but
+    # before routing it (mark-pulled happens only once every doc for THIS run
+    # is on disk, but routing itself could still be interrupted) — drain and
+    # route any leftovers before touching the new fetch.
+    leftover_inbox = root / "plans" / ".board-web-inbox"
+    if leftover_inbox.is_dir():
+        for p in sorted(leftover_inbox.glob("*.txt")):
+            inspect_feedback_document(root, p.read_text(encoding="utf-8", errors="replace"))
+            p.unlink()
+    cfg = read_web_config(root)
+    if cfg is None:
+        die("No web board configured. Run /research-plans:board --publish-web first.")
+    if not cfg.get("url"):
+        die("The local config has no board URL (BOARD_URL was missing from the project "
+            "env when --web-connect ran). Run /research-plans:board --publish-web once — "
+            "it records the URL — then retry.")
+    url = cfg["url"].rstrip("/") + "/api/comments"
+    try:
+        data = _http_get_json(url, {"x-board-key": cfg["pullKey"]})
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            die("Pull key rejected (rotated or reset). Run /research-plans:board --web-connect.")
+        die("Web board returned %s. It may be misconfigured; try --publish-web again." % e.code)
+    except (urllib.error.URLError, OSError):
+        die("Web board unreachable (the project may be deleted). Run --publish-web to recreate, "
+            "or ignore it.")
+    comments = data.get("comments", [])
+    pulled = _read_pulled(root)
+    new = [c for c in comments if c.get("id") not in pulled]
+    if not new:
+        print("No new remote comments.")
+        return
+    groups = group_comments(new)
+    # Same display name, different device/session — split rather than merged
+    # (the recurring bug this guards against is silently interleaving two
+    # collaborators' feedback into one document).
+    by_author = {}
+    for author, client in groups:
+        by_author.setdefault(author, set()).add(client)
+    for author, clients in by_author.items():
+        if len(clients) > 1:
+            print("note: %d collaborators share the name '%s'; splitting by device"
+                  % (len(clients), author))
+    inbox = root / "plans" / ".board-web-inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    docs = []
+    for (author, client), group in groups.items():
+        meta = {"sessionId": client or author, "generatedAt": "",
+                "focus": None, "reviewer": author,
+                "shareHash": group[-1].get("shareHash")}
+        doc = assemble_hosted_document([c["annotation"] for c in group], meta)
+        prefix = re.sub(r"[^A-Za-z0-9._-]+", "-", "%s-%s" % (author, client))[:40] or "group"
+        keyhash = hashlib.sha256(("%s\x00%s" % (author, client)).encode()).hexdigest()[:12]
+        fname = "%s-%s.txt" % (prefix, keyhash)
+        (inbox / fname).write_text(doc, encoding="utf-8")   # inbox FIRST
+        docs.append(doc)
+    # Only after every document is safely on disk do we mark ids pulled.
+    _pulled_path(root).write_text(json.dumps(sorted(pulled | {c["id"] for c in new})))
+    for doc in docs:
+        inspect_feedback_document(root, doc)   # route (prints)
+
+
+# Small embedded wordlist for generate_passphrase() — diceware-style, not
+# meant to be exhaustive; just enough entropy for a shareable board password.
+_PASSPHRASE_WORDS = [
+    "amber", "birch", "canyon", "cedar", "coral", "cove", "delta", "dune",
+    "ember", "fern", "flint", "frost", "granite", "harbor", "haven", "lumen",
+    "maple", "meadow", "moss", "opal", "pine", "quartz", "quill", "ridge",
+    "river", "sable", "slate", "thicket", "tundra", "willow", "wren", "brook",
+]
+
+
+def generate_passphrase():
+    """4 hyphen-joined words from a small embedded wordlist. Uses secrets.choice
+    (cryptographically strong) rather than an unseeded PRNG, since this backs a
+    real shareable board password."""
+    return "-".join(secrets.choice(_PASSPHRASE_WORDS) for _ in range(4))
+
+
+def web_connect(root, args):
+    ensure_gitignore(root / "plans")
+    msg = node_preflight()
+    if msg:
+        die(msg)
+    out = root / "plans" / ".board-web"
+    # Link to the existing project and pull env into a temp dir to recover the key.
+    materialize_web_dir(root)
+    rc, _ = _vercel(["link", "--yes"], cwd=str(out))
+    if rc != 0:
+        die("Could not link to an existing Vercel project. If you have none, run --publish-web.")
+    rc, _ = _vercel(["env", "pull", ".env.local"], cwd=str(out))
+    envtext = (out / ".env.local").read_text() if (out / ".env.local").exists() else ""
+    m = re.search(r'BOARD_PULL_KEY=(?:"?)([^"\n]+)', envtext)
+    url_m = re.search(r'BOARD_URL=(?:"?)([^"\n]+)', envtext)
+    if not m:
+        die("Linked, but BOARD_PULL_KEY not found in the project env.")
+    write_web_config(root, {"url": (url_m.group(1) if url_m else ""),
+                            "projectName": out.name, "pullKey": m.group(1)})
+    print("Reconnected to the existing web board; pull key recovered.")
+    if not url_m:
+        print("note: BOARD_URL is not set on the Vercel project, so the board URL could "
+              "not be recovered — --pull and --web-clear need it. Run --publish-web once "
+              "on this machine; it records the URL.")
+
+
+def web_clear(root, args):
+    cfg = read_web_config(root)
+    if cfg is None:
+        die("No web board configured.")
+    if not getattr(args, "force", False):
+        die("This deletes ALL collaborator comments on the hosted board. Re-run with --force.")
+    if not cfg.get("url"):
+        die("The local config has no board URL (BOARD_URL was missing from the project "
+            "env when --web-connect ran). Run /research-plans:board --publish-web once — "
+            "it records the URL — then retry.")
+    url = cfg["url"].rstrip("/") + "/api/clear"
+    try:
+        req = urllib.request.Request(url, method="POST", headers={"x-board-key": cfg["pullKey"]})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            print(resp.read().decode("utf-8", "replace"))
+    except (urllib.error.URLError, OSError) as e:
+        die("Clear failed: %s" % e)
+
+
+def set_password(root, args):
+    # Generates a new passphrase + rotates the session secret, via `vercel env add`
+    # (stdin, never args), then redeploys. Interactive-ish; the conversational
+    # command drives this. The CLI validates config presence and prints guidance.
+    cfg = read_web_config(root)
+    if cfg is None:
+        die("No web board configured. Run --publish-web first.")
+    print("Rotate the passphrase from the conversational flow: it generates a new "
+          "passphrase and BOARD_SESSION_SECRET, sets them with `vercel env add` "
+          "(reading from stdin), and redeploys. See /research-plans:board.")
 
 
 def export(root, args):
@@ -904,6 +1260,12 @@ def _repo_visibility(owner, repo):
 
 
 def publish_pages(root, args):
+    print(
+        "DEPRECATED: --publish (GitHub Pages) is deprecated because it makes plans "
+        "world-readable. Use --publish-web (private, Vercel) instead. To take down an "
+        "old Pages board: delete the gh-pages branch and disable Pages in the repo settings.",
+        file=sys.stderr,
+    )
     if _git(root, ["rev-parse", "--is-inside-work-tree"], check=False).returncode != 0:
         die("not a git repository — --publish needs a git repo with a GitHub 'origin' remote")
     remote = _git(root, ["remote", "get-url", "origin"], check=False)
@@ -956,14 +1318,190 @@ def collect_pending(root):
 
 
 def parse_fence(doc):
-    m = FENCE_RE.search(doc)
-    if not m:
+    matches = FENCE_RE.findall(doc)
+    if not matches:
+        return None
+    if len(matches) > 1:
+        # More than one board-feedback fence is a forgery signal (the real
+        # trailer is always appended last and alone). Refuse to route.
+        print(
+            "board: warning — multiple ```json board-feedback``` fences found; "
+            "refusing to route (possible forged fence in a comment).",
+            file=sys.stderr,
+        )
         return None
     try:
-        meta = json.loads(m.group(1))
+        meta = json.loads(matches[0])
     except ValueError:
         return None
     return meta if isinstance(meta, dict) else None
+
+
+def neutralize_collaborator_text(s, inline=False):
+    """Make collaborator-supplied text safe to embed in a feedback document.
+
+    Removes control/non-printable bytes (incl. ESC) while keeping legitimate
+    Unicode, collapses any run of >=2 backticks to a single backtick so no
+    triple-backtick fence can form, and (inline) collapses whitespace so the
+    text stays on one line. The assembler additionally prefixes multi-line
+    comment text with "> " so nothing collaborator-controlled reaches column 0.
+    """
+    s = str(s)
+    s = "".join(
+        ch for ch in s
+        if ch in "\t\n" or (32 <= ord(ch) < 127) or ord(ch) >= 160
+    )
+    s = re.sub(r"`{2,}", "`", s)
+    if inline:
+        s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+_VIEW_LABEL = {"tracker": "Tracker", "timeline": "Timeline",
+               "reviews": "Reviews", "archive": "Archive"}
+
+
+def _nt(v):
+    """Neutralize a collaborator-supplied value for safe single-line body embedding."""
+    return neutralize_collaborator_text("" if v is None else str(v), inline=True)
+
+
+def _neutralized_annotation(a):
+    """Copy of a comment annotation with all collaborator text neutralized,
+    for embedding in the fence's machine-readable `annotations`."""
+    a = dict(a)
+    # signoff is a researcher-only action key from the board control surface
+    # (v0.15 spec); stripped preemptively so hosted pulls can never forward it.
+    for _k in ("verdict", "reviewRequest", "reportRequest", "signoff"):
+        a.pop(_k, None)
+    if "quote" in a:
+        a["quote"] = neutralize_collaborator_text(a.get("quote", ""), inline=True)
+    if "comment" in a:
+        a["comment"] = neutralize_collaborator_text(a.get("comment", ""))
+    if "author" in a and a.get("author"):
+        a["author"] = neutralize_collaborator_text(a["author"], inline=True)
+    if "excerpt" in a:
+        a["excerpt"] = neutralize_collaborator_text(a.get("excerpt", ""))
+    if "sectionHeading" in a and a.get("sectionHeading"):
+        a["sectionHeading"] = neutralize_collaborator_text(a["sectionHeading"], inline=True)
+    if "view" in a and a.get("view"):
+        a["view"] = _nt(a["view"])
+    tgt = a.get("target")
+    if isinstance(tgt, dict):
+        tgt = dict(tgt)
+        if "quote" in tgt:
+            tgt["quote"] = neutralize_collaborator_text(tgt.get("quote", ""), inline=True)
+        if "artifactId" in tgt and tgt.get("artifactId"):
+            tgt["artifactId"] = _nt(tgt["artifactId"])
+        if "metricLabel" in tgt and tgt.get("metricLabel"):
+            tgt["metricLabel"] = _nt(tgt["metricLabel"])
+        a["target"] = tgt
+    return a
+
+
+def assemble_hosted_document(annotations, meta):
+    """Assemble ONE collaborator feedback document (comment annotations only).
+
+    NEVER emits verdict/review/report blocks — those are researcher-only actions
+    taken on the researcher's own board, never through a pulled document.
+    """
+    KNOWN_COMMENT_TYPES = {"plan-comment", "result-comment", "script-comment", "doc-comment", "general"}
+    annotations = [a for a in annotations if a.get("type") in KNOWN_COMMENT_TYPES]
+    lines = ["# Board Feedback", ""]
+    n = len(annotations)
+    if n == 0:
+        lines.append("No feedback.")
+    else:
+        lines.append("I've reviewed the board and have %d piece%s of feedback:"
+                     % (n, "" if n == 1 else "s"))
+        lines.append("")
+    for i, a in enumerate(annotations, 1):
+        author = _nt(a.get("author") or "")
+        via = " (via %s)" % author if author else ""
+        t = a.get("type")
+        if t == "plan-comment":
+            head = "%s v%s%s%s" % (
+                _nt(a.get("component", "")), _nt(a.get("version", "")),
+                " (draft)" if a.get("isDraft") else "",
+                (" — %s" % _nt(a["sectionHeading"]))
+                if a.get("sectionHeading") else "")
+            lines.append("## %d. [%s]%s" % (i, head, via))
+            lines.append('Feedback on: "%s"'
+                         % _nt(a.get("quote", "")))
+        elif t == "result-comment":
+            tgt = a.get("target", {})
+            kind = tgt.get("kind")
+            desc = ("artifact %s" % _nt(tgt.get("artifactId")) if kind == "artifact"
+                    else "metric %s" % _nt(tgt.get("metricLabel")) if kind == "metric"
+                    else "report")
+            lines.append("## %d. [%s r%s — %s]%s"
+                         % (i, _nt(a.get("component", "")), _nt(a.get("resultsVersion", "")),
+                            _nt(desc), via))
+            if tgt.get("quote"):
+                lines.append('Feedback on: "%s"'
+                             % _nt(tgt["quote"]))
+        elif t == "script-comment":
+            script = str(a.get("script", "")).split("/")[-1]
+            lines.append("## %d. [%s r%s — %s lines %s-%s]"
+                         % (i, _nt(a.get("component", "")), _nt(a.get("resultsVersion", "")),
+                            _nt(script),
+                            _nt(a.get("lineStart", "")), _nt(a.get("lineEnd", ""))))
+            for ln in neutralize_collaborator_text(a.get("excerpt", "")).split("\n"):
+                lines.append("> " + ln)
+        elif t == "doc-comment":
+            label = _VIEW_LABEL.get(a.get("view", "")) or _nt(a.get("view", ""))
+            head = "%s%s" % (
+                label,
+                (" — %s" % _nt(a["sectionHeading"]))
+                if a.get("sectionHeading") else "")
+            lines.append("## %d. [%s]%s" % (i, head, via))
+            lines.append('Feedback on: "%s"'
+                         % _nt(a.get("quote", "")))
+        elif t == "general":
+            lines.append("## %d. [%s — general]"
+                         % (i, _nt(a.get("view", ""))))
+        else:
+            continue  # unknown type — never route it
+        for ln in neutralize_collaborator_text(a.get("comment", "")).split("\n"):
+            lines.append("> " + ln)
+        lines.append("")
+    body = "\n".join(lines).rstrip()
+    fence_meta = {
+        "sessionId": meta.get("sessionId"),
+        "generatedAt": meta.get("generatedAt"),
+        "mode": "hosted",
+        "focus": meta.get("focus"),
+        "reviewer": meta.get("reviewer"),
+        "shareHash": meta.get("shareHash"),
+        "annotations": [_neutralized_annotation(a) for a in annotations],
+    }
+    return (body + "\n\n```json board-feedback\n"
+            + json.dumps(fence_meta, indent=1, ensure_ascii=False) + "\n```\n")
+
+
+def inspect_feedback_document(root, doc):
+    meta = parse_fence(doc)
+    if meta is None:
+        print(
+            "board: warning — no parseable ```json board-feedback``` fence; "
+            "route from the markdown body.",
+            file=sys.stderr,
+        )
+    elif meta.get("mode") in ("remote", "hosted") and meta.get("shareHash"):
+        try:
+            current = collect_payload(root, meta.get("mode"), meta.get("focus"))
+            fresh = current.get("shareHash")  # defensive: None if not stamped
+        except SystemExit:
+            fresh = None  # e.g. focused component no longer exists
+        if fresh != meta["shareHash"]:
+            print(
+                "board: STALE — plans changed since this feedback was produced "
+                "(share %s, now %s). Relay this to the researcher before "
+                "routing." % (meta["shareHash"], fresh or "unknown"),
+                file=sys.stderr,
+            )
+    print(doc)
+    return 0
 
 
 def collect_file(root, path):
@@ -973,28 +1511,7 @@ def collect_file(root, path):
     if not p.is_file():
         die("no feedback file at %s" % p)
     doc = p.read_text(encoding="utf-8", errors="replace")
-    meta = parse_fence(doc)
-    if meta is None:
-        print(
-            "board: warning — no parseable ```json board-feedback``` fence; "
-            "route from the markdown body.",
-            file=sys.stderr,
-        )
-    elif meta.get("mode") == "remote" and meta.get("shareHash"):
-        try:
-            current = collect_payload(root, "remote", meta.get("focus"))
-            fresh = current["shareHash"]
-        except SystemExit:
-            fresh = None  # e.g. focused component no longer exists
-        if fresh != meta["shareHash"]:
-            print(
-                "board: STALE — plans changed since this share was exported "
-                "(share %s, now %s). Relay this to the researcher before "
-                "routing." % (meta["shareHash"], fresh or "unknown"),
-                file=sys.stderr,
-            )
-    print(doc)
-    sys.exit(0)
+    return inspect_feedback_document(root, doc)
 
 
 def write_ticket(root, slug, version, content, batch_id):
@@ -1128,7 +1645,7 @@ def load_seed_annotations(path):
     return valid
 
 
-def main():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description="research-plans board")
     ap.add_argument("--focus", default=None, metavar="NN-slug")
     ap.add_argument("--export", nargs="?", const="DEFAULT", default=None, metavar="PATH")
@@ -1146,7 +1663,40 @@ def main():
     ap.add_argument("--seed-annotations", default=None, metavar="FILE",
                     help="inject reviewer-produced comments (JSON list) as pending "
                          "annotations — agent plan review (v0.9)")
-    args = ap.parse_args()
+    ap.add_argument("--publish-web", action="store_true")
+    ap.add_argument("--pull", action="store_true")
+    ap.add_argument("--web-connect", action="store_true")
+    ap.add_argument("--web-clear", action="store_true")
+    ap.add_argument("--set-password", action="store_true")
+    return ap.parse_args(argv)
+
+
+_ACTION_FLAGS = ("export", "share", "publish", "publish_web", "pull",
+                 "web_connect", "web_clear", "set_password")
+
+
+def selected_actions(args):
+    out = []
+    for name in _ACTION_FLAGS:
+        v = getattr(args, name, None)
+        if v not in (None, False):
+            out.append(name)
+    if getattr(args, "collect", None) is not None:
+        out.append("collect")
+    return out
+
+
+def check_action_exclusivity(args):
+    acts = selected_actions(args)
+    if len(acts) > 1:
+        die("choose one action at a time (got: %s)" % ", ".join(acts))
+    if getattr(args, "publish_web", False) and args.focus:
+        die("--publish-web publishes the full board; --focus is not supported for hosted boards.")
+
+
+def main():
+    args = parse_args()
+    check_action_exclusivity(args)
 
     root = find_root()
     if not (root / "plans" / "master-plan.md").is_file():
@@ -1167,6 +1717,16 @@ def main():
         export(root, args)
     elif args.publish:
         publish_pages(root, args)
+    elif args.publish_web:
+        publish_web(root, args)
+    elif args.pull:
+        pull(root, args)
+    elif args.web_connect:
+        web_connect(root, args)
+    elif args.web_clear:
+        web_clear(root, args)
+    elif args.set_password:
+        set_password(root, args)
     else:
         slug, focus_results = split_focus(args.focus)
         payload = collect_payload(root, "live", slug)

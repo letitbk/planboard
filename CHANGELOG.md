@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.13.0] - 2026-07-10
+
+Private board sharing — collaborators read and comment on a password-gated hosted board, and their comments flow back into Claude Code.
+
+### Added
+- **Publish the board privately to Vercel.** `--publish-web` (and a "Publish to web" button) deploys a password-gated hosted board; collaborators need only a browser. `--pull` brings their comments back into the review flow.
+- **Lifecycle controls.** `--web-connect` (new computer), `--web-clear`, `--set-password` (rotate).
+- **A non-technical hosting walkthrough** with a copy-paste collaborator invitation template.
+
+### Changed
+- **`--publish` (GitHub Pages) is deprecated** — it makes plans world-readable. Use `--publish-web`. The warning includes takedown steps for an existing Pages board.
+- **Web sharing needs Node.js** (for the Vercel CLI); the core workflow still needs only python3.
+
+### Fixed
+- **Collaborator comments can no longer forge sign-off/review actions** (hardened feedback-fence parsing + comment-only, neutralized assembly).
+- **Every local board POST endpoint is now origin/host/token-guarded.**
+
 ## [0.12.0] - 2026-07-09
 
 Release plumbing — the plugin now tells you when it's out of date, and every

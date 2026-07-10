@@ -168,4 +168,17 @@ describe("buildFeedbackMarkdown", () => {
     expect(VIEW_LABEL.timeline).toBe("Timeline");
     expect(VIEW_LABEL.reviews).toBe("Reviews");
   });
+
+  it("renders (via author) for script-comment and general", () => {
+    const anns: Annotation[] = [
+      { id: "s", type: "script-comment", component: "01-x", resultsVersion: 1,
+        script: "a/b.py", lineStart: 1, lineEnd: 2, excerpt: "x", comment: "c1",
+        author: "Ada" } as unknown as Annotation,
+      { id: "g", type: "general", view: "timeline", comment: "c2",
+        author: "Bo" } as unknown as Annotation,
+    ];
+    const md = buildFeedbackMarkdown(anns, null);
+    expect(md).toContain("(via Ada)");
+    expect(md).toContain("(via Bo)");
+  });
 });
