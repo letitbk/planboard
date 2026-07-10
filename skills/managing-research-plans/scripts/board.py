@@ -675,8 +675,12 @@ def serve(root, payload, args):
                 self.send_response(403)
                 self.end_headers()
                 return
-            if self.path == "/api/publish-web":
-                body = self._read_body()
+            if self.path == "/publish-web":
+                try:
+                    body = self._read_body()
+                except Exception:
+                    self._json(400, {"error": "bad json"})
+                    return
                 if not publish_token_ok(body, publish_token):
                     self._json(403, {"error": "bad token"})
                     return
@@ -945,6 +949,15 @@ def publish_web(root, args):
 
 def pull(root, args):
     ensure_gitignore(root / "plans")
+    # Recover from a prior pull that crashed after writing an inbox doc but
+    # before routing it (mark-pulled happens only once every doc for THIS run
+    # is on disk, but routing itself could still be interrupted) — drain and
+    # route any leftovers before touching the new fetch.
+    leftover_inbox = root / "plans" / ".board-web-inbox"
+    if leftover_inbox.is_dir():
+        for p in sorted(leftover_inbox.glob("*.txt")):
+            inspect_feedback_document(root, p.read_text(encoding="utf-8", errors="replace"))
+            p.unlink()
     cfg = read_web_config(root)
     if cfg is None:
         die("No web board configured. Run /research-plans:board --publish-web first.")
@@ -1012,6 +1025,7 @@ def generate_passphrase():
 
 
 def web_connect(root, args):
+    ensure_gitignore(root / "plans")
     msg = node_preflight()
     if msg:
         die(msg)

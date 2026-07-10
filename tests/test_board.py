@@ -1243,6 +1243,31 @@ class TestPull(unittest.TestCase):
             finally:
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
+    def test_pull_drains_leftover_inbox_before_fetch(self):
+        # A prior pull could crash after writing an inbox doc but before it was
+        # routed. The NEXT pull must recover it (route + delete) even when
+        # there are zero new remote comments this time.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); self._setup(root)
+            inbox = root / "plans" / ".board-web-inbox"
+            inbox.mkdir(parents=True, exist_ok=True)
+            leftover_doc = board.assemble_hosted_document(
+                [{"type": "general", "view": "tracker", "comment": "UNIQUE-LEFTOVER-TEXT"}],
+                {"sessionId": "s", "generatedAt": "", "focus": None,
+                 "reviewer": "Ada", "shareHash": None},
+            )
+            (inbox / "leftover.txt").write_text(leftover_doc, encoding="utf-8")
+            board._http_get_json = lambda url, headers: {"comments": []}
+            try:
+                import io, contextlib
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    board.pull(root, board.parse_args(["--pull"]))
+                self.assertIn("UNIQUE-LEFTOVER-TEXT", out.getvalue())
+                self.assertFalse((inbox / "leftover.txt").exists())
+            finally:
+                import os; del os.environ["CLAUDE_PLUGIN_DATA"]
+
 
 class TestArgGuards(unittest.TestCase):
     def test_multiple_actions_rejected(self):
@@ -1381,6 +1406,38 @@ class TestLifecycle(unittest.TestCase):
                 self.assertEqual(cfg["pullKey"], "recovered-key")
                 self.assertEqual(cfg["url"], "https://proj-board.vercel.app")
                 self.assertIn("Reconnected", out.getvalue())
+            finally:
+                del os.environ["CLAUDE_PLUGIN_DATA"]
+
+    def test_web_connect_writes_gitignore(self):
+        # web_connect is the FIRST action on a new machine; if it never calls
+        # ensure_gitignore, the .env.local that `vercel env pull` writes into
+        # plans/.board-web/ has no plans/.gitignore covering it yet.
+        with tempfile.TemporaryDirectory() as d:
+            import os
+            root = Path(d); make_project(root)
+            os.environ["CLAUDE_PLUGIN_DATA"] = str(root / "data")
+            board.node_preflight = lambda: None
+
+            def fake_vercel(argv, cwd=None):
+                if argv[0] == "link":
+                    return 0, "Linked"
+                if argv[0] == "env":
+                    (Path(cwd) / ".env.local").write_text(
+                        'BOARD_URL="https://proj-board.vercel.app"\n'
+                        'BOARD_PULL_KEY="recovered-key"\n',
+                        encoding="utf-8")
+                    return 0, "pulled"
+                return 1, "unexpected argv"
+
+            board._vercel = fake_vercel
+            try:
+                import io, contextlib
+                with contextlib.redirect_stdout(io.StringIO()):
+                    board.web_connect(root, board.parse_args(["--web-connect"]))
+                gi_path = root / "plans" / ".gitignore"
+                self.assertTrue(gi_path.exists())
+                self.assertIn("/.board-web/", gi_path.read_text(encoding="utf-8"))
             finally:
                 del os.environ["CLAUDE_PLUGIN_DATA"]
 
