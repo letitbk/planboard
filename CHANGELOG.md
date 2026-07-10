@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.15.0] - UNRELEASED
+
+The live board becomes a persistent control surface — a bookmarkable URL that stays up, refreshes itself after every action, and carries every researcher decision.
+
+### Added
+- **Persistent live board.** A stable per-project port (41000–41999, bookmark it) and a relaunch loop: every action you take is applied by your session, then the board reopens itself and your tab refreshes with the updated state. After an idle hour it sleeps; `/research-plans:board` wakes it at the same URL.
+- **Docked feedback panel.** On wide windows the feedback panel is a real side-by-side column — content reflows, nothing is covered; narrow windows keep the overlay, now with a scrim. Clicking a feedback card jumps to its highlight (and back), including script line comments.
+- **Always-available actions.** Approve / Request changes on any displayed plan draft from the Tracker and Plan views (state-aware: signed plans show their badge), Review with … everywhere it makes sense, and Reopen on an accepted results bundle — which files a change request; the recorded verdict is never modified.
+- **Board-issued approval tickets.** Clicking Approve makes the board server validate the exact displayed draft and write a one-use, content-hash-bound ticket (the same mechanism as batch sign-off); the sign-off hook admits the write by consuming it. Feedback documents are never approval authority.
+
+### Changed
+- **All researcher actions are uniformly hidden during sign-off gates** (review-before-gate; the gate stays a modal approve/request-changes moment).
+- **Live drafts are stored per-project**, so a relaunch with changed content never orphans unsent comments.
+- **`--collect` now peeks without deleting; the new `--ack` acknowledges** a routed order after the work finishes — a crash mid-routing re-offers the order instead of losing it.
+
+### Fixed
+- **The Results review button no longer renders dead inside gates** (the server rejects mid-gate feedback; the button now follows the same rule as everywhere else).
+- **Hand-delivered feedback files can no longer smuggle researcher-action keys or headings** — `--collect <file>` strips `signoff`/`verdict`/`reviewRequest`/`reportRequest`/`reopen` and demotes action headings to quotes.
+- **Mutating board routes now require a per-boot token**, HTML/health responses are no-store, GETs validate Host, and frames are denied.
+
 ## [0.13.0] - 2026-07-10
 
 Private board sharing — collaborators read and comment on a password-gated hosted board, and their comments flow back into Claude Code.

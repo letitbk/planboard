@@ -34,3 +34,5 @@ reading the newest CHANGELOG entry for highlights — so write that entry for a 
 | v0.9.2  | 42193ce | |
 | v0.10.0 | 4cdebc6 | |
 | v0.11.0 | 4ded951 | |
+| v0.12.0 | 467f28c | tag sits on the post-release hardening tip |
+| v0.13.0 | a7db0e3 | tag sits on the final hardened tip |
