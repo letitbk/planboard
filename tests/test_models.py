@@ -154,6 +154,15 @@ class TestStageCommand(unittest.TestCase):
             self.assertEqual(out, "")
             self.assertIn("unknown model", err)
 
+    def test_unreadable_profile_warns_and_exits_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=None)
+            (root / "plans" / "model-profile.md").write_bytes(b"\xff\xfe broken")
+            code, out, err = self._run(root, "plan")
+            self.assertEqual(code, 0)
+            self.assertEqual(out, "")
+            self.assertIn("unreadable", err)
+
 
 class TestFindRoot(unittest.TestCase):
     def test_walks_up_to_master_plan(self):

@@ -129,7 +129,11 @@ def load_profile(root):
     path = root / PROFILE_REL
     if not path.exists():
         return {}, [], False
-    stages, warnings = parse_profile(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}, ["model-profile: unreadable (not UTF-8 or IO error)"], True
+    stages, warnings = parse_profile(text)
     return stages, warnings, True
 
 
