@@ -908,5 +908,30 @@ class TestAssembleHosted(unittest.TestCase):
         self.assertIsNotNone(meta)
 
 
+class TestGoldenFeedbackContract(unittest.TestCase):
+    FIXTURE = (
+        Path(__file__).resolve().parents[1]
+        / "board" / "src" / "lib" / "__fixtures__" / "hosted-feedback-golden.json"
+    )
+
+    def test_python_assembler_routes_same_annotations_as_ts(self):
+        data = json.loads(self.FIXTURE.read_text())
+        ts_meta = board.parse_fence(data["doc"])
+        self.assertIsNotNone(ts_meta, "TS fixture doc must contain one clean fence")
+        py_doc = board.assemble_hosted_document(
+            data["annotations"],
+            {"sessionId": "s1", "generatedAt": "2026-07-09T00:00:00Z",
+             "focus": None, "reviewer": "Ada", "shareHash": "abc123"},
+        )
+        py_meta = board.parse_fence(py_doc)
+        self.assertIsNotNone(py_meta)
+        # The routable payload — the fence's annotations — must match for benign
+        # input (neutralization is a no-op on already-safe fields).
+        def key(anns):
+            return [(a.get("type"), a.get("quote") or (a.get("target") or {}).get("quote"),
+                     a.get("comment"), a.get("author")) for a in anns]
+        self.assertEqual(key(py_meta["annotations"]), key(ts_meta["annotations"]))
+
+
 if __name__ == "__main__":
     unittest.main()
