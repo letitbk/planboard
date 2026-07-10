@@ -4,7 +4,7 @@ argument-hint: [component name/number | --export | --share [component] | --publi
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(python3:*), Bash(codex:*), Bash(agy:*), Bash(git:*), Bash(ls:*), Bash(date:*), Bash(npx:*), Bash(vercel:*), Bash(node:*)
 ---
 
-Open the project board, or export a shareable snapshot. Skill context: `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/SKILL.md`. The board script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/scripts/board.py`; it needs only python3.
+Open the project board, or export a shareable snapshot. Skill context: `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/SKILL.md`. The board script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/scripts/board.py`; it needs python3. Web sharing (`--publish-web` and friends) additionally needs Node.js, for the Vercel CLI.
 
 1. **Gate.** Requires `plans/master-plan.md` with its marker; if absent, say so and suggest `/research-plans:init`. Stop.
 
