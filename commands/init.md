@@ -1,7 +1,7 @@
 ---
 description: Set up the plan-based research workflow in this project (master plan, decision log, CLAUDE.md conventions)
 argument-hint: [optional: one-line project description]
-allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(git:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*), Bash(touch:*)
+allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*), Bash(touch:*)
 ---
 
 Initialize (or update) the research-plans workflow in this project. Skill context: read `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/SKILL.md` first if you have not already.
@@ -11,7 +11,7 @@ Follow these steps in order:
 1. **Resolve the project root.** If inside a git repository, the root is `git rev-parse --show-toplevel`. If that differs from the current directory, or if this is not a git repository, confirm the intended project root with the researcher before creating anything. Never nest a second `plans/` tree inside a project that already has one at its root.
 
 2. **Check for prior initialization.**
-   - If `plans/master-plan.md` already exists: switch to **update mode**. Never clobber it. Offer to (a) review and refresh the components table together, (b) upgrade a pre-v0.3 master plan in place — add the `### Research questions` subsection, the `Serves` column, and an `Initialized:` line backdated to the git first-commit of master-plan.md — (c) upgrade the CLAUDE.md section (step 6) if the plugin has changed, and (d) if the project itself is changing direction, hand off to `/research-plans:renew`, which archives the master plan and writes a fresh one over the existing work. Skip steps 3–5.
+   - If `plans/master-plan.md` already exists: switch to **update mode**. Never clobber it. Offer to (a) review and refresh the components table together, (b) upgrade a pre-v0.3 master plan in place — add the `### Research questions` subsection, the `Serves` column, and an `Initialized:` line backdated to the git first-commit of master-plan.md — (c) upgrade the CLAUDE.md section (step 6) if the plugin has changed, and (d) add the per-stage model profile via `/research-plans:models` if `plans/model-profile.md` is missing, and (e) if the project itself is changing direction, hand off to `/research-plans:renew`, which archives the master plan and writes a fresh one over the existing work. Skip steps 3–5.
    - If the repo's `CLAUDE.md` contains `<!-- research-plans:start -->` but `plans/` is missing, tell the researcher the project looks partially initialized and ask how to proceed.
 
    **Mid-session adoption.** This command works at session start or mid-session, after exploratory work has already happened. Fold what the session established into the plan artifacts: explored data quirks, sharpened questions, and choices already made become Project context, the research questions, and later Scope-decision reasons — **the session's history feeds the plan, not the log**. The decision log starts at initialization: no entries for pre-init work, no reconstructed timestamps (the same rule as never fabricating entries). Pre-adoption *history* — decisions that predate initialization — is recorded separately and honestly in `plans/history.md` via `/research-plans:adopt`, never backdated into the log.
@@ -25,6 +25,7 @@ Follow these steps in order:
 5. **Create the artifacts** from the templates in `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/templates/`:
    - `plans/master-plan.md` from `master-plan.md` — keep the `<!-- research-plans:master-plan -->` marker on line 1, fill in project context (2–3 paragraphs from the interview), the `### Research questions` list, the confirmed components table with its `Serves` column, today's date (`date +%Y-%m-%d`), and stamp `Initialized:` with the real current time (`date +"%Y-%m-%d %H:%M"`). Delete the Sequencing notes section unless dependencies are non-linear.
    - `plans/decision-log.md` from `decision-log.md` — header and rules only. **Never fabricate entries for work that predates initialization.** The log starts now.
+   - `plans/model-profile.md` from `model-profile.md` — copy verbatim (the defaults are the recommended per-stage profile; `/research-plans:models` edits it later). Then run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/scripts/models.py generate` and relay its output: it writes the three `rp-*` review agents into `.claude/agents/` (committed, ownership-marked), refuses any same-named agent the researcher owns, and prints a note when `.claude/agents/` was just created — in that case tell the researcher a restart may be needed before the agents are picked up.
    - `plans/execution/.gitkeep` — write it as an empty file with the Write tool (not `touch`), so the directory survives a git commit. Execution plans are created later by `/research-plans:plan`.
 
 6. **Bind the conventions in CLAUDE.md.** Read `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/templates/claude-md-section.md`.
