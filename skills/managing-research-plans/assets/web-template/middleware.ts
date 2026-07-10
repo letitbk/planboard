@@ -9,6 +9,10 @@
 // not — so this logic is duplicated here on purpose. Keep the cookie/auth
 // logic here in sync with lib/auth.ts.
 import { createHmac, timingSafeEqual, createHash } from "node:crypto";
+// `next()` is how Vercel middleware CONTINUES to the origin (static board /
+// api function). Returning `undefined` does NOT continue — it yields an empty
+// 200 that swallows every allowed request (found in the real-Vercel e2e).
+import { next } from "@vercel/edge";
 
 export const config = { runtime: "nodejs", matcher: "/((?!_next|favicon).*)" };
 
@@ -65,10 +69,10 @@ export default function middleware(request: Request): Response | undefined {
   const url = new URL(request.url);
   const now = Math.floor(Date.now() / 1000);
   const authed = isAuthed(process.env as Record<string, string | undefined>, request.headers, now);
-  if (authed) return undefined; // let the request through to the static board / functions
+  if (authed) return next(); // continue to the static board / functions
   const p = url.pathname;
   // login/logout must be reachable pre-auth
-  if (p === "/api/login" || p === "/api/logout") return undefined;
+  if (p === "/api/login" || p === "/api/logout") return next();
   // unauthenticated API → 401 JSON (never the login HTML: an HTML 200 would be
   // read as success and silently drop a collaborator's comment)
   if (p.startsWith("/api/")) {

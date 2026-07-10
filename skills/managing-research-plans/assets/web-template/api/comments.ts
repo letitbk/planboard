@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { isAuthed, type HeaderBag } from "../lib/auth";
-import { validateCommentBody } from "../lib/validate";
-import { SECURITY_HEADERS } from "../lib/gate";
-import { putComment, listComments, type StoredComment } from "../lib/blobstore";
+import { isAuthed, type HeaderBag } from "../lib/auth.js";
+import { validateCommentBody } from "../lib/validate.js";
+import { SECURITY_HEADERS } from "../lib/gate.js";
+import { putComment, listComments, type StoredComment } from "../lib/blobstore.js";
 
 export interface RunResult { status: number; json: unknown; }
 

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { signCookie, cookieHeader, timingSafeEqualStr } from "../lib/auth";
-import { SECURITY_HEADERS } from "../lib/gate";
-import { loginPageHtml } from "../lib/loginPage";
+import { signCookie, cookieHeader, timingSafeEqualStr } from "../lib/auth.js";
+import { SECURITY_HEADERS } from "../lib/gate.js";
+import { loginPageHtml } from "../lib/loginPage.js";
 
 export interface LoginResult { status: number; html?: string; location?: string; setCookie?: string; }
 

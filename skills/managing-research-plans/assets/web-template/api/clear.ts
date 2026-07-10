@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { isAuthed, type HeaderBag } from "../lib/auth";
-import { SECURITY_HEADERS } from "../lib/gate";
+import { isAuthed, type HeaderBag } from "../lib/auth.js";
+import { SECURITY_HEADERS } from "../lib/gate.js";
 import { list, del } from "@vercel/blob";
 
 export interface ClearResult { status: number; json: unknown; }
