@@ -25,7 +25,7 @@ export async function listComments(token: string): Promise<StoredComment[]> {
     for (const b of page.blobs) {
       const r = await get(b.pathname, { access: "private", token });
       if (r?.statusCode === 200) {
-        try { out.push(JSON.parse(await r.stream.text())); } catch { /* skip corrupt */ }
+        try { out.push(JSON.parse(await new Response(r.stream).text())); } catch { /* skip corrupt */ }
       }
     }
     cursor = page.hasMore ? page.cursor : undefined;
