@@ -1,4 +1,4 @@
-import type { Annotation, BoardData, StoredComment } from "./types";
+import type { Annotation, BoardData, ExecutionPlanGroup, StoredComment } from "./types";
 
 export function newUuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -20,19 +20,23 @@ function hashContent(s: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
+function findExecGroup(data: BoardData, component: string): ExecutionPlanGroup | undefined {
+  return data.files.executionPlans.find((g) => g.component === component);
+}
+
 /** The content of the annotation's target document, if file-backed; else null. */
 export function targetHash(data: BoardData, a: Annotation): string | null {
-  const exec = (data as { exec?: Array<Record<string, unknown>> }).exec ?? [];
-  const findComp = (c: string) => exec.find((g) => g.component === c);
   if (a.type === "plan-comment") {
-    const g = findComp(a.component) as { versions?: Array<{ version: number; content: string }> } | undefined;
-    const v = g?.versions?.find((x) => x.version === a.version);
+    const g = findExecGroup(data, a.component);
+    const v = g?.versions.find((x) => x.version === a.version);
     return v ? hashContent(v.content) : null;
   }
   if (a.type === "result-comment" || a.type === "script-comment") {
-    // File-backed under the component's results; hash the component's results blob.
-    const g = findComp(a.component) as { results?: unknown } | undefined;
-    return g?.results ? hashContent(JSON.stringify(g.results)) : null;
+    // Scope to the SPECIFIC results version — hashing the whole results array
+    // would stale every comment whenever any other version is added/changed.
+    const g = findExecGroup(data, a.component);
+    const rv = g?.results?.find((r) => r.resultsVersion === a.resultsVersion);
+    return rv ? hashContent(JSON.stringify(rv)) : null;
   }
   // doc-comment (a derived view) and general: no single file — fall back to board hash.
   return null;
@@ -55,10 +59,12 @@ export function applyPostResult(pending: Annotation[], id: string, ok: boolean):
   return ok ? pending.filter((a) => a.id !== id) : pending;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function buildCommentBody(a: Annotation, data: BoardData, author: string, clientId: string) {
   return {
-    id: a.id && /^[0-9a-f-]{36}$/i.test(a.id) ? a.id : newUuid(),
-    clientId, author, shareHash: (data as { shareHash?: string }).shareHash ?? "",
+    id: a.id && UUID_RE.test(a.id) ? a.id : newUuid(),
+    clientId, author, shareHash: data.shareHash ?? "",
     docHash: targetHash(data, a),
     annotation: a,
   };

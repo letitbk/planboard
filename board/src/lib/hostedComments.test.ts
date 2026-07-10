@@ -2,18 +2,63 @@ import { describe, it, expect } from "vitest";
 import {
   newUuid, getClientId, targetHash, isStale, partitionComments, applyPostResult, buildCommentBody,
 } from "./hostedComments";
-import type { BoardData, StoredComment, Annotation } from "./types";
+import type {
+  BoardData, StoredComment, Annotation, ExecutionPlanGroup, ResultsBundle,
+  PlanCommentAnnotation, ResultCommentAnnotation, GeneralAnnotation,
+} from "./types";
 
-function boardWith(planContent: string): BoardData {
+// Real-shaped BoardData: plans live under files.executionPlans (matches the
+// payload board.py builds — see payload["files"]["executionPlans"] = exec_groups).
+function boardWith(planContent: string, results?: ResultsBundle[]): BoardData {
+  const execGroup: ExecutionPlanGroup = {
+    component: "01-x",
+    versions: [{ version: 1, content: planContent, path: "plans/execution/01-x/v1.md" }],
+    results,
+  };
   return {
-    schemaVersion: 1, mode: "hosted", shareHash: "board-hash-1",
+    schemaVersion: 1,
+    generatedAt: "t",
+    mode: "hosted",
+    focus: null,
+    shareHash: "board-hash-1",
     project: { name: "proj" },
-    exec: [{ component: "01-x", versions: [{ version: 1, content: planContent, path: "plans/execution/01-x/v1.md" }] }],
-  } as unknown as BoardData;
+    git: { available: false },
+    files: {
+      masterPlan: { path: "plans/master-plan.md", content: "" },
+      decisionLog: { path: "plans/decision-log.md", content: "" },
+      executionPlans: [execGroup],
+      reviews: [],
+    },
+  };
 }
-const planComment = (): Annotation =>
-  ({ id: "n1", type: "plan-comment", component: "01-x", version: 1,
-     quote: "q", comment: "c" } as unknown as Annotation);
+
+function resultsBundle(resultsVersion: number, manifestContent: string): ResultsBundle {
+  return {
+    resultsVersion,
+    dir: `results/r${resultsVersion}`,
+    manifest: null,
+    manifestRaw: { path: `results/r${resultsVersion}/manifest.json`, content: manifestContent },
+    report: null,
+    verdict: null,
+    verdictRaw: null,
+    scripts: [],
+    assets: {},
+  };
+}
+
+const planComment = (): PlanCommentAnnotation => ({
+  id: "n1", type: "plan-comment", planPath: "plans/execution/01-x/v1.md", component: "01-x", version: 1,
+  isDraft: false, quote: "q", prefix: "", suffix: "", sectionHeading: "", occurrenceIndex: 0, anchored: true,
+  comment: "c",
+});
+
+const resultComment = (resultsVersion: number): ResultCommentAnnotation => ({
+  id: "r1", type: "result-comment", component: "01-x", resultsVersion,
+  target: { kind: "report" }, comment: "c",
+});
+
+const generalComment = (): GeneralAnnotation => ({ id: "g1", type: "general", view: "timeline", comment: "c" });
+
 const stored = (over: Partial<StoredComment>): StoredComment =>
   ({ id: "s1", clientId: "cl1", author: "Ada", shareHash: "board-hash-1",
      docHash: null, annotation: planComment(), receivedAt: "t", ...over });
@@ -52,8 +97,7 @@ describe("per-document staleness", () => {
   });
   it("view/general comments (docHash null) fall back to whole-board shareHash", () => {
     const data = boardWith("x");
-    const general = { ...stored({ docHash: null }),
-      annotation: { id: "g", type: "general", view: "timeline", comment: "c" } as unknown as Annotation };
+    const general: StoredComment = { ...stored({ docHash: null }), annotation: generalComment() };
     expect(isStale({ ...general, shareHash: "board-hash-1" }, data)).toBe(false);
     expect(isStale({ ...general, shareHash: "OLD" }, data)).toBe(true);
   });
@@ -65,11 +109,27 @@ describe("per-document staleness", () => {
     expect(live.map((c) => c.id)).toEqual(["fresh"]);
     expect(stale.map((c) => c.id)).toEqual(["old"]);
   });
+
+  it("a result-comment on results version N is NOT stale when a DIFFERENT results version is added/changed", () => {
+    const before = boardWith("original", [resultsBundle(1, "manifest-v1")]);
+    const annotation = resultComment(1);
+    const docHash = targetHash(before, annotation);
+
+    // A new results version 2 appears (or an existing v2 changes) — v1's
+    // manifest content is untouched, so the comment on v1 must stay live.
+    const after = boardWith("original", [resultsBundle(1, "manifest-v1"), resultsBundle(2, "manifest-v2-NEW")]);
+    const c = stored({ docHash, annotation });
+    expect(isStale(c, after)).toBe(false);
+
+    // Sanity: changing v1 itself DOES stale the comment.
+    const v1Changed = boardWith("original", [resultsBundle(1, "manifest-v1-EDITED")]);
+    expect(isStale(c, v1Changed)).toBe(true);
+  });
 });
 
 describe("failed-post keeps pending", () => {
   it("removes on ok, keeps on failure", () => {
-    const pending = [planComment(), { ...planComment(), id: "n2" }];
+    const pending: Annotation[] = [planComment(), { ...planComment(), id: "n2" }];
     expect(applyPostResult(pending, "n1", true).map((a) => a.id)).toEqual(["n2"]);
     expect(applyPostResult(pending, "n1", false).map((a) => a.id)).toEqual(["n1", "n2"]);
   });
