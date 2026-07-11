@@ -593,9 +593,9 @@ class TestAssets(unittest.TestCase):
             self.assertNotIn("/artifact/01-data-prep/r1/../secret", amap)
 
     def test_focus_results_parsing(self):
-        self.assertEqual(board.split_focus("02-x:r3"), ("02-x", 3))
-        self.assertEqual(board.split_focus("02-x"), ("02-x", None))
-        self.assertEqual(board.split_focus(None), (None, None))
+        self.assertEqual(board.split_focus("02-x:r3"), ("02-x", 3, None))
+        self.assertEqual(board.split_focus("02-x"), ("02-x", None, None))
+        self.assertEqual(board.split_focus(None), (None, None, None))
 
 
 class TestExportResults(unittest.TestCase):
@@ -2434,6 +2434,26 @@ class TestPublishedReportCollection(unittest.TestCase):
             paths = [f["path"] for f in board.payload_files(p2)]
             self.assertIn("plans/reports/01-data-prep-r1-report.md", paths)
             self.assertNotEqual(base, board.share_hash(board.payload_files(p2)))
+
+
+class TestSplitFocusThreePart(unittest.TestCase):
+    def test_two_part_unchanged(self):
+        self.assertEqual(board.split_focus("01-x:r2"), ("01-x", 2, None))
+        self.assertEqual(board.split_focus("01-x"), ("01-x", None, None))
+        self.assertEqual(board.split_focus(None), (None, None, None))
+
+    def test_reports_suffix(self):
+        self.assertEqual(board.split_focus("01-x:r2:reports"), ("01-x", 2, "reports"))
+
+    def test_unknown_suffix_is_part_of_the_slug(self):
+        # Only ':reports' is a view; anything else keeps today's fallback parse.
+        self.assertEqual(board.split_focus("01-x:r2:bogus"), ("01-x:r2:bogus", None, None))
+
+    def test_static_render_carries_focus_view(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            html = board.render_static_html(root, "01-data-prep:r1:reports")
+            self.assertIn('"focusView": "reports"', html)
 
 
 if __name__ == "__main__":

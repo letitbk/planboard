@@ -345,12 +345,17 @@ def artifact_map(root, payload):
 
 
 def split_focus(focus):
+    """--focus slug[:rN][:view] -> (slug, resultsVersion, view).
+    view: only "reports" today; None means the default view for the target."""
     if not focus:
-        return None, None
+        return None, None, None
+    m = re.fullmatch(r"(.+):r(\d+):(reports)", focus)
+    if m:
+        return m.group(1), int(m.group(2)), m.group(3)
     m = re.fullmatch(r"(.+):r(\d+)", focus)
     if m:
-        return m.group(1), int(m.group(2))
-    return focus, None
+        return m.group(1), int(m.group(2)), None
+    return focus, None, None
 
 
 def collect_drift(root, exec_groups, master_content="", archive_contents=()):
@@ -1101,9 +1106,10 @@ def render_static_html(root, focus=None):
     """The self-contained static board as a string. Pure: writes no file and
     touches no gitignore. Shared by --export (which writes it to disk) and
     --publish (which pushes it to the gh-pages branch)."""
-    slug, focus_results = split_focus(focus)
+    slug, focus_results, focus_view = split_focus(focus)
     payload = collect_payload(root, "static", slug)
     payload["focusResults"] = focus_results
+    payload["focusView"] = focus_view
     build_assets(root, payload)
     return inject(template_path().read_text(encoding="utf-8"), payload)
 
@@ -1378,9 +1384,10 @@ def export(root, args):
 
 
 def share(root, args):
-    slug, focus_results = split_focus(args.focus)
+    slug, focus_results, focus_view = split_focus(args.focus)
     payload = collect_payload(root, "remote", slug)
     payload["focusResults"] = focus_results
+    payload["focusView"] = focus_view
     build_assets(root, payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     out = (
@@ -2062,9 +2069,10 @@ def main():
     elif args.set_password:
         set_password(root, args)
     else:
-        slug, focus_results = split_focus(args.focus)
+        slug, focus_results, focus_view = split_focus(args.focus)
         payload = collect_payload(root, "live", slug)
         payload["focusResults"] = focus_results
+        payload["focusView"] = focus_view
         build_assets(root, payload)
         if args.seed_annotations:
             # Agent plan review (v0.9): reviewer-produced comments, seeded as
