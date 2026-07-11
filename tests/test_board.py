@@ -598,6 +598,23 @@ class TestAssets(unittest.TestCase):
         self.assertEqual(board.split_focus(None), (None, None, None))
 
 
+class TestReportDownloadRoutes(unittest.TestCase):
+    def test_report_map_routes_only_existing_formats(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            payload = board.collect_payload(root, "live", None)
+            rmap = board.report_map(root, payload)
+            self.assertIn("/report/01-data-prep/r1.pdf", rmap)
+            self.assertNotIn("/report/01-data-prep/r1.docx", rmap)
+            self.assertTrue(rmap["/report/01-data-prep/r1.pdf"].is_file())
+
+    def test_report_map_empty_without_reports(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            self.assertEqual(board.report_map(root, payload), {})
+
+
 class TestExportResults(unittest.TestCase):
     def test_export_embeds_bundles_and_data_uris(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1915,6 +1932,17 @@ class TestServeHTTP(unittest.TestCase):
         status, html, _ = self._get_raw(url)
         payload = extract_payload(html)
         self.assertEqual(payload["projectId"], board.project_id(self.root))
+
+    def test_report_route_serves_pdf_as_attachment(self):
+        add_report(self.root)
+        url, info, t = serve_in_thread(self.root)
+        status, body, headers = self._get_raw(url, "/report/01-data-prep/r1.pdf")
+        self.assertEqual(status, 200)
+        self.assertIn("attachment", headers.get("Content-Disposition", ""))
+        self.assertEqual(body, "%PDF-1.4 stub")
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self._get_raw(url, "/report/01-data-prep/r9.pdf")
+        self.assertEqual(cm.exception.code, 404)
 
 
 class TestBoardTokenPlumbing(unittest.TestCase):

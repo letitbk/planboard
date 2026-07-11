@@ -344,6 +344,23 @@ def artifact_map(root, payload):
     return amap
 
 
+def report_map(root, payload):
+    """Route path -> absolute file path for report PDF/DOCX downloads.
+    Same exact-key contract as artifact_map: built ONLY from files on disk,
+    looked up by exact key — no filesystem joins with client input."""
+    rmap = {}
+    for component, b in iter_bundles(payload):
+        fmts = b.get("reportFormats") or {}
+        for ext in ("pdf", "docx"):
+            if not fmts.get(ext):
+                continue
+            p = (root / "plans" / "reports"
+                 / ("%s-r%d-report.%s" % (component, b["resultsVersion"], ext)))
+            if p.is_file():
+                rmap["/report/%s/r%d.%s" % (component, b["resultsVersion"], ext)] = p
+    return rmap
+
+
 def split_focus(focus):
     """--focus slug[:rN][:view] -> (slug, resultsVersion, view).
     view: only "reports" today; None means the default view for the target."""
@@ -801,6 +818,7 @@ def serve(root, payload, args):
     batch_id = uuid.uuid4().hex[:8]
     boot_id = uuid.uuid4().hex
     amap = artifact_map(root, payload)
+    rmap = report_map(root, payload)
     publish_token = hashlib.sha256(os.urandom(32)).hexdigest()
     payload["publishToken"] = publish_token  # board reads window.__RP_PUBLISH_TOKEN__ from this
     payload["projectId"] = project_id(root)
@@ -869,6 +887,22 @@ def serve(root, payload, args):
                 mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
                 self.send_response(200)
                 self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if self.path.startswith("/report/"):
+                f = rmap.get(self.path)
+                if f is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                data = f.read_bytes()
+                mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Disposition",
+                                 'attachment; filename="%s"' % f.name)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
