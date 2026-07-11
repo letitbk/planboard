@@ -51,7 +51,7 @@ When a component's analysis has run, capture what it produced:
 /research-plans:results data cleaning
 ```
 
-Claude proposes the artifacts (figures, tables, key numbers) it can trace to the work, you confirm titles and captions, and it writes an immutable bundle at `plans/execution/<component>/results/r1/` — a brief report, snapshot copies of the files, and the exact scripts that produced them. Then open the board on it: the Results view shows the report, the numbers as tiles, the figure/table gallery, and a click-through to each producing script. Press **Accept** and the verdict is recorded in the decision log and the tracker flips to `done (verified)`; press **Request changes** with comments and Claude fixes the scripts, re-runs, and captures `r2` — `r1` stays exactly as you reviewed it.
+Claude proposes the artifacts (figures, tables, key numbers) it can trace to the work, you confirm titles and captions, and it writes an immutable bundle at `plans/execution/<component>/results/r1/` — a brief report, snapshot copies of the files, and the exact scripts that produced them. Then open the board on it: the Results view shows the report, the numbers as tiles, the figure/table gallery, and a click-through to each producing script; the Reports view renders generated reports with version chips. Press **Accept** and the verdict is recorded in the decision log and the tracker flips to `done (verified)`; press **Request changes** with comments and Claude fixes the scripts, re-runs, and captures `r2` — `r1` stays exactly as you reviewed it.
 
 Started using the plugin mid-project? `/research-plans:results --adopt` scans your output folders and brings existing figures and tables under verification, marked `retrofit`.
 
@@ -69,7 +69,7 @@ The review runs in two stages. First a threshold: is this a plan at all? Nine pa
 /research-plans:board
 ```
 
-This opens a dashboard in your browser: the tracker as a status board, every plan version with diffs, the decision log as a timeline, and saved review scorecards. It is also where reviewing a plan feels best: select any text to attach a comment, add general comments on any view, then press "Send to Claude". Your comments come back to the session, where Claude walks through them with you, proposes plan revisions where you approved changes, and records the exchange in the decision log. Don't want to write the feedback yourself? Press **Review with** (on a plan, the master plan, or a results bundle) and Codex, Gemini, or a Claude subagent produces the section-anchored comments for you — they land on the board as pending annotations you curate, then route exactly like your own.
+This opens a dashboard in your browser: the tracker as a status board, every plan version with diffs, the decision log as a timeline, generated reports with version chips, and saved review scorecards. It is also where reviewing a plan feels best: select any text to attach a comment, add general comments on any view, then press "Send to Claude". Your comments come back to the session, where Claude walks through them with you, proposes plan revisions where you approved changes, and records the exchange in the decision log. Don't want to write the feedback yourself? Press **Review with** (on a plan, the master plan, or a results bundle) and Codex, Gemini, or a Claude subagent produces the section-anchored comments for you — they land on the board as pending annotations you curate, then route exactly like your own.
 
 To share the project state with someone who does not use Claude Code:
 

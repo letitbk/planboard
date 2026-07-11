@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Board **Reports** tab: renders each bundle's generated report with figures resolved from bundle assets, `rN · plan vN` version chips, stale-report and wrong-file flags (first-line `rp-report` JSON marker), PDF/DOCX downloads on the local board, drag-select commenting, and report chips on Tracker/Archive rows and PlanReader bundles (`--focus slug:rN:reports`).
+- `/research-plans:results` offers report generation at capture end; the board's verdict routing offers one-click report regeneration when the report's recorded verdict goes stale.
+- `/research-plans:report` embeds figures under the finding each supports (via `artifactIds`) and defines the planless (retrofit) report shape.
+- Hosted pull: per-comment staleness tags for plan and report comments (client FNV-1a hash ported to Python); `docHash` now survives the pull.
+
+### Changed
+- Results view is now the reviewing surface: validation promoted to the top, finding tiles compact (figures live in one Evidence gallery and on the Reports tab).
+
+### Fixed
+- Hosted pulls now strip the `reopen` action key (researcher-only) from collaborator annotations.
+- Summary-only bundles show their notice in finding mode too.
+
 ## [0.14.0] - 2026-07-10
 
 Per-stage model profiles land — plan on the strongest model, execute on a cheap fast one, review on opus; nudged where you decide, pinned where work is delegated — and the live board becomes a persistent control surface: a bookmarkable URL that stays up, refreshes itself after every action, and carries every researcher decision.
