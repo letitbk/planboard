@@ -2484,5 +2484,65 @@ class TestSplitFocusThreePart(unittest.TestCase):
             self.assertIn('"focusView": "reports"', html)
 
 
+class TestPullStaleness(unittest.TestCase):
+    def test_fnv1a_matches_client_hashcontent(self):
+        # Pinned vectors; Task 7 pins the SAME values against the TS hashContent.
+        self.assertEqual(board.fnv1a_hex(""), "811c9dc5")
+        self.assertEqual(board.fnv1a_hex("a"), "e40c292c")
+        v = board.fnv1a_hex("plan body\n")
+        self.assertEqual(len(v), 8)
+        self.assertEqual(v, board.fnv1a_hex("plan body\n"))  # deterministic
+        # non-ASCII goes through UTF-16 code units, not bytes
+        self.assertNotEqual(board.fnv1a_hex("café"), board.fnv1a_hex("cafe"))
+
+    def test_strip_report_marker(self):
+        c = '<!-- rp-report {"schemaVersion": 1} -->\n# Body\n'
+        self.assertEqual(board._strip_report_marker(c), "# Body\n")
+        self.assertEqual(board._strip_report_marker("# Body\n"), "# Body\n")
+
+    def test_dochash_survives_neutralization_when_hex(self):
+        a = {"type": "plan-comment", "component": "01-x", "version": 1,
+             "quote": "q", "comment": "c", "docHash": "deadbeef"}
+        self.assertEqual(board._neutralized_annotation(a)["docHash"], "deadbeef")
+        a["docHash"] = "<script>"
+        self.assertNotIn("docHash", board._neutralized_annotation(a))
+
+    def test_stale_plan_comment_is_tagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            content = (root / "plans" / "execution" / "01-data-prep" / "v1.md").read_text(encoding="utf-8")
+            current = board.fnv1a_hex(content)
+            fresh = {"type": "plan-comment", "component": "01-data-prep", "version": 1,
+                     "quote": "q", "comment": "fresh", "docHash": current}
+            stale = {"type": "plan-comment", "component": "01-data-prep", "version": 1,
+                     "quote": "q", "comment": "stale", "docHash": "00000000"}
+            doc = board.assemble_hosted_document([fresh, stale], {"sessionId": "s",
+                "generatedAt": "", "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertEqual(doc.count("may refer to an older version"), 1)
+            self.assertLess(doc.index("fresh"), doc.index("may refer to an older version"))
+
+    def test_stale_report_comment_hashes_body_without_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            body = board._strip_report_marker(
+                (root / "plans" / "reports" / "01-data-prep-r1-report.md").read_text(encoding="utf-8"))
+            a = {"type": "doc-comment", "view": "reports",
+                 "docKey": "plans/reports/01-data-prep-r1-report.md",
+                 "quote": "q", "comment": "c", "docHash": board.fnv1a_hex(body)}
+            doc = board.assemble_hosted_document([a], {"sessionId": "s", "generatedAt": "",
+                "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertNotIn("may refer to an older version", doc)
+            self.assertIn("Reports", doc)  # _VIEW_LABEL entry
+
+    def test_json_hashed_types_pass_through_untagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            a = {"type": "result-comment", "component": "01-data-prep", "resultsVersion": 1,
+                 "target": {"kind": "report", "quote": "q"}, "comment": "c", "docHash": "12345678"}
+            doc = board.assemble_hosted_document([a], {"sessionId": "s", "generatedAt": "",
+                "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertNotIn("may refer to an older version", doc)
+
+
 if __name__ == "__main__":
     unittest.main()

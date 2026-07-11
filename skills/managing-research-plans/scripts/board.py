@@ -233,6 +233,29 @@ def share_hash(files):
     return h.hexdigest()[:16]
 
 
+def fnv1a_hex(s):
+    """Exact port of the client's hashContent (hostedComments.ts): FNV-1a over
+    UTF-16 code units. Do not change one side without the other — the pinned
+    cross-language vectors live in tests/test_board.py and hostedComments.test.ts."""
+    h = 0x811C9DC5
+    b = s.encode("utf-16-le")
+    for i in range(0, len(b), 2):
+        h ^= b[i] | (b[i + 1] << 8)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return format(h, "08x")
+
+
+REPORT_MARKER_PREFIX = "<!-- rp-report"
+
+
+def _strip_report_marker(content):
+    """Drop the first line when it is (or tries to be) an rp-report marker."""
+    first, sep, rest = content.partition("\n")
+    if first.lstrip().startswith(REPORT_MARKER_PREFIX):
+        return rest
+    return content
+
+
 def collect_results(root, comp_dir):
     bundles = []
     res_dir = comp_dir / "results"
@@ -1314,7 +1337,9 @@ def pull(root, args):
         meta = {"sessionId": client or author, "generatedAt": "",
                 "focus": None, "reviewer": author,
                 "shareHash": group[-1].get("shareHash")}
-        doc = assemble_hosted_document([c["annotation"] for c in group], meta)
+        doc = assemble_hosted_document(
+            [dict(c["annotation"], docHash=c.get("docHash")) for c in group],
+            meta, root=root)
         prefix = re.sub(r"[^A-Za-z0-9._-]+", "-", "%s-%s" % (author, client))[:40] or "group"
         keyhash = hashlib.sha256(("%s\x00%s" % (author, client)).encode()).hexdigest()[:12]
         fname = "%s-%s.txt" % (prefix, keyhash)
@@ -1717,7 +1742,7 @@ def neutralize_collaborator_text(s, inline=False):
 
 
 _VIEW_LABEL = {"tracker": "Tracker", "timeline": "Timeline",
-               "reviews": "Reviews", "archive": "Archive"}
+               "reviews": "Reviews", "archive": "Archive", "reports": "Reports"}
 
 
 def _nt(v):
@@ -1734,6 +1759,9 @@ def _neutralized_annotation(a):
     # slipped through when the control surface added it.
     for _k in ACTION_KEYS:
         a.pop(_k, None)
+    dh = a.get("docHash")
+    if dh is not None and not (isinstance(dh, str) and re.fullmatch(r"[0-9a-f]{8}", dh)):
+        a.pop("docHash", None)
     if "quote" in a:
         a["quote"] = neutralize_collaborator_text(a.get("quote", ""), inline=True)
     if "comment" in a:
@@ -1759,7 +1787,40 @@ def _neutralized_annotation(a):
     return a
 
 
-def assemble_hosted_document(annotations, meta):
+_REPORT_DOCKEY_RE = re.compile(r"plans/reports/[A-Za-z0-9._-]+-r\d+-report\.md")
+
+
+def _doc_stale(root, a):
+    """True/False when the comment's docHash is verifiable against a plain file
+    on disk; None when not our job (no root, unsupported type, bad fields).
+    JSON-serialization-hashed types (result/script comments) are NOT verifiable
+    here — JSON.stringify is not byte-portable to Python."""
+    dh = a.get("docHash")
+    if root is None or not isinstance(dh, str) or not re.fullmatch(r"[0-9a-f]{8}", dh):
+        return None
+    t = a.get("type")
+    if t == "plan-comment":
+        comp, ver = a.get("component"), a.get("version")
+        if (not isinstance(comp, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", comp)
+                or not isinstance(ver, int)):
+            return None
+        p = root / "plans" / "execution" / comp / ("v%d.md" % ver)
+    elif t == "doc-comment" and a.get("view") == "reports":
+        key = a.get("docKey")
+        if not isinstance(key, str) or not _REPORT_DOCKEY_RE.fullmatch(key):
+            return None
+        p = root / key
+    else:
+        return None
+    if not p.is_file():
+        return True  # target gone — definitely not current
+    content = p.read_text(encoding="utf-8", errors="replace")
+    if t == "doc-comment":
+        content = _strip_report_marker(content)
+    return fnv1a_hex(content) != dh
+
+
+def assemble_hosted_document(annotations, meta, root=None):
     """Assemble ONE collaborator feedback document (comment annotations only).
 
     NEVER emits verdict/review/report blocks — those are researcher-only actions
@@ -1824,6 +1885,9 @@ def assemble_hosted_document(annotations, meta):
             continue  # unknown type — never route it
         for ln in neutralize_collaborator_text(a.get("comment", "")).split("\n"):
             lines.append("> " + ln)
+        if _doc_stale(root, a):
+            lines.append("")
+            lines.append("⚠ This comment may refer to an older version of its target document.")
         lines.append("")
     body = "\n".join(lines).rstrip()
     fence_meta = {
