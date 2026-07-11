@@ -2543,6 +2543,36 @@ class TestPullStaleness(unittest.TestCase):
                 "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
             self.assertNotIn("may refer to an older version", doc)
 
+    def test_poisoned_fields_never_crash_the_pull(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            meta = {"sessionId": "s", "generatedAt": "", "focus": None,
+                    "reviewer": "r", "shareHash": "h"}
+            # Python 3.11+ guards str<->int conversion above 4300 digits by
+            # default; raise the ceiling just to construct these poisoned
+            # literals in-process. _doc_stale's own range check (0-9999)
+            # never touches str<->int conversion, so this doesn't mask
+            # anything the fix is responsible for.
+            old_limit = sys.get_int_max_str_digits()
+            sys.set_int_max_str_digits(6000)
+            self.addCleanup(sys.set_int_max_str_digits, old_limit)
+            poison = [
+                {"type": "plan-comment", "component": "01-data-prep",
+                 "version": int("9" * 5000), "quote": "q", "comment": "big-version",
+                 "docHash": "00000000"},
+                {"type": "plan-comment", "component": "01-data-prep",
+                 "version": int("9" * 1000), "quote": "q", "comment": "long-name",
+                 "docHash": "00000000"},
+                {"type": "doc-comment", "view": "reports",
+                 "docKey": "plans/reports/" + "a" * 5000 + "-r1-report.md",
+                 "quote": "q", "comment": "long-key", "docHash": "00000000"},
+                {"type": "plan-comment", "component": "..", "version": 1,
+                 "quote": "q", "comment": "dotdot", "docHash": "00000000"},
+            ]
+            doc = board.assemble_hosted_document(poison, meta, root=root)
+            # None of these are verifiable -> no stale tag, and no crash.
+            self.assertNotIn("may refer to an older version", doc)
+
 
 if __name__ == "__main__":
     unittest.main()

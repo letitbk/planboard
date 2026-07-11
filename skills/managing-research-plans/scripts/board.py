@@ -1788,6 +1788,9 @@ def _neutralized_annotation(a):
 
 
 _REPORT_DOCKEY_RE = re.compile(r"plans/reports/[A-Za-z0-9._-]+-r\d+-report\.md")
+# Component regex must start alphanumeric (real components are NN-slug) — this
+# rejects "." and ".." so a poisoned component can't path-escape upward.
+_COMPONENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def _doc_stale(root, a):
@@ -1801,23 +1804,28 @@ def _doc_stale(root, a):
     t = a.get("type")
     if t == "plan-comment":
         comp, ver = a.get("component"), a.get("version")
-        if (not isinstance(comp, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", comp)
-                or not isinstance(ver, int)):
+        if (not isinstance(comp, str) or not _COMPONENT_RE.fullmatch(comp)
+                or not isinstance(ver, int) or isinstance(ver, bool)
+                or not (0 <= ver <= 9999)):
             return None
         p = root / "plans" / "execution" / comp / ("v%d.md" % ver)
     elif t == "doc-comment" and a.get("view") == "reports":
         key = a.get("docKey")
-        if not isinstance(key, str) or not _REPORT_DOCKEY_RE.fullmatch(key):
+        if (not isinstance(key, str) or len(key) > 300
+                or not _REPORT_DOCKEY_RE.fullmatch(key)):
             return None
         p = root / key
     else:
         return None
-    if not p.is_file():
-        return True  # target gone — definitely not current
-    content = p.read_text(encoding="utf-8", errors="replace")
-    if t == "doc-comment":
-        content = _strip_report_marker(content)
-    return fnv1a_hex(content) != dh
+    try:
+        if not p.is_file():
+            return True  # target gone — definitely not current
+        content = p.read_text(encoding="utf-8", errors="replace")
+        if t == "doc-comment":
+            content = _strip_report_marker(content)
+        return fnv1a_hex(content) != dh
+    except (OSError, ValueError):
+        return None  # unverifiable, not stale
 
 
 def assemble_hosted_document(annotations, meta, root=None):
