@@ -2464,6 +2464,23 @@ class TestPublishedReportCollection(unittest.TestCase):
             self.assertNotEqual(base, board.share_hash(board.payload_files(p2)))
 
 
+class TestExportSmoke(unittest.TestCase):
+    def test_static_export_embeds_published_report(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            html = board.render_static_html(root, None)
+            self.assertIn("publishedReport", html)
+            self.assertIn("Findings body.", html)
+            self.assertIn("reportFormats", html)
+
+    def test_hosted_render_embeds_published_report(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            html = board.render_hosted_html(root)
+            self.assertIn("publishedReport", html)
+            self.assertIn("Findings body.", html)
+
+
 class TestSplitFocusThreePart(unittest.TestCase):
     def test_two_part_unchanged(self):
         self.assertEqual(board.split_focus("01-x:r2"), ("01-x", 2, None))
