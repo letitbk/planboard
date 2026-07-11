@@ -131,6 +131,22 @@ function ValidationSection({ v }: { v: ValidationBlock }) {
   );
 }
 
+function SummaryOnlyNotice() {
+  return (
+    <div className="mb-4 rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-800/50 p-5 text-sm text-stone-600 dark:text-stone-400">
+      <div className="font-semibold text-stone-700 dark:text-stone-300">Summary only</div>
+      <p className="mt-1">
+        No figures or tables in this bundle. The report and metrics were
+        captured, but the analysis outputs could not be reproduced (common for
+        retrospective captures, where outputs were never saved to files). If a
+        producing script exists, re-run it and capture again; otherwise run{" "}
+        <code>/research-plans:results</code> and name the output file paths
+        directly.
+      </p>
+    </div>
+  );
+}
+
 export default function Results({
   data,
   canAnnotate,
@@ -633,6 +649,8 @@ export default function Results({
                     );
                   })}
 
+                  {m.artifacts.length === 0 && <SummaryOnlyNotice />}
+
                   {orphanArtifacts.length > 0 && (
                     <section className="mb-4">
                       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
@@ -681,20 +699,7 @@ export default function Results({
                     </div>
                   )}
                   {m && m.artifacts.length === 0 ? (
-                    <div className="mb-4 rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-800/50 p-5 text-sm text-stone-600 dark:text-stone-400">
-                      <div className="font-semibold text-stone-700 dark:text-stone-300">
-                        Summary only
-                      </div>
-                      <p className="mt-1">
-                        No figures or tables in this bundle. The report and
-                        metrics were captured, but the analysis outputs could not
-                        be reproduced (common for retrospective captures, where
-                        outputs were never saved to files). If a producing script
-                        exists, re-run it and capture again; otherwise run{" "}
-                        <code>/research-plans:results</code> and name the output
-                        file paths directly.
-                      </p>
-                    </div>
+                    <SummaryOnlyNotice />
                   ) : m ? (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       {m.artifacts.map((art) => (
