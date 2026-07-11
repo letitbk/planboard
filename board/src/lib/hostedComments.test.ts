@@ -152,6 +152,29 @@ describe("per-document staleness", () => {
     const v1Changed = boardWith("original", [resultsBundle(1, "manifest-v1-EDITED")]);
     expect(isStale(c, v1Changed)).toBe(true);
   });
+
+  it("a result-comment's targetHash ignores the DERIVED publishedReport/reportFormats fields but reacts to a real bundle field", () => {
+    const annotation = resultComment(1);
+    const base = resultsBundle(1, "manifest-v1");
+    const docHash = targetHash(boardWith("original", [base]), annotation);
+
+    // Regenerating the report (even just restamping the marker) must not
+    // stale a result-comment on the unchanged, immutable bundle.
+    const reportChanged = boardWith("original", [
+      { ...base, publishedReport: { path: "plans/reports/x.md", content: "# R\n" } },
+    ]);
+    expect(targetHash(reportChanged, annotation)).toBe(docHash);
+
+    // Running pandoc (which only flips reportFormats) must not stale it either.
+    const formatsChanged = boardWith("original", [
+      { ...base, reportFormats: { pdf: true, docx: false } },
+    ]);
+    expect(targetHash(formatsChanged, annotation)).toBe(docHash);
+
+    // A real bundle field change (manifestRaw content) DOES stale it.
+    const bundleChanged = boardWith("original", [resultsBundle(1, "manifest-v1-EDITED")]);
+    expect(targetHash(bundleChanged, annotation)).not.toBe(docHash);
+  });
 });
 
 describe("targetHash: reports branch + cross-language pin", () => {

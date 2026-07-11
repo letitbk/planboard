@@ -2500,6 +2500,19 @@ class TestSplitFocusThreePart(unittest.TestCase):
             html = board.render_static_html(root, "01-data-prep:r1:reports")
             self.assertIn('"focusView": "reports"', html)
 
+    def test_share_focus_reports_view_pins_slug_and_view(self):
+        # --focus NN-slug:rN:reports must reach the shared html as BOTH the
+        # focusView (the reports view) and the plain slug (no :rN:reports
+        # suffix) — the share-mode counterpart to test_static_render_carries_focus_view.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            args = argparse.Namespace(focus="01-data-prep:r1:reports", share="DEFAULT")
+            with self.assertRaises(SystemExit):
+                board.share(root, args)
+            html = (root / "plans" / "board-share.html").read_text(encoding="utf-8")
+            self.assertIn('"focusView": "reports"', html)
+            self.assertIn('"focus": "01-data-prep"', html)
+
 
 class TestPullStaleness(unittest.TestCase):
     def test_fnv1a_matches_client_hashcontent(self):

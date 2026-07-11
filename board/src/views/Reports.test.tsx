@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import Reports from "./Reports";
 import type { BoardData, ResultsBundle } from "../lib/types";
 
@@ -94,11 +94,25 @@ describe("Reports view", () => {
     draw(data([b]));
     expect(screen.getByText(/markdown is missing/i)).toBeTruthy();
   });
-  it("newer-bundle flag names the latest rN lacking a report", () => {
+  it("newer-bundle flag names the latest rN lacking a report and carries a Generate button targeting it", () => {
     const b2 = bundle({ resultsVersion: 2, dir: "plans/execution/01-x/results/r2",
       publishedReport: null, reportFormats: { pdf: false, docx: false } });
-    draw(data([bundle({}), b2]), { navRequest: { token: 1, resultsVersion: 1 } });
-    expect(screen.getByText(/r2 .*no report/i)).toBeTruthy();
+    const onRequestReport = vi.fn();
+    draw(data([bundle({}), b2]), { navRequest: { token: 1, resultsVersion: 1 }, onRequestReport });
+    const flagText = screen.getByText(/r2 .*no report/i);
+    expect(flagText).toBeTruthy();
+    const flagBox = flagText.closest("div.rounded-lg") as HTMLElement;
+    const flagButton = flagBox.querySelector("button") as HTMLButtonElement;
+    expect(flagButton?.textContent).toBe("Generate report");
+    fireEvent.click(flagButton);
+    expect(onRequestReport).toHaveBeenCalledWith({ component: "01-x", resultsVersion: 2 });
+  });
+  it("viewing the report-less latest shows only the empty state, not the newer-bundle flag", () => {
+    const b2 = bundle({ resultsVersion: 2, dir: "plans/execution/01-x/results/r2",
+      publishedReport: null, reportFormats: { pdf: false, docx: false } });
+    draw(data([bundle({}), b2])); // no navRequest -> defaults to viewing the latest, r2
+    expect(screen.getByText(/No report generated for r2/i)).toBeTruthy();
+    expect(screen.queryByText(/has no report yet — generate one/i)).toBeNull();
   });
   it("downloads: live shows buttons for existing formats; static shows the repo note", () => {
     draw(data([bundle({})], "live"));

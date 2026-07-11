@@ -111,6 +111,11 @@ export default function Reports({
       component: group.component,
       resultsVersion: bundle.resultsVersion,
     });
+  const generateLatest = () =>
+    onRequestReport?.({
+      component: group.component,
+      resultsVersion: latest.resultsVersion,
+    });
 
   const paintable = annotations
     .filter(
@@ -193,7 +198,7 @@ export default function Reports({
               {b.publishedReport ? "" : " ∅"}
             </button>
           ))}
-          {actions && rep && (
+          {actions && rep && bundle.manifest && (
             <div className="ml-auto">
               <GenerateButton onClick={generate} />
             </div>
@@ -221,10 +226,13 @@ export default function Reports({
         </div>
 
         {/* stale / identity flags */}
-        {latest && !latest.publishedReport && (
-          <Notice
-            text={`r${latest.resultsVersion} has no report yet — generate one to keep the record current.`}
-          />
+        {latest && !latest.publishedReport && latest.resultsVersion !== bundle.resultsVersion && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            <span>
+              r{latest.resultsVersion} has no report yet — generate one to keep the record current.
+            </span>
+            {actions && latest.manifest && <GenerateButton onClick={generateLatest} />}
+          </div>
         )}
         {rep && marker && (marker.component !== group.component || marker.bundle !== bundle.resultsVersion) && (
           <Notice text={`Wrong file? This report's marker names ${marker.component} r${marker.bundle}, but it sits in ${group.component} r${bundle.resultsVersion}'s slot.`} />
@@ -236,7 +244,7 @@ export default function Reports({
               “{marker.verdict}”, the bundle is “{verdictState(bundle)}”) —
               regenerate to refresh.
             </span>
-            {actions && <GenerateButton onClick={generate} />}
+            {actions && bundle.manifest && <GenerateButton onClick={generate} />}
           </div>
         )}
         {rep && parsed && !marker && (

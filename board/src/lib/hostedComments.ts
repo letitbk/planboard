@@ -37,7 +37,11 @@ export function targetHash(data: BoardData, a: Annotation): string | null {
     // would stale every comment whenever any other version is added/changed.
     const g = findExecGroup(data, a.component);
     const rv = g?.results?.find((r) => r.resultsVersion === a.resultsVersion);
-    return rv ? hashContent(JSON.stringify(rv)) : null;
+    if (!rv) return null;
+    // The bundle is immutable; the DERIVED report fields are not — a report
+    // regeneration or a pandoc run must never stale comments on the bundle.
+    const { publishedReport: _pr, reportFormats: _rf, ...bundleOnly } = rv;
+    return hashContent(JSON.stringify(bundleOnly));
   }
   if (a.type === "doc-comment" && a.view === "reports") {
     const m = REPORT_DOCKEY_RE.exec(a.docKey);
