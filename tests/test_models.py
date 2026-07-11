@@ -313,5 +313,68 @@ class TestCheck(unittest.TestCase):
             self.assertEqual(self._run(root, "check")[1], "")
 
 
+class TestOrphanRemovalAndGuards(unittest.TestCase):
+    def _run(self, root, cmd):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = models.main(["--root", str(root), cmd])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_removed_row_removes_marked_agent_and_clears_hint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._run(root, "generate")
+            profile = root / "plans" / "model-profile.md"
+            profile.write_text(DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""), encoding="utf-8")
+            code, out, err = self._run(root, "generate")
+            self.assertEqual(code, 0)
+            self.assertFalse((root / ".claude" / "agents" / "rp-board-reviewer.md").exists())
+            self.assertIn("removed stale .claude/agents/rp-board-reviewer.md", out)
+            code, out, err = self._run(root, "check")
+            self.assertEqual(out, "")
+
+    def test_mechanism_flip_removes_marked_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._run(root, "generate")
+            profile = root / "plans" / "model-profile.md"
+            profile.write_text(DEFAULT_PROFILE.replace("| plan review (verdict + grade) | opus | medium | agent |", "| plan review (verdict + grade) | opus | medium | nudge |"), encoding="utf-8")
+            code, out, err = self._run(root, "generate")
+            self.assertFalse((root / ".claude" / "agents" / "rp-plan-reviewer.md").exists())
+            self.assertIn("removed stale .claude/agents/rp-plan-reviewer.md", out)
+
+    def test_user_owned_file_never_removed_on_missing_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""))
+            agents = root / ".claude" / "agents"
+            agents.mkdir(parents=True)
+            mine = agents / "rp-board-reviewer.md"
+            mine.write_text("---\nname: rp-board-reviewer\n---\nmine\n")
+            code, out, err = self._run(root, "generate")
+            self.assertTrue(mine.exists())
+            self.assertEqual(mine.read_text(), "---\nname: rp-board-reviewer\n---\nmine\n")
+            self.assertNotIn("removed stale", out)
+
+    def test_unreadable_profile_bails_without_touching_agents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._run(root, "generate")
+            before = sorted(p.name for p in (root / ".claude" / "agents").iterdir())
+            (root / "plans" / "model-profile.md").write_bytes(b"\xff\xfe broken")
+            code, out, err = self._run(root, "generate")
+            self.assertEqual(code, 1)
+            self.assertIn("unreadable", err)
+            after = sorted(p.name for p in (root / ".claude" / "agents").iterdir())
+            self.assertEqual(before, after)
+
+    def test_check_skips_unreadable_agent_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._run(root, "generate")
+            (root / ".claude" / "agents" / "rp-plan-reviewer.md").write_bytes(b"\xff\xfe broken")
+            code, out, err = self._run(root, "check")
+            self.assertEqual((code, out), (0, ""))
+
+
 if __name__ == "__main__":
     unittest.main()

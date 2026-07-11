@@ -162,13 +162,39 @@ def _render(template_text, model, effort, checksum):
     return out.replace("{{MODEL}}", model).replace("{{CHECKSUM}}", checksum)
 
 
+def _remove_if_marked(target, rel, key):
+    """Delete target if it exists and carries the ownership marker. Returns True if removed."""
+    if not target.exists():
+        return False
+    try:
+        existing = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        print(f"refused (unreadable): {rel}")
+        return False
+    if not MARKER_RE.search(existing):
+        return False
+    target.unlink()
+    print(f"removed stale {rel} (no usable '{key}' agent row in the profile)")
+    return True
+
+
 def cmd_generate(root):
     path = root / PROFILE_REL
     if not path.exists():
         print(f"models.py: no {PROFILE_REL} — nothing to generate", file=sys.stderr)
         return 1
-    checksum = hashlib.sha256(path.read_bytes()).hexdigest()
-    stages, warnings = parse_profile(path.read_text(encoding="utf-8"))
+    try:
+        data = path.read_bytes()
+    except OSError:
+        print("model-profile: unreadable (not UTF-8 or IO error) — nothing generated", file=sys.stderr)
+        return 1
+    checksum = hashlib.sha256(data).hexdigest()
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        print("model-profile: unreadable (not UTF-8 or IO error) — nothing generated", file=sys.stderr)
+        return 1
+    stages, warnings = parse_profile(text)
     for w in warnings:
         print(w, file=sys.stderr)
     agents_dir = root / ".claude" / "agents"
@@ -177,19 +203,27 @@ def cmd_generate(root):
     for key, agent in AGENT_STAGES.items():
         rel = f".claude/agents/{agent}.md"
         row = stages.get(key)
+        target = agents_dir / f"{agent}.md"
         if row is None:
             print(f"model-profile: no valid '{key}' row — {agent}.md not regenerated", file=sys.stderr)
+            _remove_if_marked(target, rel, key)
             continue
         if row["mechanism"] != "agent":
             print(
                 f"model-profile: '{key}' row has mechanism '{row['mechanism']}' — {agent}.md not regenerated",
                 file=sys.stderr,
             )
+            _remove_if_marked(target, rel, key)
             continue
-        target = agents_dir / f"{agent}.md"
-        if target.exists() and not MARKER_RE.search(target.read_text(encoding="utf-8")):
-            print(f"refused (user-owned, no marker): {rel}")
-            continue
+        if target.exists():
+            try:
+                existing = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                print(f"refused (unreadable): {rel}")
+                continue
+            if not MARKER_RE.search(existing):
+                print(f"refused (user-owned, no marker): {rel}")
+                continue
         template = (_templates_dir() / f"{agent}.md").read_text(encoding="utf-8")
         agents_dir.mkdir(parents=True, exist_ok=True)
         target.write_text(_render(template, row["model"], row["effort"], checksum), encoding="utf-8")
@@ -204,12 +238,19 @@ def cmd_check(root):
     path = root / PROFILE_REL
     if not path.exists():
         return 0
-    checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return 0
     for agent in AGENT_STAGES.values():
         target = root / ".claude" / "agents" / f"{agent}.md"
         if not target.exists():
             continue
-        m = MARKER_RE.search(target.read_text(encoding="utf-8"))
+        try:
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        m = MARKER_RE.search(text)
         if m and m.group(1) != checksum:
             print(MISMATCH_HINT)
             return 0
