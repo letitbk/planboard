@@ -1672,9 +1672,10 @@ def _neutralized_annotation(a):
     """Copy of a comment annotation with all collaborator text neutralized,
     for embedding in the fence's machine-readable `annotations`."""
     a = dict(a)
-    # signoff is a researcher-only action key from the board control surface
-    # (v0.15 spec); stripped preemptively so hosted pulls can never forward it.
-    for _k in ("verdict", "reviewRequest", "reportRequest", "signoff"):
+    # Researcher-only action keys can never ride a hosted pull. Iterate the
+    # single source of truth — a second hand-maintained tuple is how `reopen`
+    # slipped through when the control surface added it.
+    for _k in ACTION_KEYS:
         a.pop(_k, None)
     if "quote" in a:
         a["quote"] = neutralize_collaborator_text(a.get("quote", ""), inline=True)

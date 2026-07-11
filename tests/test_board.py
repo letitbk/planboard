@@ -2371,5 +2371,23 @@ class TestRelaunchE2E(unittest.TestCase):
                     proc_a.kill()
 
 
+class TestNeutralizedAnnotationActionKeys(unittest.TestCase):
+    def test_every_action_key_is_stripped(self):
+        a = {"type": "doc-comment", "view": "tracker", "docKey": "tracker",
+             "quote": "q", "comment": "c",
+             "verdict": {"x": 1}, "reviewRequest": {"x": 1},
+             "reportRequest": {"x": 1}, "signoff": {"x": 1}, "reopen": {"x": 1}}
+        out = board._neutralized_annotation(a)
+        for key in board.ACTION_KEYS:
+            self.assertNotIn(key, out)
+
+    def test_hosted_document_fence_carries_no_reopen(self):
+        a = {"type": "doc-comment", "view": "tracker", "docKey": "tracker",
+             "quote": "q", "comment": "c", "reopen": {"component": "01-x", "resultsVersion": 1}}
+        doc = board.assemble_hosted_document([a], {"sessionId": "s", "generatedAt": "",
+                                                   "focus": None, "reviewer": "r", "shareHash": "h"})
+        self.assertNotIn("reopen", doc)
+
+
 if __name__ == "__main__":
     unittest.main()
