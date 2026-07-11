@@ -1,17 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.0] - 2026-07-10
 
-The live board becomes a persistent control surface — a bookmarkable URL that stays up, refreshes itself after every action, and carries every researcher decision.
+Per-stage model profiles land — plan on the strongest model, execute on a cheap fast one, review on opus; nudged where you decide, pinned where work is delegated — and the live board becomes a persistent control surface: a bookmarkable URL that stays up, refreshes itself after every action, and carries every researcher decision.
 
 ### Added
+- **Per-stage model profiles.** `plans/model-profile.md` (created at init, committed) maps each workflow stage to a model + effort: planning nudges toward the strongest model, execution toward a cheap fast one, review/validation pin opus at low or medium effort via generated project agents.
 - **Persistent live board.** A stable per-project port (41000–41999, bookmark it) and a relaunch loop: every action you take is applied by your session, then the board reopens itself and your tab refreshes with the updated state. After an idle hour it sleeps; `/research-plans:board` wakes it at the same URL.
+- **`/research-plans:models`** — view or edit the profile via structured questions and regenerate the `rp-*` agents; ownership-marked files, checksum staleness hints, user-owned agents never overwritten.
+- **Generated review agents.** `.claude/agents/rp-plan-reviewer.md`, `rp-results-validator.md`, `rp-board-reviewer.md` — complete, least-privilege agent definitions whose model/effort come from the profile (a request the platform can override).
 - **Docked feedback panel.** On wide windows the feedback panel is a real side-by-side column — content reflows, nothing is covered; narrow windows keep the overlay, now with a scrim. Clicking a feedback card jumps to its highlight (and back), including script line comments.
 - **Always-available actions.** Approve / Request changes on any displayed plan draft from the Tracker and Plan views (state-aware: signed plans show their badge), Review with … everywhere it makes sense, and Reopen on an accepted results bundle — which files a change request; the recorded verdict is never modified.
 - **Board-issued approval tickets.** Clicking Approve makes the board server validate the exact displayed draft and write a one-use, content-hash-bound ticket (the same mechanism as batch sign-off); the sign-off hook admits the write by consuming it. Feedback documents are never approval authority.
-- **Per-stage model profiles.** `plans/model-profile.md` (created at init, committed) maps each workflow stage to a model + effort: planning nudges toward the strongest model, execution toward a cheap fast one, review/validation pin opus at low or medium effort via generated project agents.
-- **`/research-plans:models`** — view or edit the profile via structured questions and regenerate the `rp-*` agents; ownership-marked files, checksum staleness hints, user-owned agents never overwritten.
-- **Generated review agents.** `.claude/agents/rp-plan-reviewer.md`, `rp-results-validator.md`, `rp-board-reviewer.md` — complete, least-privilege agent definitions whose model/effort come from the profile (a request the platform can override).
 
 ### Changed
 - **All researcher actions are uniformly hidden during sign-off gates** (review-before-gate; the gate stays a modal approve/request-changes moment).
