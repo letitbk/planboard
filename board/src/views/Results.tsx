@@ -14,7 +14,6 @@ import type {
   Annotation,
   BoardData,
   ReportRequest,
-  ResultArtifact,
   ResultCommentAnnotation,
   ResultsBundle,
   ReviewRequest,
@@ -548,12 +547,6 @@ export default function Results({
                 (mt.artifactIds && mt.artifactIds.length > 0) || mt.statement,
             )
           );
-          const referenced = new Set(
-            m ? m.metrics.flatMap((mt) => mt.artifactIds ?? []) : [],
-          );
-          const orphanArtifacts = m
-            ? m.artifacts.filter((a) => !referenced.has(a.id))
-            : [];
           const onZoom = (url: string, title: string) => setZoom({ url, title });
           const planFile =
             m && m.planVersion != null
@@ -564,18 +557,11 @@ export default function Results({
             : null;
           const bundleBody = (
             <>
-              {/* provenance flow diagram (v0.11) — inside the AnnotationLayer
-                  so drag-select comments on nodes route like everything else */}
-              {m && (
-                <ProvenanceFlow
-                  bundle={bundle}
-                  planGoal={planGoal}
-                  onOpenScript={setOpenScript}
-                  onZoom={onZoom}
-                />
-              )}
+              {/* plan-vs-execution validation (v0.10) — promoted to the top:
+                  Results is the reviewing surface (reports-tab spec §7) */}
+              {m?.validation && <ValidationSection v={m.validation} />}
 
-              {/* report — overview */}
+              {/* capture note — the bundle's brief report.md */}
               {bundle.report && (
                 <section
                   className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-5"
@@ -586,78 +572,55 @@ export default function Results({
                 </section>
               )}
 
-              {/* plan-vs-execution validation (v0.10) */}
-              {m?.validation && <ValidationSection v={m.validation} />}
-
               {m && findingMode ? (
                 <>
-                  {/* findings — each key finding with its evidence embedded */}
-                  {m.metrics.map((metric) => {
-                    const arts = (metric.artifactIds ?? [])
-                      .map((id) => m.artifacts.find((a) => a.id === id))
-                      .filter((a): a is ResultArtifact => Boolean(a));
-                    return (
-                      <section
-                        key={metric.label}
-                        data-annot-scope={`metric:${metric.label}`}
-                        data-annot-section={`metric ${metric.label}`}
-                        className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-5"
-                      >
-                        <div className="mb-1 flex flex-wrap items-center gap-2">
-                          {metric.status && (
-                            <span
-                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                STATUS_CLS[metric.status] ??
-                                STATUS_CLS.descriptive
-                              }`}
-                            >
-                              {metric.status}
-                            </span>
-                          )}
-                          <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
-                            {metric.label}
+                  {/* key claims — compact tiles; figures live in the Evidence
+                      gallery below and, in context, on the Reports tab */}
+                  {m.metrics.map((metric) => (
+                    <section
+                      key={metric.label}
+                      data-annot-scope={`metric:${metric.label}`}
+                      data-annot-section={`metric ${metric.label}`}
+                      className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-5"
+                    >
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        {metric.status && (
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                              STATUS_CLS[metric.status] ?? STATUS_CLS.descriptive
+                            }`}
+                          >
+                            {metric.status}
                           </span>
+                        )}
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+                          {metric.label}
+                        </span>
+                      </div>
+                      {metric.statement && (
+                        <p className="mb-1 font-serif text-lg leading-snug text-stone-900 dark:text-stone-100">
+                          {metric.statement}
+                        </p>
+                      )}
+                      <div className="text-base font-bold text-stone-900 dark:text-stone-100">
+                        {metric.value}
+                      </div>
+                      {metric.note && (
+                        <div className="mt-0.5 text-xs text-stone-400 dark:text-stone-500">
+                          {metric.note}
                         </div>
-                        {metric.statement && (
-                          <p className="mb-1 font-serif text-lg leading-snug text-stone-900 dark:text-stone-100">
-                            {metric.statement}
-                          </p>
-                        )}
-                        <div className="text-base font-bold text-stone-900 dark:text-stone-100">
-                          {metric.value}
-                        </div>
-                        {metric.note && (
-                          <div className="mt-0.5 text-xs text-stone-400 dark:text-stone-500">
-                            {metric.note}
-                          </div>
-                        )}
-                        {arts.length > 0 && (
-                          <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
-                            {arts.map((art) => (
-                              <ArtifactCard
-                                key={art.id}
-                                art={art}
-                                bundle={bundle}
-                                openScript={openScript}
-                                setOpenScript={setOpenScript}
-                                onZoom={onZoom}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    );
-                  })}
+                      )}
+                    </section>
+                  ))}
 
                   {m.artifacts.length === 0 && <SummaryOnlyNotice />}
-
-                  {orphanArtifacts.length > 0 && (
+                  {m.artifacts.length > 0 && (
                     <section className="mb-4">
                       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-                        Additional evidence
+                        Evidence
                       </h3>
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        {orphanArtifacts.map((art) => (
+                        {m.artifacts.map((art) => (
                           <ArtifactCard
                             key={art.id}
                             art={art}
@@ -715,6 +678,16 @@ export default function Results({
                     </div>
                   ) : null}
                 </>
+              )}
+
+              {/* provenance flow diagram (v0.11) — now closes the review read */}
+              {m && (
+                <ProvenanceFlow
+                  bundle={bundle}
+                  planGoal={planGoal}
+                  onOpenScript={setOpenScript}
+                  onZoom={onZoom}
+                />
               )}
             </>
           );
