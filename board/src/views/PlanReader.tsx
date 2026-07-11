@@ -55,6 +55,7 @@ export default function PlanReader({
   onRequestReview,
   onSignoff,
   navRequest,
+  onOpenReport,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -76,6 +77,7 @@ export default function PlanReader({
   // Click-sync (control surface): one-shot navigation request from a feedback
   // card. Internal selection stays authoritative; each new token overrides.
   navRequest?: { token: number; planPath?: string } | null;
+  onOpenReport?: (slug: string, resultsVersion: number) => void;
 }) {
   const groups = data.files.executionPlans;
   const preRenewal = preRenewalSlugs(data);
@@ -396,18 +398,29 @@ export default function PlanReader({
             {(group.results ?? [])
               .filter((b) => b.manifest?.planVersion === doc.version)
               .map((b) => (
-                <button
-                  key={b.dir}
-                  className="rounded-full border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 px-2 py-0.5 font-medium text-blue-700 dark:text-blue-400 hover:border-stone-500 dark:hover:border-stone-400"
-                  onClick={() => onOpenResults(group.component)}
-                >
-                  r{b.resultsVersion}
-                  {b.verdict?.status === "accepted"
-                    ? " ✓"
-                    : b.verdict?.status === "changes-requested"
-                      ? " ✕"
-                      : " ●"}
-                </button>
+                <>
+                  <button
+                    key={b.dir}
+                    className="rounded-full border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 px-2 py-0.5 font-medium text-blue-700 dark:text-blue-400 hover:border-stone-500 dark:hover:border-stone-400"
+                    onClick={() => onOpenResults(group.component)}
+                  >
+                    r{b.resultsVersion}
+                    {b.verdict?.status === "accepted"
+                      ? " ✓"
+                      : b.verdict?.status === "changes-requested"
+                        ? " ✕"
+                        : " ●"}
+                  </button>
+                  {b.publishedReport && onOpenReport && (
+                    <button
+                      key={`${b.dir}-report`}
+                      className="rounded-full border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-stone-900 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-400 hover:border-emerald-500"
+                      onClick={() => onOpenReport(group.component, b.resultsVersion)}
+                    >
+                      report
+                    </button>
+                  )}
+                </>
               ))}
           </div>
         )}

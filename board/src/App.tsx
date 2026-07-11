@@ -931,7 +931,6 @@ export default function App({ data }: { data: BoardData }) {
     }
     scrollToSelector(`mark[data-annotation="${a.id}"], [data-annotation="${a.id}"]`);
   };
-  // consumed by the report chips (next task)
   const openReport = (slug: string, resultsVersion: number) => {
     setSelectedComponent(slug);
     setTab("reports");
@@ -1140,6 +1139,7 @@ export default function App({ data }: { data: BoardData }) {
             onOpenArchive={
               data.files.archives?.length ? () => setTab("archive") : undefined
             }
+            onOpenReport={openReport}
           />
         )}
         {tab === "plans" && (
@@ -1159,6 +1159,7 @@ export default function App({ data }: { data: BoardData }) {
             }}
             canPost={canPost}
             onRequestReview={guardConn(requestReview)}
+            onOpenReport={openReport}
           />
         )}
         {tab === "results" && (
@@ -1197,6 +1198,7 @@ export default function App({ data }: { data: BoardData }) {
               setSelectedComponent(slug);
               setTab("results");
             }}
+            onOpenReport={openReport}
           />
         )}
         {tab === "reports" && (
