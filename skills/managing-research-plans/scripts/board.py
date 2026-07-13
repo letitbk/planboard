@@ -443,6 +443,20 @@ def collect_drift(root, exec_groups, master_content="", archive_contents=()):
     }
 
 
+def newest_draft(comp_dir):
+    """Newest .draft-vN.md by NUMERIC version — a lexicographic sort put
+    .draft-v9.md above .draft-v10.md. Returns (version, path) or None."""
+    best = None
+    for f in comp_dir.glob(".draft-v*.md"):
+        m = re.fullmatch(r"\.draft-v(\d+)\.md", f.name)
+        if not m:
+            continue
+        v = int(m.group(1))
+        if best is None or v > best[0]:
+            best = (v, f)
+    return best
+
+
 def collect_payload(root, mode, focus):
     plans = root / "plans"
     if not (plans / "master-plan.md").is_file():
@@ -463,14 +477,11 @@ def collect_payload(root, mode, focus):
             versions.sort(key=lambda v: v["version"])
             group = {"component": comp_dir.name, "versions": versions}
             if mode in ("live", "remote", "hosted"):
-                drafts = sorted(comp_dir.glob(".draft-v*.md"))
-                if drafts:
-                    d = drafts[-1]
-                    m = re.fullmatch(r"\.draft-v(\d+)\.md", d.name)
+                nd = newest_draft(comp_dir)
+                if nd:
+                    version, d = nd
                     entry = read_file(root, str(d.relative_to(root)))
-                    entry["proposedVersion"] = int(m.group(1)) if m else (
-                        (versions[-1]["version"] + 1) if versions else 1
-                    )
+                    entry["proposedVersion"] = version
                     group["draft"] = entry
             # Committed within-version draft iterations (feature #1). Unlike the
             # ephemeral working draft above, these are real history and ride in
@@ -1976,30 +1987,66 @@ def write_ticket(root, slug, version, content, batch_id):
     return tp
 
 
-def apply_gate_batch(root, payload):
+def apply_gate_batch(root, payload, allow_single=False):
     """Collect every pending draft (.draft-vN.md) into payload['gateBatch'] for the
     one-at-a-time batch sign-off wizard. Each approval writes that plan's ticket
     immediately (incremental persistence), so an interrupted session keeps prior
-    approvals."""
+    approvals. Batch is the /adopt bulk flow: with fewer than 2 drafts still
+    awaiting approval it refuses unless allow_single — a single plan's sign-off
+    belongs to the write-triggered gate or the researcher's Approve on the
+    persistent board (which mints the same ticket)."""
     batch = []
+    pending = 0
     exec_dir = root / "plans" / "execution"
     if exec_dir.is_dir():
         for comp_dir in sorted(p for p in exec_dir.iterdir() if p.is_dir()):
-            drafts = sorted(comp_dir.glob(".draft-v*.md"))
-            if not drafts:
+            nd = newest_draft(comp_dir)
+            if nd is None:
                 continue
-            d = drafts[-1]
-            m = re.fullmatch(r"\.draft-v(\d+)\.md", d.name)
+            version, d = nd
+            content = d.read_text(encoding="utf-8")
+            if not has_valid_ticket(root, comp_dir.name, version, content):
+                pending += 1
             batch.append({
                 "component": comp_dir.name,
-                "proposedVersion": int(m.group(1)) if m else 1,
+                "proposedVersion": version,
                 "path": str(d.relative_to(root)),
-                "content": d.read_text(encoding="utf-8"),
+                "content": content,
             })
     if not batch:
         die("no pending drafts (.draft-v*.md) to review — nothing to approve")
+    if pending == 0:
+        die("every pending draft is already approved (tickets present) — "
+            "write the vN.md files; no batch session is needed.")
+    if pending < 2 and not allow_single:
+        die("%d pending draft(s) — batch sign-off is the /adopt bulk flow. "
+            "For a single plan, write vN.md (the sign-off gate opens "
+            "automatically) or have the researcher Approve the draft on the "
+            "board (writes the same ticket). If this is a one-component "
+            "adoption or you are resuming an interrupted batch with one draft "
+            "left, re-run with --gate-batch --allow-single." % pending)
     payload["gateBatch"] = batch
     return payload
+
+
+def has_valid_ticket(root, slug, version, content):
+    """True when .import-approved-<slug>-vN exists, is unexpired, and hashes
+    over the CURRENT draft — i.e. the draft is approved awaiting its vN.md
+    write, not pending. Mirrors signoff_gate.check_ticket's validity rules."""
+    tp = root / "plans" / "execution" / (".import-approved-%s-v%d" % (slug, version))
+    if not tp.is_file():
+        return False
+    try:
+        doc = json.loads(tp.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if doc.get("slug") != slug or doc.get("version") != version:
+        return False
+    exp = doc.get("expiry")
+    if isinstance(exp, (int, float)) and time.time() > exp:
+        return False
+    return doc.get("contentHash") == hashlib.sha256(
+        normalize_plan(content).encode("utf-8")).hexdigest()
 
 
 def apply_gate(root, payload, gate_spec):
@@ -2100,7 +2147,11 @@ def parse_args(argv=None):
                     help="acknowledge (delete) the routed pending order")
     ap.add_argument("--gate", default=None, metavar="SLUG/vN")
     ap.add_argument("--gate-batch", action="store_true",
-                    help="one-at-a-time sign-off over all pending drafts")
+                    help="one-at-a-time sign-off over all pending drafts "
+                         "(the /adopt bulk flow; refuses <2 pending drafts)")
+    ap.add_argument("--allow-single", action="store_true",
+                    help="let --gate-batch run with a single pending draft "
+                         "(one-component adoption / resumed batch)")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, metavar="SECONDS")
@@ -2113,7 +2164,10 @@ def parse_args(argv=None):
     ap.add_argument("--web-connect", action="store_true")
     ap.add_argument("--web-clear", action="store_true")
     ap.add_argument("--set-password", action="store_true")
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    if args.allow_single and not args.gate_batch:
+        ap.error("--allow-single only applies to --gate-batch")
+    return args
 
 
 _ACTION_FLAGS = ("export", "share", "publish", "publish_web", "pull",
@@ -2189,7 +2243,8 @@ def main():
         if args.gate:
             payload = apply_gate(root, payload, args.gate)
         elif args.gate_batch:
-            payload = apply_gate_batch(root, payload)
+            payload = apply_gate_batch(root, payload,
+                                       allow_single=args.allow_single)
         serve(root, payload, args)
 
 
