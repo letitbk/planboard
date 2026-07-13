@@ -1,7 +1,7 @@
 {
   "name": "research-plans-board",
   "private": true,
-  "version": "0.15.0",
+  "version": "0.16.0",
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "scripts": {

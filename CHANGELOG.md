@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.16.0] - 2026-07-13
+
+Artifacts open where you review, and sign-off stops surprising: text artifacts (md, csv, and friends) now render in an in-board viewer instead of downloading, a timed-out sign-off gate hands the draft to the persistent board for a durable Approve, and batch sign-off is explicitly the /adopt bulk flow — it refuses a single pending draft unless you say otherwise.
 
 ### Added
 - **In-board artifact viewer.** Clicking a text artifact (`.md`, `.csv`, `.tsv`, `.txt`, `.log`, `.json`, `.tex`) opens a viewer modal on the board — markdown rendered like the Reports tab (figures included), csv/tsv as a table, the rest as plain text — instead of downloading the file. Works on live, exported, and hosted boards.
