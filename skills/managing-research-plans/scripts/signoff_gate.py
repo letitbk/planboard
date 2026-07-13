@@ -65,8 +65,10 @@ def check_ticket(ticket, slug, version, content):
         doc = json.loads(ticket.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "deny", (
-            "Batch approval ticket %s is unreadable or corrupt. Re-run the board's "
-            "--gate-batch approval for %s v%d." % (ticket.name, slug, version))
+            "Approval ticket %s is unreadable or corrupt. Have the researcher "
+            "re-approve %s v%d on the board — their Approve writes a fresh "
+            "ticket (the draft must still exist at plans/execution/%s/"
+            ".draft-v%d.md)." % (ticket.name, slug, version, slug, version))
     if doc.get("slug") != slug or doc.get("version") != version:
         return "deny", (
             "Batch ticket %s does not match %s v%d (slug/version mismatch). "
@@ -74,14 +76,14 @@ def check_ticket(ticket, slug, version, content):
     exp = doc.get("expiry")
     if isinstance(exp, (int, float)) and time.time() > exp:
         return "deny", (
-            "Batch approval for %s v%d has expired. Re-run board.py --gate-batch to "
-            "re-approve the current draft." % (slug, version))
+            "Approval for %s v%d has expired. Have the researcher re-approve "
+            "the current draft on the board." % (slug, version))
     got = hashlib.sha256(normalize_plan(content).encode("utf-8")).hexdigest()
     if doc.get("contentHash") != got:
         return "deny", (
-            "The draft for %s v%d changed since it was approved on the board "
-            "(content-hash mismatch). Re-approve the current draft via board.py "
-            "--gate-batch." % (slug, version))
+            "The draft for %s v%d changed since it was approved (content-hash "
+            "mismatch). Have the researcher re-approve the current draft on "
+            "the board." % (slug, version))
     return "allow", (
         "Batch-approved: %s v%d approved by %s in batch %s at %s (ticket %s; left "
         "in place — inert once v%d.md exists)." % (
@@ -376,11 +378,27 @@ def main():
             "or any other path." % (slug, version, summary)
         )
     elif code == 2:
+        # Persist the proposal as the component's working draft so the
+        # persistent board can display and approve it — a timed-out gate must
+        # leave a durable recovery path (the in-board Approve mints a ticket
+        # over this draft; normalize_plan makes it admit the signed write).
+        draft = p.parent / (".draft-v%d.md" % version)
+        saved = ""
+        try:
+            draft.write_text(content, encoding="utf-8")
+            saved = (" The proposed plan has been saved as "
+                     "plans/execution/%s/.draft-v%d.md." % (slug, version))
+        except OSError:
+            pass
         deny(
-            "Sign-off gate timed out — the researcher did not respond in the "
-            "browser within %ds. Re-attempt the write when they are ready (the "
-            "gate will reopen), or set RESEARCH_PLANS_NO_GATE=1 for headless "
-            "work." % timeout
+            "Sign-off gate timed out — no approval arrived within %ds.%s "
+            "Do NOT bypass the gate and do NOT use --gate-batch. Instead, "
+            "relaunch the board for this component via the "
+            "/research-plans:board workflow and tell the researcher the draft "
+            "awaits their Approve there. Approving mints a durable ticket, and "
+            "the board workflow's routing then performs the ticketed v%d.md "
+            "write — do not re-attempt the Write separately before that "
+            "approval round-trip." % (timeout, saved, version)
         )
     else:
         deny(
