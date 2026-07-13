@@ -295,6 +295,19 @@ describe("results layer", () => {
                 verdictRaw: { path: "plans/execution/01-x/results/r1/verdict.json", content: "{}" },
                 scripts: [{ path: "plans/execution/01-x/results/r1/scripts/a.R", content: "x" }],
                 assets: {},
+                publishedReport: { path: "plans/reports/01-x-r1-report.md", content: "R" },
+              },
+              {
+                resultsVersion: 2,
+                dir: "plans/execution/01-x/results/r2",
+                manifest: null,
+                manifestRaw: { path: "plans/execution/01-x/results/r2/manifest.json", content: "{}" },
+                report: null,
+                verdict: null,
+                verdictRaw: null,
+                scripts: [],
+                assets: {},
+                publishedReport: null,
               },
             ],
           },
@@ -307,6 +320,9 @@ describe("results layer", () => {
     expect(paths).toContain("plans/execution/01-x/results/r1/report.md");
     expect(paths).toContain("plans/execution/01-x/results/r1/verdict.json");
     expect(paths).toContain("plans/execution/01-x/results/r1/scripts/a.R");
+    expect(
+      paths.filter((p) => p === "plans/reports/01-x-r1-report.md").length,
+    ).toBe(1);
   });
 });
 

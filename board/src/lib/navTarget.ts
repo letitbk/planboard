@@ -2,9 +2,10 @@
 // maps to the tab + view selection that shows its highlight. Pure; App applies
 // targets via each view's navRequest prop.
 import type { Annotation, BoardData } from "./types";
+import { REPORT_DOCKEY_RE } from "./reportMarker";
 
 export interface NavTarget {
-  tab: "tracker" | "plans" | "results" | "timeline" | "reviews" | "archive";
+  tab: "tracker" | "plans" | "results" | "timeline" | "reviews" | "archive" | "reports";
   component?: string;
   planPath?: string; // -> PlanReader resolves to its doc index
   resultsVersion?: number; // -> Results resolves to its bundle index
@@ -76,6 +77,16 @@ export function navTargetFor(a: Annotation, _data: BoardData): NavTarget {
             annotationId: a.id,
             anchored: a.anchored,
           };
+        case "reports": {
+          const m = REPORT_DOCKEY_RE.exec(a.docKey);
+          return {
+            tab: "reports",
+            component: m?.[1],
+            resultsVersion: m ? Number(m[2]) : undefined,
+            annotationId: a.id,
+            anchored: a.anchored,
+          };
+        }
       }
       break;
     }

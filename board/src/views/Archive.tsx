@@ -37,6 +37,7 @@ export default function Archive({
   onOpenComponent,
   onOpenResults,
   navRequest,
+  onOpenReport,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -51,6 +52,7 @@ export default function Archive({
   onOpenComponent: (slug: string, name: string) => void;
   onOpenResults: (slug: string) => void;
   navRequest?: { token: number; archivePath?: string } | null;
+  onOpenReport?: (slug: string, resultsVersion: number) => void;
 }) {
   const archives = data.files.archives ?? [];
   const [idx, setIdx] = useState(Math.max(0, archives.length - 1));
@@ -195,12 +197,32 @@ export default function Archive({
                       </td>
                       <td className="px-4 py-2.5">
                         {slug && latest ? (
-                          <button
-                            className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
-                            onClick={() => onOpenResults(slug)}
-                          >
-                            r{latest.resultsVersion}
-                          </button>
+                          <span className="inline-flex items-center gap-2">
+                            <button
+                              className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
+                              onClick={() => onOpenResults(slug)}
+                            >
+                              r{latest.resultsVersion}
+                            </button>
+                            {(() => {
+                              const withReport = [...(g?.results ?? [])]
+                                .reverse()
+                                .find((b) => b.publishedReport);
+                              return (
+                                withReport &&
+                                onOpenReport && (
+                                  <button
+                                    className="text-xs font-medium text-emerald-700 dark:text-emerald-400 underline hover:text-emerald-900 dark:hover:text-emerald-300"
+                                    onClick={() =>
+                                      onOpenReport(slug, withReport.resultsVersion)
+                                    }
+                                  >
+                                    report
+                                  </button>
+                                )
+                              );
+                            })()}
+                          </span>
                         ) : (
                           <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
                         )}

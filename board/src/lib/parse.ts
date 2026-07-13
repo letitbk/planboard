@@ -389,6 +389,7 @@ export function allFiles(data: {
         report: { path: string; content: string } | null;
         verdictRaw: { path: string; content: string } | null;
         scripts: { path: string; content: string }[];
+        publishedReport?: { path: string; content: string } | null;
       }[];
     }[];
     reviews: { path: string; content: string }[];
@@ -405,6 +406,7 @@ export function allFiles(data: {
       out.push(b.manifestRaw);
       if (b.report) out.push(b.report);
       if (b.verdictRaw) out.push(b.verdictRaw);
+      if (b.publishedReport) out.push(b.publishedReport);
       out.push(...b.scripts);
     }
   }

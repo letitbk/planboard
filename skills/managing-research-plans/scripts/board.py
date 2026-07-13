@@ -211,6 +211,8 @@ def payload_files(payload):
             if b.get("verdictRaw"):
                 out.append(b["verdictRaw"])
             out.extend(b.get("scripts", []))
+            if b.get("publishedReport"):
+                out.append(b["publishedReport"])
     out.extend(f["reviews"])
     if f.get("history"):
         out.append(f["history"])
@@ -229,6 +231,29 @@ def share_hash(files):
         h.update(f["content"].encode("utf-8"))
         h.update(b"\x00")
     return h.hexdigest()[:16]
+
+
+def fnv1a_hex(s):
+    """Exact port of the client's hashContent (hostedComments.ts): FNV-1a over
+    UTF-16 code units. Do not change one side without the other — the pinned
+    cross-language vectors live in tests/test_board.py and hostedComments.test.ts."""
+    h = 0x811C9DC5
+    b = s.encode("utf-16-le")
+    for i in range(0, len(b), 2):
+        h ^= b[i] | (b[i + 1] << 8)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return format(h, "08x")
+
+
+REPORT_MARKER_PREFIX = "<!-- rp-report"
+
+
+def _strip_report_marker(content):
+    """Drop the first line when it is (or tries to be) an rp-report marker."""
+    first, sep, rest = content.partition("\n")
+    if first.lstrip().startswith(REPORT_MARKER_PREFIX):
+        return rest
+    return content
 
 
 def collect_results(root, comp_dir):
@@ -257,6 +282,8 @@ def collect_results(root, comp_dir):
             "verdictRaw": None,
             "scripts": [],
             "assets": {},
+            "publishedReport": None,
+            "reportFormats": {"pdf": False, "docx": False},
         }
         if (rdir / "report.md").is_file():
             bundle["report"] = read_file(root, str((rdir / "report.md").relative_to(root)))
@@ -272,6 +299,16 @@ def collect_results(root, comp_dir):
             for sf in sorted(sdir.iterdir()):
                 if sf.is_file():
                     bundle["scripts"].append(read_file(root, str(sf.relative_to(root))))
+        rep_name = "%s-r%d-report" % (comp_dir.name, int(m.group(1)))
+        rep_dir = root / "plans" / "reports"
+        rep_md = rep_dir / (rep_name + ".md")
+        bundle["publishedReport"] = (
+            read_file(root, str(rep_md.relative_to(root))) if rep_md.is_file() else None
+        )
+        bundle["reportFormats"] = {
+            "pdf": (rep_dir / (rep_name + ".pdf")).is_file(),
+            "docx": (rep_dir / (rep_name + ".docx")).is_file(),
+        }
         bundles.append(bundle)
     bundles.sort(key=lambda b: b["resultsVersion"])
     return bundles
@@ -330,13 +367,35 @@ def artifact_map(root, payload):
     return amap
 
 
+def report_map(root, payload):
+    """Route path -> absolute file path for report PDF/DOCX downloads.
+    Same exact-key contract as artifact_map: built ONLY from files on disk,
+    looked up by exact key — no filesystem joins with client input."""
+    rmap = {}
+    for component, b in iter_bundles(payload):
+        fmts = b.get("reportFormats") or {}
+        for ext in ("pdf", "docx"):
+            if not fmts.get(ext):
+                continue
+            p = (root / "plans" / "reports"
+                 / ("%s-r%d-report.%s" % (component, b["resultsVersion"], ext)))
+            if p.is_file():
+                rmap["/report/%s/r%d.%s" % (component, b["resultsVersion"], ext)] = p
+    return rmap
+
+
 def split_focus(focus):
+    """--focus slug[:rN][:view] -> (slug, resultsVersion, view).
+    view: only "reports" today; None means the default view for the target."""
     if not focus:
-        return None, None
+        return None, None, None
+    m = re.fullmatch(r"(.+):r(\d+):(reports)", focus)
+    if m:
+        return m.group(1), int(m.group(2)), m.group(3)
     m = re.fullmatch(r"(.+):r(\d+)", focus)
     if m:
-        return m.group(1), int(m.group(2))
-    return focus, None
+        return m.group(1), int(m.group(2)), None
+    return focus, None, None
 
 
 def collect_drift(root, exec_groups, master_content="", archive_contents=()):
@@ -490,6 +549,8 @@ def collect_payload(root, mode, focus):
         all_paths.extend(v["path"] for v in g["versions"])
         all_paths.extend(s["path"] for s in g.get("draftSnapshots", []))
         all_paths.extend(b["manifestRaw"]["path"] for b in g.get("results", []))
+        all_paths.extend(b["publishedReport"]["path"] for b in g.get("results", [])
+                         if b.get("publishedReport"))
     all_paths.extend(r["path"] for r in reviews)
     if history is not None:
         all_paths.append("plans/history.md")
@@ -780,6 +841,7 @@ def serve(root, payload, args):
     batch_id = uuid.uuid4().hex[:8]
     boot_id = uuid.uuid4().hex
     amap = artifact_map(root, payload)
+    rmap = report_map(root, payload)
     publish_token = hashlib.sha256(os.urandom(32)).hexdigest()
     payload["publishToken"] = publish_token  # board reads window.__RP_PUBLISH_TOKEN__ from this
     payload["projectId"] = project_id(root)
@@ -848,6 +910,22 @@ def serve(root, payload, args):
                 mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
                 self.send_response(200)
                 self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if self.path.startswith("/report/"):
+                f = rmap.get(self.path)
+                if f is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                data = f.read_bytes()
+                mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Disposition",
+                                 'attachment; filename="%s"' % f.name)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -1085,9 +1163,10 @@ def render_static_html(root, focus=None):
     """The self-contained static board as a string. Pure: writes no file and
     touches no gitignore. Shared by --export (which writes it to disk) and
     --publish (which pushes it to the gh-pages branch)."""
-    slug, focus_results = split_focus(focus)
+    slug, focus_results, focus_view = split_focus(focus)
     payload = collect_payload(root, "static", slug)
     payload["focusResults"] = focus_results
+    payload["focusView"] = focus_view
     build_assets(root, payload)
     return inject(template_path().read_text(encoding="utf-8"), payload)
 
@@ -1258,7 +1337,9 @@ def pull(root, args):
         meta = {"sessionId": client or author, "generatedAt": "",
                 "focus": None, "reviewer": author,
                 "shareHash": group[-1].get("shareHash")}
-        doc = assemble_hosted_document([c["annotation"] for c in group], meta)
+        doc = assemble_hosted_document(
+            [dict(c["annotation"], docHash=c.get("docHash")) for c in group],
+            meta, root=root)
         prefix = re.sub(r"[^A-Za-z0-9._-]+", "-", "%s-%s" % (author, client))[:40] or "group"
         keyhash = hashlib.sha256(("%s\x00%s" % (author, client)).encode()).hexdigest()[:12]
         fname = "%s-%s.txt" % (prefix, keyhash)
@@ -1362,9 +1443,10 @@ def export(root, args):
 
 
 def share(root, args):
-    slug, focus_results = split_focus(args.focus)
+    slug, focus_results, focus_view = split_focus(args.focus)
     payload = collect_payload(root, "remote", slug)
     payload["focusResults"] = focus_results
+    payload["focusView"] = focus_view
     build_assets(root, payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     out = (
@@ -1660,7 +1742,7 @@ def neutralize_collaborator_text(s, inline=False):
 
 
 _VIEW_LABEL = {"tracker": "Tracker", "timeline": "Timeline",
-               "reviews": "Reviews", "archive": "Archive"}
+               "reviews": "Reviews", "archive": "Archive", "reports": "Reports"}
 
 
 def _nt(v):
@@ -1672,10 +1754,14 @@ def _neutralized_annotation(a):
     """Copy of a comment annotation with all collaborator text neutralized,
     for embedding in the fence's machine-readable `annotations`."""
     a = dict(a)
-    # signoff is a researcher-only action key from the board control surface
-    # (v0.15 spec); stripped preemptively so hosted pulls can never forward it.
-    for _k in ("verdict", "reviewRequest", "reportRequest", "signoff"):
+    # Researcher-only action keys can never ride a hosted pull. Iterate the
+    # single source of truth — a second hand-maintained tuple is how `reopen`
+    # slipped through when the control surface added it.
+    for _k in ACTION_KEYS:
         a.pop(_k, None)
+    dh = a.get("docHash")
+    if dh is not None and not (isinstance(dh, str) and re.fullmatch(r"[0-9a-f]{8}", dh)):
+        a.pop("docHash", None)
     if "quote" in a:
         a["quote"] = neutralize_collaborator_text(a.get("quote", ""), inline=True)
     if "comment" in a:
@@ -1701,7 +1787,48 @@ def _neutralized_annotation(a):
     return a
 
 
-def assemble_hosted_document(annotations, meta):
+_REPORT_DOCKEY_RE = re.compile(r"plans/reports/[A-Za-z0-9._-]+-r\d+-report\.md")
+# Component regex must start alphanumeric (real components are NN-slug) — this
+# rejects "." and ".." so a poisoned component can't path-escape upward.
+_COMPONENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _doc_stale(root, a):
+    """True/False when the comment's docHash is verifiable against a plain file
+    on disk; None when not our job (no root, unsupported type, bad fields).
+    JSON-serialization-hashed types (result/script comments) are NOT verifiable
+    here — JSON.stringify is not byte-portable to Python."""
+    dh = a.get("docHash")
+    if root is None or not isinstance(dh, str) or not re.fullmatch(r"[0-9a-f]{8}", dh):
+        return None
+    t = a.get("type")
+    if t == "plan-comment":
+        comp, ver = a.get("component"), a.get("version")
+        if (not isinstance(comp, str) or not _COMPONENT_RE.fullmatch(comp)
+                or not isinstance(ver, int) or isinstance(ver, bool)
+                or not (0 <= ver <= 9999)):
+            return None
+        p = root / "plans" / "execution" / comp / ("v%d.md" % ver)
+    elif t == "doc-comment" and a.get("view") == "reports":
+        key = a.get("docKey")
+        if (not isinstance(key, str) or len(key) > 300
+                or not _REPORT_DOCKEY_RE.fullmatch(key)):
+            return None
+        p = root / key
+    else:
+        return None
+    try:
+        if not p.is_file():
+            return True  # target gone — definitely not current
+        content = p.read_text(encoding="utf-8", errors="replace")
+        if t == "doc-comment":
+            content = _strip_report_marker(content)
+        return fnv1a_hex(content) != dh
+    except (OSError, ValueError):
+        return None  # unverifiable, not stale
+
+
+def assemble_hosted_document(annotations, meta, root=None):
     """Assemble ONE collaborator feedback document (comment annotations only).
 
     NEVER emits verdict/review/report blocks — those are researcher-only actions
@@ -1766,6 +1893,9 @@ def assemble_hosted_document(annotations, meta):
             continue  # unknown type — never route it
         for ln in neutralize_collaborator_text(a.get("comment", "")).split("\n"):
             lines.append("> " + ln)
+        if _doc_stale(root, a):
+            lines.append("")
+            lines.append("⚠ This comment may refer to an older version of its target document.")
         lines.append("")
     body = "\n".join(lines).rstrip()
     fence_meta = {
@@ -2045,9 +2175,10 @@ def main():
     elif args.set_password:
         set_password(root, args)
     else:
-        slug, focus_results = split_focus(args.focus)
+        slug, focus_results, focus_view = split_focus(args.focus)
         payload = collect_payload(root, "live", slug)
         payload["focusResults"] = focus_results
+        payload["focusView"] = focus_view
         build_assets(root, payload)
         if args.seed_annotations:
             # Agent plan review (v0.9): reviewer-produced comments, seeded as

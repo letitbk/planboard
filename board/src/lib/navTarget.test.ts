@@ -77,6 +77,16 @@ describe("navTargetFor", () => {
     });
   });
 
+  it("reports doc-comment navigates to the reports tab with component + bundle", () => {
+    expect(
+      t({
+        id: "1", type: "doc-comment", view: "reports",
+        docKey: "plans/reports/05-hetero-r3-report.md", scope: "", quote: "q", prefix: "",
+        suffix: "", sectionHeading: "", occurrenceIndex: 0, anchored: true, comment: "c",
+      }),
+    ).toMatchObject({ tab: "reports", component: "05-hetero", resultsVersion: 3 });
+  });
+
   it("reviews doc comment targets the review path", () => {
     expect(
       t({

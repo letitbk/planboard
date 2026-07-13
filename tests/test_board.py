@@ -121,6 +121,20 @@ def add_archive(root: Path):
     return arch
 
 
+def add_report(root: Path):
+    """A generated report (md + pdf, no docx) for 01-data-prep r1."""
+    rep = root / "plans" / "reports"
+    rep.mkdir(parents=True, exist_ok=True)
+    (rep / "01-data-prep-r1-report.md").write_text(
+        '<!-- rp-report {"schemaVersion": 1, "component": "01-data-prep", "bundle": 1, '
+        '"plan": 1, "verdict": "accepted", "generated": "2026-07-03T12:00"} -->\n'
+        "# Data prep — Report (r1)\n\nFindings body.\n",
+        encoding="utf-8",
+    )
+    (rep / "01-data-prep-r1-report.pdf").write_bytes(b"%PDF-1.4 stub")
+    return rep
+
+
 def run_board(cwd, *argv):
     return subprocess.run(
         [sys.executable, str(BOARD), *argv],
@@ -579,9 +593,26 @@ class TestAssets(unittest.TestCase):
             self.assertNotIn("/artifact/01-data-prep/r1/../secret", amap)
 
     def test_focus_results_parsing(self):
-        self.assertEqual(board.split_focus("02-x:r3"), ("02-x", 3))
-        self.assertEqual(board.split_focus("02-x"), ("02-x", None))
-        self.assertEqual(board.split_focus(None), (None, None))
+        self.assertEqual(board.split_focus("02-x:r3"), ("02-x", 3, None))
+        self.assertEqual(board.split_focus("02-x"), ("02-x", None, None))
+        self.assertEqual(board.split_focus(None), (None, None, None))
+
+
+class TestReportDownloadRoutes(unittest.TestCase):
+    def test_report_map_routes_only_existing_formats(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            payload = board.collect_payload(root, "live", None)
+            rmap = board.report_map(root, payload)
+            self.assertIn("/report/01-data-prep/r1.pdf", rmap)
+            self.assertNotIn("/report/01-data-prep/r1.docx", rmap)
+            self.assertTrue(rmap["/report/01-data-prep/r1.pdf"].is_file())
+
+    def test_report_map_empty_without_reports(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            self.assertEqual(board.report_map(root, payload), {})
 
 
 class TestExportResults(unittest.TestCase):
@@ -1902,6 +1933,17 @@ class TestServeHTTP(unittest.TestCase):
         payload = extract_payload(html)
         self.assertEqual(payload["projectId"], board.project_id(self.root))
 
+    def test_report_route_serves_pdf_as_attachment(self):
+        add_report(self.root)
+        url, info, t = serve_in_thread(self.root)
+        status, body, headers = self._get_raw(url, "/report/01-data-prep/r1.pdf")
+        self.assertEqual(status, 200)
+        self.assertIn("attachment", headers.get("Content-Disposition", ""))
+        self.assertEqual(body, "%PDF-1.4 stub")
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self._get_raw(url, "/report/01-data-prep/r9.pdf")
+        self.assertEqual(cm.exception.code, 404)
+
 
 class TestBoardTokenPlumbing(unittest.TestCase):
     def test_token_ok_truth_table(self):
@@ -2369,6 +2411,198 @@ class TestRelaunchE2E(unittest.TestCase):
                     proc_a.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc_a.kill()
+
+
+class TestNeutralizedAnnotationActionKeys(unittest.TestCase):
+    def test_every_action_key_is_stripped(self):
+        a = {"type": "doc-comment", "view": "tracker", "docKey": "tracker",
+             "quote": "q", "comment": "c",
+             "verdict": {"x": 1}, "reviewRequest": {"x": 1},
+             "reportRequest": {"x": 1}, "signoff": {"x": 1}, "reopen": {"x": 1}}
+        out = board._neutralized_annotation(a)
+        for key in board.ACTION_KEYS:
+            self.assertNotIn(key, out)
+
+    def test_hosted_document_fence_carries_no_reopen(self):
+        a = {"type": "doc-comment", "view": "tracker", "docKey": "tracker",
+             "quote": "q", "comment": "c", "reopen": {"component": "01-x", "resultsVersion": 1}}
+        doc = board.assemble_hosted_document([a], {"sessionId": "s", "generatedAt": "",
+                                                   "focus": None, "reviewer": "r", "shareHash": "h"})
+        self.assertNotIn("reopen", doc)
+
+
+class TestPublishedReportCollection(unittest.TestCase):
+    def _payload(self, root, mode="live"):
+        return board.collect_payload(root, mode, None)
+
+    def test_bundle_without_report_has_absent_shape(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            p = self._payload(root)
+            b = p["files"]["executionPlans"][0]["results"][0]
+            self.assertIsNone(b["publishedReport"])
+            self.assertEqual(b["reportFormats"], {"pdf": False, "docx": False})
+
+    def test_bundle_with_report_collects_content_and_formats(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            p = self._payload(root)
+            b = p["files"]["executionPlans"][0]["results"][0]
+            self.assertEqual(b["publishedReport"]["path"],
+                             "plans/reports/01-data-prep-r1-report.md")
+            self.assertIn("Findings body.", b["publishedReport"]["content"])
+            self.assertEqual(b["reportFormats"], {"pdf": True, "docx": False})
+
+    def test_payload_files_and_share_hash_cover_the_report(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            base = board.share_hash(board.payload_files(self._payload(root, "remote")))
+            add_report(root)
+            p2 = self._payload(root, "remote")
+            paths = [f["path"] for f in board.payload_files(p2)]
+            self.assertIn("plans/reports/01-data-prep-r1-report.md", paths)
+            self.assertNotEqual(base, board.share_hash(board.payload_files(p2)))
+
+
+class TestExportSmoke(unittest.TestCase):
+    def test_static_export_embeds_published_report(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            html = board.render_static_html(root, None)
+            self.assertIn("publishedReport", html)
+            self.assertIn("Findings body.", html)
+            self.assertIn("reportFormats", html)
+
+    def test_hosted_render_embeds_published_report(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            html = board.render_hosted_html(root)
+            self.assertIn("publishedReport", html)
+            self.assertIn("Findings body.", html)
+
+
+class TestSplitFocusThreePart(unittest.TestCase):
+    def test_two_part_unchanged(self):
+        self.assertEqual(board.split_focus("01-x:r2"), ("01-x", 2, None))
+        self.assertEqual(board.split_focus("01-x"), ("01-x", None, None))
+        self.assertEqual(board.split_focus(None), (None, None, None))
+
+    def test_reports_suffix(self):
+        self.assertEqual(board.split_focus("01-x:r2:reports"), ("01-x", 2, "reports"))
+
+    def test_unknown_suffix_is_part_of_the_slug(self):
+        # Only ':reports' is a view; anything else keeps today's fallback parse.
+        self.assertEqual(board.split_focus("01-x:r2:bogus"), ("01-x:r2:bogus", None, None))
+
+    def test_static_render_carries_focus_view(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            html = board.render_static_html(root, "01-data-prep:r1:reports")
+            self.assertIn('"focusView": "reports"', html)
+
+    def test_share_focus_reports_view_pins_slug_and_view(self):
+        # --focus NN-slug:rN:reports must reach the shared html as BOTH the
+        # focusView (the reports view) and the plain slug (no :rN:reports
+        # suffix) — the share-mode counterpart to test_static_render_carries_focus_view.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            args = argparse.Namespace(focus="01-data-prep:r1:reports", share="DEFAULT")
+            with self.assertRaises(SystemExit):
+                board.share(root, args)
+            html = (root / "plans" / "board-share.html").read_text(encoding="utf-8")
+            self.assertIn('"focusView": "reports"', html)
+            self.assertIn('"focus": "01-data-prep"', html)
+
+
+class TestPullStaleness(unittest.TestCase):
+    def test_fnv1a_matches_client_hashcontent(self):
+        # Pinned vectors; Task 7 pins the SAME values against the TS hashContent.
+        self.assertEqual(board.fnv1a_hex(""), "811c9dc5")
+        self.assertEqual(board.fnv1a_hex("a"), "e40c292c")
+        v = board.fnv1a_hex("plan body\n")
+        self.assertEqual(len(v), 8)
+        self.assertEqual(v, board.fnv1a_hex("plan body\n"))  # deterministic
+        self.assertEqual(board.fnv1a_hex("plan body\n"), "723e3740")
+        # non-ASCII goes through UTF-16 code units, not bytes
+        self.assertNotEqual(board.fnv1a_hex("café"), board.fnv1a_hex("cafe"))
+
+    def test_strip_report_marker(self):
+        c = '<!-- rp-report {"schemaVersion": 1} -->\n# Body\n'
+        self.assertEqual(board._strip_report_marker(c), "# Body\n")
+        self.assertEqual(board._strip_report_marker("# Body\n"), "# Body\n")
+
+    def test_dochash_survives_neutralization_when_hex(self):
+        a = {"type": "plan-comment", "component": "01-x", "version": 1,
+             "quote": "q", "comment": "c", "docHash": "deadbeef"}
+        self.assertEqual(board._neutralized_annotation(a)["docHash"], "deadbeef")
+        a["docHash"] = "<script>"
+        self.assertNotIn("docHash", board._neutralized_annotation(a))
+
+    def test_stale_plan_comment_is_tagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            content = (root / "plans" / "execution" / "01-data-prep" / "v1.md").read_text(encoding="utf-8")
+            current = board.fnv1a_hex(content)
+            fresh = {"type": "plan-comment", "component": "01-data-prep", "version": 1,
+                     "quote": "q", "comment": "fresh", "docHash": current}
+            stale = {"type": "plan-comment", "component": "01-data-prep", "version": 1,
+                     "quote": "q", "comment": "stale", "docHash": "00000000"}
+            doc = board.assemble_hosted_document([fresh, stale], {"sessionId": "s",
+                "generatedAt": "", "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertEqual(doc.count("may refer to an older version"), 1)
+            self.assertLess(doc.index("fresh"), doc.index("may refer to an older version"))
+
+    def test_stale_report_comment_hashes_body_without_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_report(root)
+            body = board._strip_report_marker(
+                (root / "plans" / "reports" / "01-data-prep-r1-report.md").read_text(encoding="utf-8"))
+            a = {"type": "doc-comment", "view": "reports",
+                 "docKey": "plans/reports/01-data-prep-r1-report.md",
+                 "quote": "q", "comment": "c", "docHash": board.fnv1a_hex(body)}
+            doc = board.assemble_hosted_document([a], {"sessionId": "s", "generatedAt": "",
+                "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertNotIn("may refer to an older version", doc)
+            self.assertIn("Reports", doc)  # _VIEW_LABEL entry
+
+    def test_json_hashed_types_pass_through_untagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            a = {"type": "result-comment", "component": "01-data-prep", "resultsVersion": 1,
+                 "target": {"kind": "report", "quote": "q"}, "comment": "c", "docHash": "12345678"}
+            doc = board.assemble_hosted_document([a], {"sessionId": "s", "generatedAt": "",
+                "focus": None, "reviewer": "r", "shareHash": "h"}, root=root)
+            self.assertNotIn("may refer to an older version", doc)
+
+    def test_poisoned_fields_never_crash_the_pull(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            meta = {"sessionId": "s", "generatedAt": "", "focus": None,
+                    "reviewer": "r", "shareHash": "h"}
+            # Python 3.11+ guards str<->int conversion above 4300 digits by
+            # default; raise the ceiling just to construct these poisoned
+            # literals in-process. _doc_stale's own range check (0-9999)
+            # never touches str<->int conversion, so this doesn't mask
+            # anything the fix is responsible for.
+            old_limit = sys.get_int_max_str_digits()
+            sys.set_int_max_str_digits(6000)
+            self.addCleanup(sys.set_int_max_str_digits, old_limit)
+            poison = [
+                {"type": "plan-comment", "component": "01-data-prep",
+                 "version": int("9" * 5000), "quote": "q", "comment": "big-version",
+                 "docHash": "00000000"},
+                {"type": "plan-comment", "component": "01-data-prep",
+                 "version": int("9" * 1000), "quote": "q", "comment": "long-name",
+                 "docHash": "00000000"},
+                {"type": "doc-comment", "view": "reports",
+                 "docKey": "plans/reports/" + "a" * 5000 + "-r1-report.md",
+                 "quote": "q", "comment": "long-key", "docHash": "00000000"},
+                {"type": "plan-comment", "component": "..", "version": 1,
+                 "quote": "q", "comment": "dotdot", "docHash": "00000000"},
+            ]
+            doc = board.assemble_hosted_document(poison, meta, root=root)
+            # None of these are verifiable -> no stale tag, and no crash.
+            self.assertNotIn("may refer to an older version", doc)
 
 
 if __name__ == "__main__":

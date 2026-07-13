@@ -698,6 +698,8 @@ const cleaningResults = [
       "table1.tex": "data:text/plain;base64,JXRhYmxlMQ==",
       "table1.csv": "data:text/csv;base64,YSxiCjEsMg==",
     },
+    publishedReport: null,
+    reportFormats: { pdf: false, docx: false },
   },
 ];
 
@@ -743,6 +745,8 @@ const descriptivesResults = [
     verdictRaw: null,
     scripts: [],
     assets: { "fig-means.svg": FIG_SVG },
+    publishedReport: null,
+    reportFormats: { pdf: false, docx: false },
   },
   {
     resultsVersion: 2,
@@ -772,6 +776,8 @@ const descriptivesResults = [
     verdictRaw: null,
     scripts: [],
     assets: {} as Record<string, string>,
+    publishedReport: null,
+    reportFormats: { pdf: false, docx: false },
   },
 ];
 

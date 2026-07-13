@@ -47,6 +47,7 @@ export default function Tracker({
   onRequestReview,
   onSignoff,
   onOpenArchive,
+  onOpenReport,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -64,6 +65,7 @@ export default function Tracker({
   onRequestReview?: (req: ReviewRequest) => void;
   onSignoff?: (req: SignoffRequest) => void;
   onOpenArchive?: () => void;
+  onOpenReport?: (slug: string, resultsVersion: number) => void;
 }) {
   const mp = parseMasterPlan(data.files.masterPlan.content);
 
@@ -492,13 +494,28 @@ export default function Tracker({
                           : latest.verdict?.status === "changes-requested"
                             ? "✕"
                             : "●";
+                      const withReport = [...(g!.results ?? [])]
+                        .reverse()
+                        .find((b) => b.publishedReport);
                       return (
-                        <button
-                          className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
-                          onClick={() => onOpenResults(slug!)}
-                        >
-                          r{latest.resultsVersion} {mark}
-                        </button>
+                        <span className="inline-flex items-center gap-2">
+                          <button
+                            className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
+                            onClick={() => onOpenResults(slug!)}
+                          >
+                            r{latest.resultsVersion} {mark}
+                          </button>
+                          {withReport && onOpenReport && (
+                            <button
+                              className="text-xs font-medium text-emerald-700 dark:text-emerald-400 underline hover:text-emerald-900 dark:hover:text-emerald-300"
+                              onClick={() =>
+                                onOpenReport(slug!, withReport.resultsVersion)
+                              }
+                            >
+                              report
+                            </button>
+                          )}
+                        </span>
                       );
                     })()}
                   </td>

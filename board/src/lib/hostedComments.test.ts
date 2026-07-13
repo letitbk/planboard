@@ -32,6 +32,29 @@ function boardWith(planContent: string, results?: ResultsBundle[]): BoardData {
   };
 }
 
+const REPORT_MARKER =
+  '<!-- rp-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, ' +
+  '"plan": 1, "verdict": "pending", "generated": "2026-07-10T14:30:00Z"} -->';
+
+// A board with a published report on 01-x r1, marker-stamped like the real
+// generator output — see reportMarker.ts's ReportMarker doc comment.
+function dataWithReport(): BoardData {
+  const bundle: ResultsBundle = {
+    ...resultsBundle(1, "manifest-v1"),
+    publishedReport: {
+      path: "plans/reports/01-x-r1-report.md",
+      content: `${REPORT_MARKER}\n# R\n`,
+    },
+  };
+  return boardWith("plan content", [bundle]);
+}
+
+// A board whose 01-x v1 plan content is exactly `content` — matches
+// board.fnv1a_hex's Python-side pin in tests/test_board.py.
+function planData(content: string): BoardData {
+  return boardWith(content);
+}
+
 function resultsBundle(resultsVersion: number, manifestContent: string): ResultsBundle {
   return {
     resultsVersion,
@@ -43,8 +66,12 @@ function resultsBundle(resultsVersion: number, manifestContent: string): Results
     verdictRaw: null,
     scripts: [],
     assets: {},
+    publishedReport: null,
   };
 }
+
+// hostedComments.test.ts — cross-language pin, mirrors tests/test_board.py
+// TestPullStaleness. Task 10 wires targetHash; this documents the contract now.
 
 const planComment = (): PlanCommentAnnotation => ({
   id: "n1", type: "plan-comment", planPath: "plans/execution/01-x/v1.md", component: "01-x", version: 1,
@@ -124,6 +151,65 @@ describe("per-document staleness", () => {
     // Sanity: changing v1 itself DOES stale the comment.
     const v1Changed = boardWith("original", [resultsBundle(1, "manifest-v1-EDITED")]);
     expect(isStale(c, v1Changed)).toBe(true);
+  });
+
+  it("a result-comment's targetHash ignores the DERIVED publishedReport/reportFormats fields but reacts to a real bundle field", () => {
+    const annotation = resultComment(1);
+    const base = resultsBundle(1, "manifest-v1");
+    const docHash = targetHash(boardWith("original", [base]), annotation);
+
+    // Regenerating the report (even just restamping the marker) must not
+    // stale a result-comment on the unchanged, immutable bundle.
+    const reportChanged = boardWith("original", [
+      { ...base, publishedReport: { path: "plans/reports/x.md", content: "# R\n" } },
+    ]);
+    expect(targetHash(reportChanged, annotation)).toBe(docHash);
+
+    // Running pandoc (which only flips reportFormats) must not stale it either.
+    const formatsChanged = boardWith("original", [
+      { ...base, reportFormats: { pdf: true, docx: false } },
+    ]);
+    expect(targetHash(formatsChanged, annotation)).toBe(docHash);
+
+    // A real bundle field change (manifestRaw content) DOES stale it.
+    const bundleChanged = boardWith("original", [resultsBundle(1, "manifest-v1-EDITED")]);
+    expect(targetHash(bundleChanged, annotation)).not.toBe(docHash);
+  });
+});
+
+describe("targetHash: reports branch + cross-language pin", () => {
+  it("reports doc-comment hashes the report body without the marker line", () => {
+    const d = dataWithReport(); // bundle.publishedReport.content = `${MARKER}\n# R\n`
+    const a = {
+      id: "1", type: "doc-comment", view: "reports",
+      docKey: "plans/reports/01-x-r1-report.md", scope: "", quote: "q", prefix: "",
+      suffix: "", sectionHeading: "", occurrenceIndex: 0, anchored: true, comment: "c",
+    } as const;
+    const h1 = targetHash(d, a);
+    expect(h1).not.toBeNull();
+    // regenerating with ONLY a new marker timestamp must not invalidate comments
+    const d2 = structuredClone(d);
+    d2.files.executionPlans[0].results![0].publishedReport!.content =
+      d.files.executionPlans[0].results![0].publishedReport!.content.replace("14:30", "15:00");
+    expect(targetHash(d2, a)).toBe(h1);
+    // a body change DOES invalidate
+    const d3 = structuredClone(d);
+    d3.files.executionPlans[0].results![0].publishedReport!.content += "\nmore";
+    expect(targetHash(d3, a)).not.toBe(h1);
+  });
+
+  it("cross-language FNV pins match tests/test_board.py TestPullStaleness", () => {
+    // targetHash(plan-comment) is hashContent(plan content); pin via a known content.
+    const d = planData("plan body\n"); // v1 content exactly "plan body\n"
+    const a = {
+      id: "1", type: "plan-comment", component: "01-x", version: 1,
+      planPath: "plans/execution/01-x/v1.md", isDraft: false, scope: "", quote: "q",
+      prefix: "", suffix: "", sectionHeading: "", occurrenceIndex: 0, anchored: true,
+      comment: "c",
+    } as const;
+    // pinned via `python3 -c "…; print(board.fnv1a_hex('plan body\n'))"` — same
+    // literal is asserted in TestPullStaleness.test_fnv1a_matches_client_hashcontent.
+    expect(targetHash(d, a)).toBe("723e3740");
   });
 });
 

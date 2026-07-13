@@ -169,6 +169,17 @@ describe("buildFeedbackMarkdown", () => {
     expect(VIEW_LABEL.reviews).toBe("Reviews");
   });
 
+  it("doc-comment on a report is labeled Reports", () => {
+    const md = buildFeedbackMarkdown([
+      { id: "1", type: "doc-comment", view: "reports",
+        docKey: "plans/reports/01-x-r1-report.md", scope: "", quote: "the finding",
+        prefix: "", suffix: "", sectionHeading: "", occurrenceIndex: 0,
+        anchored: true, comment: "check this" },
+    ], null);
+    expect(md).toContain("[Reports]");
+    expect(md).toContain('Feedback on: "the finding"');
+  });
+
   it("renders (via author) for script-comment and general", () => {
     const anns: Annotation[] = [
       { id: "s", type: "script-comment", component: "01-x", resultsVersion: 1,

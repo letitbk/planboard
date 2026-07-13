@@ -6,6 +6,7 @@ export interface BoardData {
   mode: "live" | "static" | "remote" | "hosted";
   focus: string | null;
   focusResults?: number | null; // --focus slug:rN opens the Results view on rN
+  focusView?: "reports" | null;
   drift?: {
     // filesystem/git hygiene flags (feature #7); researcher modes only
     staleBoardHtml: boolean | null;
@@ -75,6 +76,8 @@ export interface ResultsBundle {
   verdictRaw: BoardFile | null;
   scripts: BoardFile[];
   assets: Record<string, string>;
+  publishedReport: BoardFile | null;
+  reportFormats?: { pdf: boolean; docx: boolean };
 }
 
 export interface ResultsManifest {
@@ -364,7 +367,7 @@ export interface SeededAnnotation {
 export interface DocCommentAnnotation {
   id: string;
   type: "doc-comment";
-  view: "tracker" | "timeline" | "reviews" | "archive";
+  view: "tracker" | "timeline" | "reviews" | "archive" | "reports";
   docKey: string; // "tracker" | "timeline" | review file payload path | "archive:<path>"
   scope: string; // data-annot-scope id, "" when selection was outside stamps
   quote: string;
