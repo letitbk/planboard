@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **In-board artifact viewer.** Clicking a text artifact (`.md`, `.csv`, `.tsv`, `.txt`, `.log`, `.json`, `.tex`) opens a viewer modal on the board — markdown rendered like the Reports tab (figures included), csv/tsv as a table, the rest as plain text — instead of downloading the file. Works on live, exported, and hosted boards.
+
+### Fixed
+- Markdown links now enforce a scheme allowlist (`javascript:`/`data:`/relative links render as plain text) — closes a script-injection path reachable from report bodies.
+- The live `/artifact/` route serves text types inline and forces active content (`.html`, `.svg` documents, unknown types) to download, with `nosniff` and a sandboxing CSP — artifacts can no longer navigate same-origin with access to the board's action token.
+
 ## [0.15.0] - 2026-07-12
 
 The board learns to read: a new Reports tab renders each component's shareable report right on the board — figures inline, version chips, staleness flags, PDF/DOCX downloads — and the Results view slims down into a reviewing surface with validation up front and one Evidence gallery.
