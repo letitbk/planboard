@@ -803,6 +803,27 @@ export const devData: BoardData = {
   generatedAt: "2026-07-02T12:00:00-04:00",
   mode: "live",
   focus: null,
+  modelProfile: {
+    path: "plans/model-profile.md",
+    exists: true,
+    baselineHash: "dev0000000000000000000000000000000000000000000000000000000000dev",
+    raw: "",
+    proseBefore:
+      "How each research-plans stage picks a Claude model. **nudge**: Claude tells you the profile's model and suggests `/model`; you decide. **agent**: the delegated stage runs on the profile's model automatically.",
+    proseAfter:
+      "Planning gets the strongest model at max effort; execution a fast cheap one; review and validation a smarter prior at low effort.",
+    rows: [
+      { stage: "plan", label: "plan (co-authoring)", model: "opus", effort: "max", mechanism: "nudge" },
+      { stage: "execute", label: "execute (analysis)", model: "sonnet", effort: null, mechanism: "nudge" },
+      { stage: "sync", label: "sync", model: "inherit", effort: null, mechanism: "nudge" },
+      { stage: "plan-review", label: "plan review (verdict + grade)", model: "opus", effort: "medium", mechanism: "agent" },
+      { stage: "results-validation", label: "results validation", model: "opus", effort: "low", mechanism: "agent" },
+      { stage: "board-reviewer", label: "board reviewer panel", model: "opus", effort: "low", mechanism: "agent" },
+    ],
+    editable: true,
+    warnings: [],
+    agentsGitignored: false,
+  },
   drift: {
     staleBoardHtml: true,
     leftoverStaging: ["02-data-cleaning"],

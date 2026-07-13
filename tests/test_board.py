@@ -2605,6 +2605,283 @@ class TestPullStaleness(unittest.TestCase):
             self.assertNotIn("may refer to an older version", doc)
 
 
+DEFAULT_PROFILE = (SCRIPTS.parent / "templates" / "model-profile.md").read_text(encoding="utf-8")
+
+
+def add_profile(root, profile=DEFAULT_PROFILE):
+    (root / "plans" / "model-profile.md").write_text(profile, encoding="utf-8")
+
+
+class TestModelProfileRead(unittest.TestCase):
+    def test_present_with_six_rows_when_file_exists(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            payload = board.collect_payload(root, "live", None)
+            mp = payload["modelProfile"]
+            self.assertEqual(mp["path"], "plans/model-profile.md")
+            self.assertTrue(mp["exists"])
+            self.assertTrue(mp["editable"])
+            self.assertEqual([r["stage"] for r in mp["rows"]],
+                             ["plan", "execute", "sync", "plan-review",
+                              "results-validation", "board-reviewer"])
+            sha = hashlib.sha256((root / "plans" / "model-profile.md").read_bytes()).hexdigest()
+            self.assertEqual(mp["baselineHash"], sha)
+
+    def test_absent_when_no_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            payload = board.collect_payload(root, "live", None)
+            self.assertNotIn("modelProfile", payload)
+
+    def test_static_includes_remote_focus_omits(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            self.assertIn("modelProfile", board.collect_payload(root, "static", None))
+            self.assertIn("modelProfile", board.collect_payload(root, "remote", None))
+            self.assertNotIn("modelProfile",
+                             board.collect_payload(root, "remote", "01-data-prep"))
+
+    def test_unreadable_file_yields_disabled_snapshot(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "plans" / "model-profile.md").write_bytes(b"\xff\xfe not utf8")
+            payload = board.collect_payload(root, "live", None)
+            mp = payload["modelProfile"]
+            self.assertTrue(mp["exists"])
+            self.assertFalse(mp["editable"])
+            self.assertEqual(mp["rows"], [])
+            self.assertTrue(mp["warnings"])
+
+    def test_noncanonical_file_not_editable_but_present(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            add_profile(root, DEFAULT_PROFILE.replace("| sync | inherit | — | nudge |\n", ""))
+            mp = board.collect_payload(root, "live", None)["modelProfile"]
+            self.assertFalse(mp["editable"])
+            self.assertEqual(len(mp["rows"]), 5)
+
+    def test_get_endpoint_returns_fresh_disk_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            status, body, _ = http_json(url, "/api/model-profile")
+            self.assertEqual(status, 200)
+            self.assertEqual(body["modelProfile"]["rows"][0]["model"], "opus")
+            # edit on disk AFTER boot — GET must reflect it (frozen boot payload would not)
+            add_profile(root, DEFAULT_PROFILE.replace(
+                "| plan (co-authoring) | opus | max | nudge |",
+                "| plan (co-authoring) | sonnet | max | nudge |"))
+            status, body, _ = http_json(url, "/api/model-profile")
+            self.assertEqual(body["modelProfile"]["rows"][0]["model"], "sonnet")
+
+    def test_get_endpoint_null_when_no_profile(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            url, info, t = serve_in_thread(root)
+            status, body, _ = http_json(url, "/api/model-profile")
+            self.assertEqual(status, 200)
+            self.assertIsNone(body["modelProfile"])
+
+
+DEFAULT_ROW_VALUES = {
+    "plan": ("opus", "max"), "execute": ("sonnet", None), "sync": ("inherit", None),
+    "plan-review": ("opus", "medium"), "results-validation": ("opus", "low"),
+    "board-reviewer": ("opus", "low"),
+}
+
+
+def profile_rows(**overrides):
+    v = dict(DEFAULT_ROW_VALUES)
+    v.update(overrides)
+    return [{"stage": s, "model": m, "effort": e} for s, (m, e) in v.items()]
+
+
+class TestModelProfileWrite(unittest.TestCase):
+    def _baseline(self, url):
+        _, body, _ = http_json(url, "/api/model-profile")
+        return body["modelProfile"]["baselineHash"]
+
+    def _save(self, url, token, bh, rows):
+        return http_json(url, "/api/model-profile",
+                         body={"boardToken": token, "baselineHash": bh, "rows": rows})
+
+    def test_no_token_403(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            status, _, _ = http_json(url, "/api/model-profile", body={"rows": profile_rows()})
+            self.assertEqual(status, 403)
+
+    def test_non_object_body_400(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            status, _, _ = http_json(url, "/api/model-profile", body=[1, 2, 3])
+            self.assertEqual(status, 400)
+
+    def test_valid_edit_writes_regenerates_and_stays_healthy(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            status, body, _ = self._save(url, info["boardToken"], bh,
+                                          profile_rows(**{"plan-review": ("sonnet", "medium")}))
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body["saved"])
+            text = (root / "plans" / "model-profile.md").read_text()
+            self.assertIn("| plan review (verdict + grade) | sonnet | medium | agent |", text)
+            agent = (root / ".claude" / "agents" / "rp-plan-reviewer.md").read_text()
+            self.assertIn("model: sonnet", agent)
+            self.assertTrue(body["restartNeeded"])
+            self.assertIn("plan-review", body["changedAgentStages"])
+            # route did NOT end the session
+            status2, _, _ = http_json(url, "/api/health")
+            self.assertEqual(status2, 200)
+
+    def test_prose_preserved_byte_exact_after_save(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            before = (root / "plans" / "model-profile.md").read_text()
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            self._save(url, info["boardToken"], bh, profile_rows(**{"plan": ("sonnet", "max")}))
+            after = (root / "plans" / "model-profile.md").read_text()
+            self.assertEqual(
+                after,
+                before.replace("| plan (co-authoring) | opus | max | nudge |",
+                               "| plan (co-authoring) | sonnet | max | nudge |"))
+
+    def test_stale_hash_409_with_fresh_snapshot(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            status, body, _ = self._save(url, info["boardToken"], "deadbeef", profile_rows())
+            self.assertEqual(status, 409)
+            self.assertEqual(body["error"], "stale")
+            self.assertIsNotNone(body["modelProfile"])
+
+    def test_concurrent_saves_one_wins_other_409(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            results = []
+            lock = threading.Lock()
+
+            def go(model):
+                s, _, _ = self._save(url, info["boardToken"], bh,
+                                     profile_rows(**{"plan-review": (model, "medium")}))
+                with lock:
+                    results.append(s)
+
+            threads = [threading.Thread(target=go, args=(m,)) for m in ("sonnet", "haiku")]
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
+            self.assertEqual(sorted(results), [200, 409])
+
+    def test_invalid_model_400(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            status, body, _ = self._save(url, info["boardToken"], bh,
+                                         profile_rows(**{"plan-review": ("gpt-5", "medium")}))
+            self.assertEqual(status, 400)
+            self.assertEqual(body["error"], "invalid")
+
+    def test_missing_stage_400_bijection(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            rows = [r for r in profile_rows() if r["stage"] != "sync"]  # 5 rows
+            status, body, _ = self._save(url, info["boardToken"], bh, rows)
+            self.assertEqual(status, 400)
+
+    def test_create_when_absent_then_conflict_when_present(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)  # no profile
+            url, info, t = serve_in_thread(root)
+            status, body, _ = http_json(url, "/api/model-profile",
+                                        body={"boardToken": info["boardToken"], "create": True})
+            self.assertEqual(status, 200, body)
+            self.assertTrue((root / "plans" / "model-profile.md").exists())
+            self.assertTrue(body["restartNeeded"])  # agents created
+            status2, _, _ = http_json(url, "/api/model-profile",
+                                      body={"boardToken": info["boardToken"], "create": True})
+            self.assertEqual(status2, 409)
+
+    def test_user_owned_agent_refused_but_save_succeeds(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            agents = root / ".claude" / "agents"; agents.mkdir(parents=True)
+            (agents / "rp-plan-reviewer.md").write_text("---\nname: rp-plan-reviewer\n---\nmine\n")
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            status, body, _ = self._save(url, info["boardToken"], bh,
+                                         profile_rows(**{"plan-review": ("sonnet", "medium")}))
+            self.assertEqual(status, 200)
+            outcomes = {r["stage"]: r["outcome"] for r in body["generation"]["results"]}
+            self.assertEqual(outcomes["plan-review"], "refused-user")
+            self.assertIn("| plan review (verdict + grade) | sonnet | medium | agent |",
+                          (root / "plans" / "model-profile.md").read_text())
+
+    def test_nudge_only_edit_no_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            board.models.generate(root)  # agents exist and are current
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            status, body, _ = self._save(url, info["boardToken"], bh,
+                                         profile_rows(**{"execute": ("haiku", None)}))
+            self.assertEqual(status, 200)
+            self.assertFalse(body["restartNeeded"])
+            self.assertEqual(body["changedAgentStages"], [])
+
+    def test_recreated_agent_in_existing_dir_needs_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            board.models.generate(root)
+            (root / ".claude" / "agents" / "rp-board-reviewer.md").unlink()
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            status, body, _ = self._save(url, info["boardToken"], bh,
+                                         profile_rows(**{"sync": ("haiku", None)}))
+            self.assertEqual(status, 200)
+            self.assertTrue(body["restartNeeded"])
+            self.assertIn("board-reviewer", body["changedAgentStages"])
+
+    def test_save_then_get_reflects_change_and_agent_on_disk(self):
+        # End-to-end round trip: POST an agent-row edit, then GET returns the
+        # saved value (the reload/refresh path) and the agent file is rewritten.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            url, info, t = serve_in_thread(root)
+            bh = self._baseline(url)
+            status, _, _ = self._save(url, info["boardToken"], bh,
+                                      profile_rows(**{"results-validation": ("haiku", "low")}))
+            self.assertEqual(status, 200)
+            _, body, _ = http_json(url, "/api/model-profile")
+            row = next(r for r in body["modelProfile"]["rows"] if r["stage"] == "results-validation")
+            self.assertEqual(row["model"], "haiku")
+            self.assertIn("model: haiku",
+                          (root / ".claude" / "agents" / "rp-results-validator.md").read_text())
+
+    def test_route_disabled_in_gate_mode(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_profile(root)
+            payload = board.collect_payload(root, "live", None)
+            payload["gate"] = {"component": "01-data-prep", "proposedVersion": 2}
+            url, info, t = serve_in_thread(root, payload=payload)
+            status, _, _ = http_json(url, "/api/model-profile",
+                                     body={"boardToken": info["boardToken"],
+                                           "baselineHash": "x", "rows": profile_rows()})
+            self.assertEqual(status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()
 

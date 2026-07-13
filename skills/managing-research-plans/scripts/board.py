@@ -49,6 +49,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from signoff_gate import normalize_plan  # noqa: E402
 from results import changed_sources  # noqa: E402
+import models  # noqa: E402  (model-profile parse/view/generate — Models tab)
 
 TICKET_TTL = 7 * 24 * 3600  # 7 days — sized to a resumable multi-session adoption
 
@@ -479,6 +480,176 @@ def newest_draft(comp_dir):
     return best
 
 
+def agents_gitignored(root):
+    """True if any generated rp-* agent path is gitignored, False if none are,
+    None when git is unavailable. Checks the three concrete files (not just the
+    dir) so a rule targeting an individual agent is caught. Boot-time only."""
+    paths = [f".claude/agents/{a}.md"
+             for a in ("rp-plan-reviewer", "rp-results-validator", "rp-board-reviewer")]
+    try:
+        r = subprocess.run(["git", "-C", str(root), "check-ignore", *paths],
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode == 0:
+        return True   # at least one path ignored
+    if r.returncode == 1:
+        return False  # none ignored
+    return None       # 128 = not a repo / other git error
+
+
+def collect_model_profile(root, mode):
+    """Structured plans/model-profile.md snapshot for the board, or None when
+    the file is absent (present-only, like history/archives). Reads bytes once
+    and never raises — an unreadable file yields a disabled snapshot so the
+    board still loads."""
+    path = root / "plans" / "model-profile.md"
+    if not path.exists():
+        return None
+    rel = "plans/model-profile.md"
+    ignored = agents_gitignored(root) if mode in ("live", "static") else None
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return {"path": rel, "exists": True, "baselineHash": None, "raw": "",
+                "proseBefore": "", "proseAfter": "", "rows": [], "editable": False,
+                "warnings": ["model-profile: unreadable (IO error)"], "agentsGitignored": ignored}
+    baseline = hashlib.sha256(data).hexdigest()
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return {"path": rel, "exists": True, "baselineHash": baseline, "raw": "",
+                "proseBefore": "", "proseAfter": "", "rows": [], "editable": False,
+                "warnings": ["model-profile: unreadable (not UTF-8)"], "agentsGitignored": ignored}
+    view = models.profile_view(text)
+    return {"path": rel, "exists": True, "baselineHash": baseline, "raw": text,
+            "proseBefore": view["proseBefore"], "proseAfter": view["proseAfter"],
+            "rows": view["rows"], "editable": view["editable"],
+            "warnings": view["warnings"], "agentsGitignored": ignored}
+
+
+def _model_profile_template():
+    return (Path(__file__).resolve().parents[1] / "templates" / "model-profile.md").read_text(encoding="utf-8")
+
+
+def _validate_profile_rows(rows_in):
+    """Validate a POSTed rows list into an edits dict {stage: {model, effort}}.
+    Requires an exact bijection: the six canonical stages, each exactly once,
+    with a valid model and effort. Returns (edits, error_or_None)."""
+    if not isinstance(rows_in, list):
+        return None, "rows must be a list"
+    canonical = set(models.STAGE_LABELS.values())
+    edits = {}
+    for r in rows_in:
+        if not isinstance(r, dict):
+            return None, "each row must be an object"
+        stage = r.get("stage")
+        if stage not in canonical:
+            return None, "unknown stage %r" % (stage,)
+        if stage in edits:
+            return None, "duplicate stage %r" % (stage,)
+        model = str(r.get("model", "")).strip().lower()
+        if model not in models.MODEL_ALIASES and not models.MODEL_ID_RE.match(model):
+            return None, "invalid model %r" % (r.get("model"),)
+        effort_raw = r.get("effort")
+        if effort_raw is None:
+            effort = None
+        else:
+            e = str(effort_raw).strip().lower()
+            if e in models.NO_EFFORT:
+                effort = None
+            elif e in models.EFFORT_LEVELS:
+                effort = e
+            else:
+                return None, "invalid effort %r" % (effort_raw,)
+        edits[stage] = {"model": model, "effort": effort}
+    if set(edits) != canonical:
+        return None, "expected exactly the six canonical stages"
+    return edits, None
+
+
+def apply_model_profile(root, body):
+    """Validate, atomically write plans/model-profile.md, and regenerate the
+    rp-* agents. Returns (http_status, json_body). The caller holds
+    profile_lock, so the re-read/compare/write/regenerate below is one critical
+    section. Never raises on an expected error path.
+
+    The profile is authoritative: if generation fails after the file was
+    replaced, the response reports saved=True with a generation error rather
+    than rolling back — matching the CLI, which also leaves a saved profile."""
+    path = root / "plans" / "model-profile.md"
+    create = bool(body.get("create"))
+    rows_in = body.get("rows")
+
+    # 1. Establish the base text under the lock (fresh disk read).
+    if create:
+        if path.exists():  # appeared after boot — refuse, hand back fresh state
+            return 409, {"error": "stale", "modelProfile": collect_model_profile(root, "live")}
+        try:
+            base_text = _model_profile_template()
+        except OSError:
+            return 500, {"error": "template-unreadable"}
+    else:
+        if not path.exists():
+            return 409, {"error": "stale", "modelProfile": None}
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return 400, {"error": "unparsable-base"}
+        if hashlib.sha256(data).hexdigest() != body.get("baselineHash"):
+            return 409, {"error": "stale", "modelProfile": collect_model_profile(root, "live")}
+        try:
+            base_text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return 400, {"error": "unparsable-base"}
+
+    # 2. The base must be canonical (else the board refuses to edit it).
+    stages, warnings = models.parse_profile(base_text)
+    if not models.profile_canonical(stages, warnings):
+        return 400, {"error": "unparsable-base"}
+
+    # 3. Build validated edits (create-from-defaults may omit rows entirely).
+    if create and rows_in is None:
+        edits = {}
+    else:
+        edits, err = _validate_profile_rows(rows_in)
+        if err is not None:
+            return 400, {"error": "invalid", "detail": err}
+
+    # 4. Rewrite only the table region, preserving surrounding prose byte-exact.
+    try:
+        new_text = models.rewrite_rows(base_text, edits) if edits else base_text
+    except ValueError:
+        return 500, {"error": "rewrite-failed"}
+
+    # 5. The result must still parse canonically, or we write nothing.
+    stages2, warnings2 = models.parse_profile(new_text)
+    if not models.profile_canonical(stages2, warnings2):
+        return 500, {"error": "rewrite-failed"}
+
+    # 6. Atomic write (first board route to mutate a committed, tracked file).
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        models.atomic_write(path, new_text)
+    except OSError as e:
+        return 500, {"error": "write-failed", "detail": str(e)}
+
+    # 7. Regenerate agents. A generation failure here does NOT unwind the saved
+    #    profile — report it as saved with a generation error.
+    gen = models.generate(root)
+    generation = {"results": gen["results"]}
+    if gen["code"] != 0:
+        generation["error"] = "; ".join(gen["stderr"]) or "agent regeneration failed"
+    return 200, {
+        "ok": True,
+        "saved": True,
+        "modelProfile": collect_model_profile(root, "live"),
+        "restartNeeded": gen["restartNeeded"],
+        "changedAgentStages": gen["changedStages"],
+        "generation": generation,
+    }
+
+
 def collect_payload(root, mode, focus):
     plans = root / "plans"
     if not (plans / "master-plan.md").is_file():
@@ -604,6 +775,14 @@ def collect_payload(root, mode, focus):
             **({"archives": archives} if archives else {}),
         },
     }
+    # Committed, review-relevant project config — present-only, rides every
+    # mode EXCEPT a focused remote share (whole-project material, like the
+    # decision log). A profile-less project keeps a byte-identical payload.
+    if not (mode == "remote" and focus):
+        mp = collect_model_profile(root, mode)
+        if mp is not None:
+            payload["modelProfile"] = mp
+
     collaborator_facing = mode in ("remote", "hosted")
     if not collaborator_facing:
         # Researcher-only hygiene flags; kept out of collaborator shares.
@@ -889,6 +1068,10 @@ def serve(root, payload, args):
     draft_map = draft_map_from_payload(payload)
     slot = {"actionId": None}
     slot_lock = threading.Lock()
+    # Serializes the whole re-read → validate → write → regenerate sequence of a
+    # model-profile save so two concurrent POSTs can't both read the old file
+    # and lose an update (ThreadingHTTPServer).
+    profile_lock = threading.Lock()
 
     def accept_order(build_doc, exit_code, write_file):
         """Single-slot order acceptance: reserve the id, build the document,
@@ -932,6 +1115,13 @@ def serve(root, payload, args):
                 self._json(200, {"ok": True, "app": "research-plans-board",
                                  "bootId": boot_id, "generation": generation,
                                  "projectId": proj_id}, no_store=True)
+                return
+            if self.path == "/api/model-profile":
+                # Fresh disk snapshot — the Models view fetches this on mount so a
+                # reload / second tab / external edit reconciles despite the
+                # frozen boot payload. null = no profile file.
+                self._json(200, {"modelProfile": collect_model_profile(root, "live")},
+                           no_store=True)
                 return
             if self.path.startswith("/artifact/"):
                 f = amap.get(self.path)
@@ -991,6 +1181,11 @@ def serve(root, payload, args):
                 except Exception:
                     self.send_response(400)
                     self.end_headers()
+                    return
+                # A non-object body (list/scalar) would crash body.get in the
+                # token/route handlers — reject it before either runs.
+                if not isinstance(body, dict):
+                    self._json(400, {"error": "bad-request"})
                     return
                 # Per-boot token on every mutating route (spec §5.4) — landed
                 # atomically with all client senders + the rebuilt template.
@@ -1138,6 +1333,14 @@ def serve(root, payload, args):
                 result["exit"] = 0
                 self._json(200, {"ok": True})
                 done.set()
+                return
+            # Model-profile save (Models tab). Repeatable — never ends the
+            # session (no done.set). Serialized by profile_lock; disabled during
+            # a sign-off gate / batch wizard (defense in depth; the UI hides it).
+            if self.path == "/api/model-profile" and not gate_mode and not batch_mode:
+                with profile_lock:
+                    status, out = apply_model_profile(root, body)
+                self._json(status, out)
                 return
             self.send_response(404)
             self.end_headers()

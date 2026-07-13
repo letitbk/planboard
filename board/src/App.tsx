@@ -6,6 +6,7 @@ import Timeline from "./views/Timeline";
 import Scorecard from "./views/Scorecard";
 import Archive from "./views/Archive";
 import Reports from "./views/Reports";
+import Models from "./views/Models";
 import BatchGate from "./views/BatchGate";
 import ThemeToggle from "./components/ThemeToggle";
 import { allFiles, payloadContentHash } from "./lib/parse";
@@ -50,7 +51,7 @@ import type {
   VerdictRequest,
 } from "./lib/types";
 
-type Tab = "tracker" | "plans" | "results" | "timeline" | "reviews" | "archive" | "reports";
+type Tab = "tracker" | "plans" | "results" | "timeline" | "reviews" | "archive" | "reports" | "models";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "tracker", label: "Tracker" },
@@ -59,6 +60,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "reports", label: "Reports" },
   { id: "timeline", label: "Timeline" },
   { id: "reviews", label: "Reviews" },
+  { id: "models", label: "Models" },
 ];
 
 let idCounter = 0;
@@ -174,6 +176,9 @@ export default function App({ data }: { data: BoardData }) {
   const [selectedComponent, setSelectedComponent] = useState<string | null>(
     gate?.component ?? data.focus,
   );
+  // Authoritative model profile — lifted here so it survives Models-tab
+  // unmount/remount and a save patches it without a reload (frozen boot HTML).
+  const [modelProfile, setModelProfile] = useState(data.modelProfile);
   const [annotations, setAnnotations] = useState<Annotation[]>(() => {
     if (!canAnnotate) return [];
     let base: Annotation[] = [];
@@ -1217,6 +1222,13 @@ export default function App({ data }: { data: BoardData }) {
                 ? { token: navRequest.token, resultsVersion: navRequest.resultsVersion }
                 : null
             }
+          />
+        )}
+        {tab === "models" && (
+          <Models
+            data={data}
+            modelProfile={modelProfile}
+            onProfileChange={setModelProfile}
           />
         )}
         {tab === "timeline" && (

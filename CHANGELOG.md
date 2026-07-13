@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Board Models tab.** The per-stage model profile (previously edit-only via `/research-plans:models`) now has a first-class board tab. It shows the profile in every board mode; when the board is served live from your project it becomes editable inline — pick a model (the five aliases or a custom `claude-*` id) and effort per stage, then Save, and the board rewrites `plans/model-profile.md` and regenerates the `rp-*` review agents itself. Nudge-stage edits (plan, execute, sync) take effect immediately; agent-stage edits are flagged for a session restart. Mechanism is read-only, and a hand-edited (non-canonical) profile is shown read-only with a pointer back to the command. Saves are validated, atomic, and concurrency-guarded, and a reload/second tab reconciles via a new `GET /api/model-profile`.
+
 ## [0.16.0] - 2026-07-13
 
 Artifacts open where you review, and sign-off stops surprising: text artifacts (md, csv, and friends) now render in an in-board viewer instead of downloading, a timed-out sign-off gate hands the draft to the persistent board for a durable Approve, and batch sign-off is explicitly the /adopt bulk flow — it refuses a single pending draft unless you say otherwise.

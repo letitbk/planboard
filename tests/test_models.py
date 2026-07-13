@@ -376,5 +376,214 @@ class TestOrphanRemovalAndGuards(unittest.TestCase):
             self.assertEqual((code, out), (0, ""))
 
 
+class TestCanonical(unittest.TestCase):
+    def test_default_is_canonical(self):
+        stages, warnings = models.parse_profile(DEFAULT_PROFILE)
+        self.assertTrue(models.profile_canonical(stages, warnings))
+
+    def test_five_row_not_canonical_despite_no_warnings(self):
+        # A missing stage parses cleanly (parse_profile only warns at ZERO
+        # stages) — so warnings-based editability would be wrong; canonical is not.
+        prof = DEFAULT_PROFILE.replace("| sync | inherit | — | nudge |\n", "")
+        stages, warnings = models.parse_profile(prof)
+        self.assertEqual(warnings, [])
+        self.assertFalse(models.profile_canonical(stages, warnings))
+
+    def test_mechanism_flip_not_canonical(self):
+        prof = DEFAULT_PROFILE.replace(
+            "| plan review (verdict + grade) | opus | medium | agent |",
+            "| plan review (verdict + grade) | opus | medium | nudge |",
+        )
+        stages, warnings = models.parse_profile(prof)
+        self.assertEqual(warnings, [])
+        self.assertFalse(models.profile_canonical(stages, warnings))
+
+    def test_warning_row_not_canonical(self):
+        prof = DEFAULT_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n| deploy | opus | max | nudge |\n",
+        )
+        stages, warnings = models.parse_profile(prof)
+        self.assertTrue(warnings)
+        self.assertFalse(models.profile_canonical(stages, warnings))
+
+
+class TestLocateTable(unittest.TestCase):
+    def test_locate_default(self):
+        loc = models.locate_table(DEFAULT_PROFILE)
+        self.assertIsNotNone(loc)
+        header, first, last = loc
+        lines = DEFAULT_PROFILE.splitlines(keepends=True)
+        self.assertIn("stage | model | effort | mechanism", lines[header])
+        self.assertEqual(last - first + 1, 6)
+
+    def test_locate_none_when_no_table(self):
+        self.assertIsNone(models.locate_table("# just prose\n\nnothing\n"))
+
+
+class TestRewriteRows(unittest.TestCase):
+    def test_single_edit_is_a_pure_substring_swap(self):
+        new = models.rewrite_rows(DEFAULT_PROFILE, {"plan": {"model": "sonnet", "effort": "max"}})
+        self.assertEqual(
+            new,
+            DEFAULT_PROFILE.replace(
+                "| plan (co-authoring) | opus | max | nudge |",
+                "| plan (co-authoring) | sonnet | max | nudge |",
+            ),
+        )
+        self.assertEqual(models.parse_profile(new)[0]["plan"]["model"], "sonnet")
+
+    def test_prose_preserved_byte_exact(self):
+        orig = models.profile_view(DEFAULT_PROFILE)
+        new = models.rewrite_rows(DEFAULT_PROFILE, {"plan": {"model": "sonnet", "effort": "max"}})
+        newv = models.profile_view(new)
+        self.assertEqual(orig["proseBefore"], newv["proseBefore"])
+        self.assertEqual(orig["proseAfter"], newv["proseAfter"])
+
+    def test_crlf_line_endings_preserved(self):
+        crlf = DEFAULT_PROFILE.replace("\n", "\r\n")
+        new = models.rewrite_rows(crlf, {"plan": {"model": "sonnet", "effort": "max"}})
+        self.assertNotIn("\r\r", new)
+        self.assertEqual(
+            new,
+            crlf.replace(
+                "| plan (co-authoring) | opus | max | nudge |",
+                "| plan (co-authoring) | sonnet | max | nudge |",
+            ),
+        )
+
+    def test_none_effort_renders_em_dash(self):
+        new = models.rewrite_rows(DEFAULT_PROFILE, {"results-validation": {"model": "opus", "effort": None}})
+        self.assertIn("| results validation | opus | — | agent |", new)
+        self.assertIsNone(models.parse_profile(new)[0]["results-validation"]["effort"])
+
+    def test_label_and_mechanism_kept_verbatim(self):
+        new = models.rewrite_rows(DEFAULT_PROFILE, {"plan-review": {"model": "haiku", "effort": "low"}})
+        self.assertIn("| plan review (verdict + grade) | haiku | low | agent |", new)
+
+    def test_no_table_raises(self):
+        with self.assertRaises(ValueError):
+            models.rewrite_rows("# no table here\n", {"plan": {"model": "opus", "effort": "max"}})
+
+
+class TestProfileView(unittest.TestCase):
+    def test_rows_in_stage_order_with_labels(self):
+        v = models.profile_view(DEFAULT_PROFILE)
+        self.assertEqual(
+            [r["stage"] for r in v["rows"]],
+            ["plan", "execute", "sync", "plan-review", "results-validation", "board-reviewer"],
+        )
+        self.assertEqual(v["rows"][0]["label"], "plan (co-authoring)")
+        self.assertEqual(v["rows"][0]["model"], "opus")
+        self.assertIsNone(v["rows"][1]["effort"])
+        self.assertTrue(v["editable"])
+
+    def test_prose_split_reconstructs_original(self):
+        v = models.profile_view(DEFAULT_PROFILE)
+        self.assertIn("# Model profile", v["proseBefore"])
+        self.assertIn("Why these defaults", v["proseAfter"])
+        h, f, l = models.locate_table(DEFAULT_PROFILE)
+        lines = DEFAULT_PROFILE.splitlines(keepends=True)
+        table = "".join(lines[h:l + 1])
+        self.assertEqual(v["proseBefore"] + table + v["proseAfter"], DEFAULT_PROFILE)
+
+    def test_non_editable_for_noncanonical(self):
+        prof = DEFAULT_PROFILE.replace("| sync | inherit | — | nudge |\n", "")
+        self.assertFalse(models.profile_view(prof)["editable"])
+
+
+class TestGenerateOutcomes(unittest.TestCase):
+    def _profile(self, root, text):
+        (root / "plans" / "model-profile.md").write_text(text, encoding="utf-8")
+
+    def test_first_generate_creates_all_three(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            res = models.generate(root)
+            self.assertEqual(res["code"], 0)
+            self.assertEqual({r["outcome"] for r in res["results"]}, {"created"})
+            self.assertTrue(res["restartNeeded"])
+            self.assertEqual(
+                set(res["changedStages"]),
+                {"plan-review", "results-validation", "board-reviewer"},
+            )
+
+    def test_regenerate_unchanged_profile_no_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            models.generate(root)
+            res = models.generate(root)
+            self.assertTrue(all(r["outcome"] == "unchanged" for r in res["results"]))
+            self.assertFalse(res["restartNeeded"])
+
+    def test_agent_model_change_is_runtime_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            models.generate(root)
+            self._profile(root, DEFAULT_PROFILE.replace(
+                "| plan review (verdict + grade) | opus | medium | agent |",
+                "| plan review (verdict + grade) | sonnet | medium | agent |",
+            ))
+            res = models.generate(root)
+            o = {r["stage"]: r["outcome"] for r in res["results"]}
+            self.assertEqual(o["plan-review"], "runtimeChanged")
+            # profile bytes changed so the other agents re-render with a new
+            # checksum stamp only — no runtime change, no restart from them.
+            self.assertEqual(o["results-validation"], "checksumOnlyChanged")
+            self.assertEqual(res["changedStages"], ["plan-review"])
+            self.assertTrue(res["restartNeeded"])
+
+    def test_nudge_only_edit_is_checksum_only_no_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            models.generate(root)
+            self._profile(root, DEFAULT_PROFILE.replace(
+                "| execute (analysis) | sonnet | — | nudge |",
+                "| execute (analysis) | haiku | — | nudge |",
+            ))
+            res = models.generate(root)
+            self.assertTrue(all(r["outcome"] == "checksumOnlyChanged" for r in res["results"]))
+            self.assertFalse(res["restartNeeded"])
+
+    def test_created_in_existing_dir_needs_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            models.generate(root)
+            (root / ".claude" / "agents" / "rp-board-reviewer.md").unlink()
+            res = models.generate(root)
+            o = {r["stage"]: r["outcome"] for r in res["results"]}
+            self.assertEqual(o["board-reviewer"], "created")
+            self.assertEqual(res["changedStages"], ["board-reviewer"])
+            self.assertTrue(res["restartNeeded"])
+
+    def test_removed_row_outcome_and_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            models.generate(root)
+            self._profile(root, DEFAULT_PROFILE.replace("| board reviewer panel | opus | low | agent |\n", ""))
+            res = models.generate(root)
+            o = {r["stage"]: r["outcome"] for r in res["results"]}
+            self.assertEqual(o["board-reviewer"], "removed")
+            self.assertTrue(res["restartNeeded"])
+
+    def test_user_owned_refusal_excluded_from_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            agents = root / ".claude" / "agents"
+            agents.mkdir(parents=True)
+            (agents / "rp-plan-reviewer.md").write_text("---\nname: rp-plan-reviewer\n---\nmine\n")
+            res = models.generate(root)
+            o = {r["stage"]: r["outcome"] for r in res["results"]}
+            self.assertEqual(o["plan-review"], "refused-user")
+            self.assertNotIn("plan-review", res["changedStages"])
+
+    def test_atomic_write_leaves_no_temp_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            models.generate(root)
+            leftovers = [p.name for p in (root / ".claude" / "agents").iterdir() if p.name.endswith(".tmp")]
+            self.assertEqual(leftovers, [])
+
+
 if __name__ == "__main__":
     unittest.main()
