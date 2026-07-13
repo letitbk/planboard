@@ -319,6 +319,28 @@ def collect_results(root, comp_dir):
 TEXT_INLINE_EXTS = {".md", ".html"}
 TEXT_INLINE_MAX = 200 * 1024
 
+TEXT_PLAIN_EXTS = {".md", ".csv", ".tsv", ".txt", ".log", ".json", ".tex"}
+INLINE_MIME = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp",
+    ".svg": "image/svg+xml", ".pdf": "application/pdf",
+}
+
+
+def artifact_headers(name):
+    """Live /artifact/ response policy: text renders as plain text, images and
+    PDF keep their type, anything else (incl. .html/.xml — active content on
+    the board origin, which embeds the per-boot mutation token) is forced to
+    download. The serve() handler adds nosniff + CSP sandbox on top. The TS
+    mirror is artifactDisplay.inlineSafe — keep the whitelists in sync."""
+    ext = os.path.splitext(name)[1].lower()
+    if ext in TEXT_PLAIN_EXTS:
+        return "text/plain; charset=utf-8", "inline"
+    if ext in INLINE_MIME:
+        return INLINE_MIME[ext], "inline"
+    return ("application/octet-stream",
+            'attachment; filename="%s"' % name.replace('"', ""))
+
 
 def iter_bundles(payload):
     for g in payload["files"]["executionPlans"]:
@@ -907,9 +929,12 @@ def serve(root, payload, args):
                     self.end_headers()
                     return
                 data = f.read_bytes()
-                mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                mime, dispo = artifact_headers(f.name)
                 self.send_response(200)
                 self.send_header("Content-Type", mime)
+                self.send_header("Content-Disposition", dispo)
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "sandbox")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)

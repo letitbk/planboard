@@ -2607,3 +2607,48 @@ class TestPullStaleness(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestArtifactHeaders(unittest.TestCase):
+    def test_header_policy_by_extension(self):
+        ah = board.artifact_headers
+        self.assertEqual(ah("notes.md"), ("text/plain; charset=utf-8", "inline"))
+        self.assertEqual(ah("T.CSV"), ("text/plain; charset=utf-8", "inline"))
+        for name in ("a.tsv", "a.txt", "a.log", "a.json", "a.tex"):
+            self.assertEqual(ah(name)[0], "text/plain; charset=utf-8")
+        self.assertEqual(ah("fig1.png"), ("image/png", "inline"))
+        self.assertEqual(ah("fig.svg"), ("image/svg+xml", "inline"))
+        self.assertEqual(ah("doc.pdf"), ("application/pdf", "inline"))
+        # active/unknown content must download — the board origin embeds the
+        # per-boot mutation token (spec: codex blocker 1)
+        self.assertEqual(
+            ah("page.html"),
+            ("application/octet-stream", 'attachment; filename="page.html"'))
+        self.assertEqual(
+            ah("data.xlsx"),
+            ("application/octet-stream", 'attachment; filename="data.xlsx"'))
+        self.assertEqual(
+            ah("noext"),
+            ("application/octet-stream", 'attachment; filename="noext"'))
+        self.assertEqual(ah('we"ird.html')[1], 'attachment; filename="weird.html"')
+
+    def test_live_artifact_responses_carry_policy_headers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            adir = root / "plans" / "execution" / "01-data-prep" / "results" / "r1" / "artifacts"
+            (adir / "notes.md").write_text("# hi", encoding="utf-8")
+            (adir / "page.html").write_text("<script>fetch('/')</script>", encoding="utf-8")
+            url, _info, _t = serve_in_thread(root)
+            with urllib.request.urlopen(url + "/artifact/01-data-prep/r1/notes.md", timeout=5) as r:
+                self.assertEqual(r.headers["Content-Type"], "text/plain; charset=utf-8")
+                self.assertEqual(r.headers["Content-Disposition"], "inline")
+                self.assertEqual(r.headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(r.headers["Content-Security-Policy"], "sandbox")
+            with urllib.request.urlopen(url + "/artifact/01-data-prep/r1/page.html", timeout=5) as r:
+                self.assertEqual(r.headers["Content-Type"], "application/octet-stream")
+                self.assertEqual(r.headers["Content-Disposition"], 'attachment; filename="page.html"')
+                self.assertEqual(r.headers["Content-Security-Policy"], "sandbox")
+            with urllib.request.urlopen(url + "/artifact/01-data-prep/r1/fig1.png", timeout=5) as r:
+                self.assertEqual(r.headers["Content-Type"], "image/png")
+                self.assertEqual(r.headers["Content-Disposition"], "inline")
