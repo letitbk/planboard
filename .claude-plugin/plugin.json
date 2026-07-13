@@ -1,6 +1,6 @@
 {
   "name": "research-plans",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Plan-based AI research workflows for social science: a lightweight master plan with a status tracker, versioned execution plans per component, an append-only decision log, a plan-quality rubric, and a browser board for review, annotation, and progress tracking.",
   "author": {
     "name": "Byungkyu Lee",

@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.0] - 2026-07-12
+
+The board learns to read: a new Reports tab renders each component's shareable report right on the board — figures inline, version chips, staleness flags, PDF/DOCX downloads — and the Results view slims down into a reviewing surface with validation up front and one Evidence gallery.
 
 ### Added
 - Board **Reports** tab: renders each bundle's generated report with figures resolved from bundle assets, `rN · plan vN` version chips, stale-report and wrong-file flags (first-line `rp-report` JSON marker), PDF/DOCX downloads on the local board, drag-select commenting, and report chips on Tracker/Archive rows and PlanReader bundles (`--focus slug:rN:reports`).
