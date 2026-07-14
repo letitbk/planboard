@@ -164,7 +164,9 @@ const cleaningV2 = `# Data Cleaning — Execution Plan v2
 Component: \`02-data-cleaning\` · Master plan: [master-plan.md](../../master-plan.md) · Date: 2026-07-01
 Supersedes: v1 — duplicated household IDs discovered in two countries; added an explicit exclusion rule.
 
-## Part 1 — For humans (the what & why)
+## Context
+
+Prepare the ISSP extract for analysis: recode missing values, harmonize country codes, and produce a documented analysis sample.
 
 ## Goal and success criteria
 
@@ -172,19 +174,13 @@ Serves: RQ1, RQ2
 
 Produce a documented analysis sample from the raw ISSP extract. Success: every recode and exclusion is logged with row counts; the cleaned file reproduces exactly from the committed script; the duplicate report is reviewed and signed off by the researcher.
 
-## Context
-
-Prepare the ISSP extract for analysis: recode missing values, harmonize country codes, and produce a documented analysis sample.
-
-## Scope decisions
+## Decisions
 
 | Dimension | Decision | Why |
 |-----------|----------|-----|
 | Missing codes | Recode 97/98 to NA | Codebook lists them as refusals |
 | Countries | Keep all 31 | Attrition handled at modeling stage |
 | Duplicates | Drop exact duplicates only | Household IDs collide in two countries; partial matches kept |
-
-## Part 2 — For agents (the how)
 
 ## Approach
 
@@ -197,13 +193,21 @@ Load raw extract, apply recode table, drop exact duplicates, write cleaned parqu
 3. Drop exact duplicate rows (log counts per country)
 4. Write cleaned data + row-count log
 
+<details class="agent-detail"><summary>Agent detail — exact commands</summary>
+
+\`\`\`bash
+python3 clean/build_sample.py --in raw/issp.csv --out data/clean.parquet --log logs/clean.log
+\`\`\`
+
+</details>
+
 ## Verification
 
 Row counts before/after each step logged; spot-check 20 random rows against raw; duplicate report reviewed by researcher.
 
 ## Out of scope
 
-No imputation; no derived scales (descriptives component owns those).
+No imputation; no derived scales (descriptives component owns those). Do not modify the raw extract.
 
 ---
 Signed off: Jane Doe, 2026-07-01

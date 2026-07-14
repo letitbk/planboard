@@ -15,7 +15,7 @@ import AnnotationLayer from "../components/AnnotationLayer";
 import ReviewMenu from "../components/ReviewMenu";
 import { Notice } from "./Tracker";
 import {
-  AGENT_SECTIONS,
+  METHOD_SECTIONS,
   parseExecutionPlan,
   parseMasterPlan,
   parseScorecard,
@@ -177,9 +177,8 @@ export default function PlanReader({
   const curIdx = Math.min(docIdx, docs.length - 1);
   const doc = docs[curIdx] ?? null;
 
-  // Part 2 (agent/technical half) collapse state; reset when the shown doc changes.
-  const [agentOpen, setAgentOpen] = useState(false);
-  useEffect(() => setAgentOpen(false), [doc?.path]);
+  // Reader detail level (project default; the reader can still toggle any block).
+  const level: DetailLevel = data.detailLevel ?? "standard";
 
   // Diff base is the immediately preceding step in the version history (previous
   // snapshot, signed version, or working draft) — reads the evolution in order.
@@ -208,9 +207,8 @@ export default function PlanReader({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollToSection = useCallback((heading: string) => {
-    // Agent sections sit in the collapsed Part 2 — open it, then scroll once the
-    // DOM has reflowed.
-    if (AGENT_SECTIONS.includes(heading)) setAgentOpen(true);
+    // Every section heading renders even when its body is collapsed, so scrolling
+    // to the h2 works at any detail level.
     const doScroll = () => {
       const host = scrollRef.current;
       if (!host) return;
@@ -291,43 +289,25 @@ export default function PlanReader({
           ))}
         </ul>
 
-        {parsed?.ok &&
-          (
-            [
-              {
-                label: "Part 1 · for humans",
-                items: parsed.sections.filter(
-                  (s) => !AGENT_SECTIONS.includes(s.heading),
-                ),
-              },
-              {
-                label: "Part 2 · for agents",
-                items: parsed.sections.filter((s) =>
-                  AGENT_SECTIONS.includes(s.heading),
-                ),
-              },
-            ] as const
-          ).map((grp) =>
-            grp.items.length === 0 ? null : (
-              <div key={grp.label}>
-                <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-                  {grp.label}
-                </h2>
-                <ul className="space-y-0.5">
-                  {grp.items.map((s) => (
-                    <li key={s.heading}>
-                      <button
-                        className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
-                        onClick={() => scrollToSection(s.heading)}
-                      >
-                        {s.heading}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ),
-          )}
+        {parsed?.ok && parsed.sections.length > 0 && (
+          <div>
+            <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-stone-500">
+              Sections
+            </h2>
+            <ul className="space-y-0.5">
+              {parsed.sections.map((s) => (
+                <li key={s.heading}>
+                  <button
+                    className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
+                    onClick={() => scrollToSection(s.heading)}
+                  >
+                    {s.heading}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </aside>
 
       {/* Main pane */}
@@ -559,18 +539,10 @@ export default function PlanReader({
                   })
                 }
               >
-                <PlanBody
-                content={docBody}
-                open={agentOpen}
-                onToggle={() => setAgentOpen((o) => !o)}
-              />
+                <PlanBody content={docBody} level={level} />
               </AnnotationLayer>
             ) : (
-              <PlanBody
-                content={docBody}
-                open={agentOpen}
-                onToggle={() => setAgentOpen((o) => !o)}
-              />
+              <PlanBody content={docBody} level={level} />
             )}
             {parsed?.ok && (
               <div className="mt-4 border-t border-stone-100 dark:border-stone-800 pt-3 text-xs">
@@ -603,68 +575,192 @@ export default function PlanReader({
   );
 }
 
-/**
- * Split a plan on its "## Part 2 —" banner. Returns the human half, the agent
- * half (everything after the Part-2 heading line), and the heading text for the
- * toggle. Old-format plans with no banner return agent:null (rendered whole).
- */
-function splitParts(content: string): {
-  human: string;
-  agent: string | null;
-  heading: string;
-} {
-  const m = /^## Part 2\b[^\n]*$/m.exec(content);
-  if (!m) return { human: content, agent: null, heading: "" };
-  return {
-    human: content.slice(0, m.index),
-    agent: content.slice(m.index + m[0].length),
-    heading: m[0].replace(/^##\s*/, "").trim(),
+type DetailLevel = "compact" | "standard" | "full";
+
+function Caret({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Split a plan into sections on `## ` headings. The chunk before the first
+// heading is returned with heading=null. The body excludes the heading line.
+function splitSections(content: string): { heading: string | null; body: string }[] {
+  const out: { heading: string | null; body: string }[] = [];
+  let heading: string | null = null;
+  let body: string[] = [];
+  const flush = () => {
+    const b = body.join("\n");
+    if (heading !== null || b.trim()) out.push({ heading, body: b });
   };
+  for (const line of content.split("\n")) {
+    const m = /^## (.+?)\s*$/.exec(line);
+    if (m) {
+      flush();
+      heading = m[1].trim();
+      body = [];
+    } else body.push(line);
+  }
+  flush();
+  return out;
+}
+
+const AGENT_DETAIL_RE =
+  /<details class="agent-detail">\s*<summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/g;
+
+type MdPart =
+  | { kind: "md"; text: string }
+  | { kind: "detail"; summary: string; body: string };
+
+// Split a section body into Markdown spans and agent-detail blocks. Rendered via
+// a dedicated component, never as raw HTML (Markdown escapes HTML) — this is the
+// safe renderer for the <details class="agent-detail"> convention.
+function splitAgentDetail(source: string): MdPart[] {
+  const parts: MdPart[] = [];
+  let last = 0;
+  AGENT_DETAIL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = AGENT_DETAIL_RE.exec(source))) {
+    if (m.index > last) parts.push({ kind: "md", text: source.slice(last, m.index) });
+    parts.push({ kind: "detail", summary: m[1].trim(), body: m[2].trim() });
+    last = m.index + m[0].length;
+  }
+  if (last < source.length) parts.push({ kind: "md", text: source.slice(last) });
+  return parts.length ? parts : [{ kind: "md", text: source }];
+}
+
+// Render a body's Markdown + agent-detail blocks. Collapsed content is clipped
+// (max-h-0), never unmounted, so AnnotationLayer highlights survive and the
+// container's text content is stable regardless of collapse state.
+function BodyParts({ source, detailOpen }: { source: string; detailOpen: boolean }) {
+  return (
+    <>
+      {splitAgentDetail(source).map((p, i) =>
+        p.kind === "md" ? (
+          <Markdown key={i} source={p.text} />
+        ) : (
+          <AgentDetailBlock key={i} summary={p.summary} body={p.body} forceOpen={detailOpen} />
+        ),
+      )}
+    </>
+  );
+}
+
+function AgentDetailBlock({
+  summary,
+  body,
+  forceOpen,
+}: {
+  summary: string;
+  body: string;
+  forceOpen: boolean;
+}) {
+  const [open, setOpen] = useState(forceOpen);
+  useEffect(() => setOpen(forceOpen), [forceOpen]);
+  return (
+    <div className="my-2 rounded border border-stone-200 dark:border-stone-800">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs font-medium text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-800"
+      >
+        <Caret open={open} />
+        {summary || "Agent detail"}
+      </button>
+      <div className={open ? "px-3 pb-2" : "max-h-0 overflow-hidden"} aria-hidden={!open}>
+        <Markdown source={body} />
+      </div>
+    </div>
+  );
+}
+
+function SectionBlock({
+  heading,
+  body,
+  level,
+}: {
+  heading: string;
+  body: string;
+  level: DetailLevel;
+}) {
+  const isMethod = METHOD_SECTIONS.includes(heading);
+  // compact shows only the contract sections' bodies; standard/full show method
+  // bodies too. The heading itself always renders so the structure stays visible.
+  const forceOpen = !isMethod || level !== "compact";
+  const [open, setOpen] = useState(forceOpen);
+  useEffect(() => setOpen(forceOpen), [forceOpen]);
+  return (
+    <div>
+      <Markdown source={`## ${heading}`} />
+      {isMethod && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="mb-1 flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
+        >
+          <Caret open={open} />
+          {open ? "hide" : "show section"}
+        </button>
+      )}
+      <div className={open ? "" : "max-h-0 overflow-hidden"} aria-hidden={!open}>
+        <BodyParts source={body} detailOpen={level === "full"} />
+      </div>
+    </div>
+  );
 }
 
 /**
- * Renders a plan body with Part 2 (the agent/technical half) collapsed under a
- * toggle. Both halves stay inside the caller's single AnnotationLayer container,
- * so comment anchoring — occurrence-counted over the whole rendered text — is
- * unchanged. The collapsed half is clipped (max-h-0), never unmounted, so its
- * painted highlights survive and reveal on expand. The toggle's label is the
- * verbatim Part-2 heading text, keeping the container's text content identical
- * to a single-blob render.
+ * Renders a plan body as one narrative, collapsing by the project's detail level:
+ * `compact` clips the method sections (approach/steps/verification), `standard`
+ * shows them, `full` also expands the inline agent-detail blocks. Everything
+ * stays inside the caller's single AnnotationLayer, clipped never unmounted, so
+ * comment anchoring is unaffected. Pre-v0.4 plans still carrying a "## Part 2 —"
+ * banner fall back to the old two-half render.
  */
-function PlanBody({
-  content,
-  open,
-  onToggle,
-}: {
-  content: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const { human, agent, heading } = splitParts(content);
-  if (agent === null) return <Markdown source={content} />;
+function PlanBody({ content, level }: { content: string; level: DetailLevel }) {
+  if (/^## Part 2\b/m.test(content)) return <LegacyPlanBody content={content} />;
+  const sections = splitSections(content);
+  return (
+    <>
+      {sections.map((s, i) =>
+        s.heading === null ? (
+          <BodyParts key="preamble" source={s.body} detailOpen={level === "full"} />
+        ) : (
+          <SectionBlock key={s.heading + i} heading={s.heading} body={s.body} level={level} />
+        ),
+      )}
+    </>
+  );
+}
+
+// Pre-v0.4 plans: split on the "## Part 2 —" banner, Part 2 collapsed under a
+// toggle (the original render, kept so old plans still read correctly).
+function LegacyPlanBody({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  const m = /^## Part 2\b[^\n]*$/m.exec(content);
+  if (!m) return <Markdown source={content} />;
+  const human = content.slice(0, m.index);
+  const agent = content.slice(m.index + m[0].length);
+  const heading = m[0].replace(/^##\s*/, "").trim();
   return (
     <>
       <Markdown source={human} />
       <button
         type="button"
-        onClick={onToggle}
+        onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className="mt-4 flex w-full items-center gap-2 border-t border-stone-200 dark:border-stone-800 pt-4 text-left text-lg font-bold text-stone-900 dark:text-stone-100 hover:text-stone-600"
       >
-        <svg
-          className={`h-4 w-4 shrink-0 text-stone-400 dark:text-stone-500 transition-transform ${open ? "rotate-90" : ""}`}
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M6 4l4 4-4 4"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <Caret open={open} />
         {heading}
       </button>
       <div className={open ? "mt-2" : "max-h-0 overflow-hidden"} aria-hidden={!open}>
