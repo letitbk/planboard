@@ -600,6 +600,16 @@ const cleaningResults = [
         ],
         notes: "The missing cleaning log is cosmetic; counts live in exclusions.csv.",
       },
+      integrity: {
+        status: "passed" as const,
+        checkedAt: "2026-07-02 10:31",
+        checks: [
+          { name: "checksums", verdict: "pass" as const, detail: "all artifact copies match their source hashes" },
+          { name: "artifacts-present", verdict: "pass" as const, detail: "all artifact files present in the bundle" },
+          { name: "artifact-refs", verdict: "pass" as const, detail: "every metric references a real artifact" },
+          { name: "findings-sourced", verdict: "pass" as const, detail: "every substantive finding cites an artifact" },
+        ],
+      },
       metrics: [
         { label: "Rows", value: "66,864", note: "analytic sample" },
         { label: "Dupes dropped", value: "214" },
@@ -716,6 +726,16 @@ const descriptivesResults = [
       trigger: "initial" as const,
       capturedAt: "2026-07-02 14:00",
       summary: "Pre-existing descriptive figures, adopted for verification",
+      integrity: {
+        status: "passed" as const,
+        checkedAt: "2026-07-02 14:01",
+        checks: [
+          { name: "checksums", verdict: "pass" as const, detail: "all artifact copies match their source hashes" },
+          { name: "artifacts-present", verdict: "pass" as const, detail: "all artifact files present in the bundle" },
+          { name: "artifact-refs", verdict: "pass" as const, detail: "every metric references a real artifact" },
+          { name: "findings-sourced", verdict: "pass" as const, detail: "every substantive finding cites an artifact" },
+        ],
+      },
       metrics: [{ label: "Countries", value: "31" }],
       artifacts: [
         {

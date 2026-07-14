@@ -169,6 +169,90 @@ _VALIDATION_STATUSES = {"conforms", "conforms-with-amendments", "deviations-foun
 _STEP_VERDICTS = {"followed", "amended", "deviated-unrecorded", "not-executed",
                   "unverifiable"}
 _CRITERION_VERDICTS = {"met", "not-met", "partial", "unverifiable"}
+_DEMOTED_STATUSES = {"descriptive", "retracted", "superseded"}
+_INTEGRITY_STATUSES = {"passed", "failed"}
+_INTEGRITY_VERDICTS = {"pass", "fail"}
+
+
+def is_substantive(metric):
+    """A metric is a substantive finding when its status is robust/marginal, or
+    it carries a claim `statement` whose status is not descriptive/retracted/
+    superseded. An absent status with a written claim counts; a bare label/value
+    with neither does not. Kept in sync with board/src/lib/findings.ts
+    `isSubstantive` (Python/TypeScript duplication — change both)."""
+    st = metric.get("status")
+    if st in ("robust", "marginal"):
+        return True
+    stmt = (metric.get("statement") or "").strip()
+    return bool(stmt) and st not in _DEMOTED_STATUSES
+
+
+def has_substantive_findings(manifest):
+    return any(is_substantive(m) for m in (manifest.get("metrics") or []))
+
+
+def compute_integrity(manifest, staging, now=None):
+    """Mechanical, advisory integrity pass sealed into the manifest at finalize.
+    Recomputes the checks independently of validate_staged so the recorded block
+    is honest and testable. Never blocks finalize. Aligned with
+    commands/results.md step 6."""
+    arts = manifest.get("artifacts", [])
+    art_ids = {a.get("id") for a in arts}
+    checks = []
+
+    bad_sum, missing = [], []
+    for a in arts:
+        f = a.get("file")
+        if f is None:
+            continue  # oversized / inline-only artifacts carry no bundle copy
+        fp = staging / f
+        if not fp.is_file():
+            missing.append(f)
+            continue
+        src = a.get("source", {})
+        if src.get("sha256") and sha256_file(fp) != src["sha256"]:
+            bad_sum.append(f)
+    checks.append({
+        "name": "checksums",
+        "verdict": "pass" if not bad_sum else "fail",
+        "detail": ("all artifact copies match their source hashes" if not bad_sum
+                   else "checksum mismatch: %s" % ", ".join(bad_sum)),
+    })
+    checks.append({
+        "name": "artifacts-present",
+        "verdict": "pass" if not missing else "fail",
+        "detail": ("all artifact files present in the bundle" if not missing
+                   else "missing artifact files: %s" % ", ".join(missing)),
+    })
+
+    bad_refs = []
+    for mt in manifest.get("metrics", []):
+        for aid in mt.get("artifactIds") or []:
+            if aid not in art_ids:
+                bad_refs.append("%s->%s" % (mt.get("label"), aid))
+    checks.append({
+        "name": "artifact-refs",
+        "verdict": "pass" if not bad_refs else "fail",
+        "detail": ("every metric references a real artifact" if not bad_refs
+                   else "dangling artifact references: %s" % ", ".join(bad_refs)),
+    })
+
+    unsourced = [str(mt.get("label")) for mt in manifest.get("metrics", [])
+                 if is_substantive(mt) and not (mt.get("artifactIds") or [])]
+    checks.append({
+        "name": "findings-sourced",
+        "verdict": "pass" if not unsourced else "fail",
+        "detail": ("every substantive finding cites an artifact" if not unsourced
+                   else "unsourced findings: %s (attach an artifact or mark the "
+                        "metric descriptive)" % ", ".join(unsourced)),
+    })
+
+    status = "passed" if all(c["verdict"] == "pass" for c in checks) else "failed"
+    return {
+        "status": status,
+        "checkedAt": now or datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "checks": checks,
+    }
 
 
 def validate_staged(staging):
@@ -234,6 +318,16 @@ def validate_staged(staging):
                 staging / "validation.md").is_file():
             return None, ("validation.md missing while manifest.validation "
                           "status is %s" % val["status"])
+    # integrity block (sealed by finalize; absent = old bundle, valid)
+    integ = manifest.get("integrity")
+    if integ is not None:
+        if not isinstance(integ, dict) or integ.get("status") not in _INTEGRITY_STATUSES:
+            return None, "manifest integrity block has invalid status: %r" % (
+                integ.get("status") if isinstance(integ, dict) else integ)
+        for c in integ.get("checks") or []:
+            if c.get("verdict") not in _INTEGRITY_VERDICTS:
+                return None, "integrity check %r has invalid verdict: %s" % (
+                    c.get("name"), c.get("verdict"))
     return manifest, None
 
 
@@ -248,6 +342,9 @@ def cmd_finalize(root, args):
     version = next_version(results_dir)
     manifest["resultsVersion"] = version
     manifest.setdefault("schemaVersion", 1)
+    # Seal the mechanical integrity pass into the immutable manifest. Advisory:
+    # a "failed" verdict is recorded and surfaced on the board, never blocks.
+    manifest["integrity"] = compute_integrity(manifest, staging)
     (staging / "manifest.json").write_text(
         json.dumps(manifest, indent=1), encoding="utf-8")
     target = results_dir / ("r%d" % version)

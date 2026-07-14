@@ -6,6 +6,7 @@ import AnnotationLayer, {
 import { Notice } from "./Tracker";
 import { preRenewalSlugs } from "../lib/parse";
 import { actionsVisible } from "../lib/actions";
+import { hasSubstantiveFindings } from "../lib/findings";
 import { parseReport } from "../lib/reportMarker";
 import type {
   Annotation,
@@ -104,6 +105,9 @@ export default function Reports({
   const marker = parsed?.marker ?? null;
   const fmts = bundle.reportFormats ?? { pdf: false, docx: false };
   const anyFormat = fmts.pdf || fmts.docx;
+  // Null result: manifest parsed but carries no substantive finding — nothing
+  // to narrate, so no report is generated (see /report gate).
+  const noSubstance = !!bundle.manifest && !hasSubstantiveFindings(bundle);
   const latest = bundles[bundles.length - 1];
   const actions = actionsVisible(data) && onRequestReport;
   const generate = () =>
@@ -226,7 +230,7 @@ export default function Reports({
         </div>
 
         {/* stale / identity flags */}
-        {latest && !latest.publishedReport && latest.resultsVersion !== bundle.resultsVersion && (
+        {latest && !latest.publishedReport && latest.resultsVersion !== bundle.resultsVersion && hasSubstantiveFindings(latest) && (
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
             <span>
               r{latest.resultsVersion} has no report yet — generate one to keep the record current.
@@ -271,6 +275,18 @@ export default function Reports({
           ) : (
             reportBody
           )
+        ) : noSubstance ? (
+          <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
+            <p className="mb-1 font-medium text-stone-600 dark:text-stone-300">
+              No report — no substantive findings
+            </p>
+            <p>
+              This bundle has no substantive findings to report — descriptive
+              counts and unmarked metrics don't qualify. The evidence and
+              validation are on the Results tab; there is nothing to narrate
+              here.
+            </p>
+          </div>
         ) : (
           <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
             <p className="mb-3">

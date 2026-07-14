@@ -37,11 +37,13 @@ export default function DiffView({
                 .replace(/\n$/, "")
                 .split("\n")
                 .map((line, j) => (
-                  <div key={j} className="px-3">
-                    <span className="select-none pr-2 text-stone-400 dark:text-stone-500">
+                  <div key={j} className="flex px-3">
+                    <span className="select-none shrink-0 pr-2 text-stone-400 dark:text-stone-500">
                       {prefix}
                     </span>
-                    {line}
+                    <span className="min-w-0 whitespace-pre-wrap break-words">
+                      {line}
+                    </span>
                   </div>
                 ))}
             </div>

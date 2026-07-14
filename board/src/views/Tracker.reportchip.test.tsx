@@ -114,15 +114,55 @@ function renderTrackerFixtureWithoutReports() {
   );
 }
 
-describe("Tracker report chip", () => {
-  it("tracker row shows a report chip targeting the latest bundle WITH a report", () => {
+function renderTrackerFixtureNullResult() {
+  // latest bundle has a readable manifest but only descriptive metrics — a
+  // deliberate null result — and no report anywhere.
+  const results = [
+    bundle({
+      resultsVersion: 1,
+      dir: "plans/execution/01-x/results/r1",
+      publishedReport: null,
+      manifest: {
+        schemaVersion: 1, component: "01-x", resultsVersion: 1, planVersion: 1,
+        provenance: "planned", trigger: "initial", capturedAt: "t",
+        metrics: [{ label: "N", value: "1234", status: "descriptive" }],
+        artifacts: [],
+      },
+    } as Partial<ResultsBundle>),
+  ];
+  return render(
+    <Tracker
+      data={data(results)}
+      canAnnotate={false}
+      annotations={[]}
+      onAddDocComment={noop}
+      onPaintResult={noop}
+      onOpenComponent={noop}
+      onOpenResults={noop}
+      onAddGeneral={noop}
+    />,
+  );
+}
+
+describe("Tracker report column", () => {
+  it("renders a dedicated Report column header", () => {
+    renderTrackerFixture();
+    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+    expect(headers).toContain("Report");
+  });
+  it("report link targets the latest bundle WITH a report", () => {
     const onOpenReport = vi.fn();
     renderTrackerFixture({ onOpenReport });
     fireEvent.click(screen.getByText("report"));
     expect(onOpenReport).toHaveBeenCalledWith("01-x", 1); // r2 exists but has no report
   });
-  it("no chip when no bundle has a report", () => {
+  it("no report link when no bundle has a report", () => {
     renderTrackerFixtureWithoutReports();
+    expect(screen.queryByText("report")).toBeNull();
+  });
+  it("shows 'no result' when the latest bundle has no substantive findings and no report", () => {
+    renderTrackerFixtureNullResult();
+    expect(screen.getByText("no result")).toBeTruthy();
     expect(screen.queryByText("report")).toBeNull();
   });
 });

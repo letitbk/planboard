@@ -105,6 +105,20 @@ export interface ResultsManifest {
   }[];
   artifacts: ResultArtifact[];
   validation?: ValidationBlock; // v0.10: plan-vs-execution audit, sealed at capture
+  integrity?: IntegrityBlock; // mechanical integrity pass, sealed at finalize
+}
+
+// Mechanical, advisory integrity pass computed by results.py at finalize and
+// sealed into the immutable manifest. Absent on bundles captured before this
+// feature. Never a gate — a "failed" status is surfaced, not enforced.
+export interface IntegrityBlock {
+  status: "passed" | "failed";
+  checkedAt?: string;
+  checks: {
+    name: string; // checksums | artifacts-present | artifact-refs | findings-sourced
+    verdict: "pass" | "fail";
+    detail?: string;
+  }[];
 }
 
 // Independent-subagent audit of the bundle against its signed plan (v0.10).
