@@ -23,6 +23,8 @@ export function isSubstantive(metric: Metric): boolean {
 // `bundle.manifest` themselves (e.g. `bundle.manifest && !hasSubstantiveFindings(b)`).
 export function hasSubstantiveFindings(bundle: ResultsBundle): boolean {
   const m = bundle.manifest;
-  if (!m) return false;
+  // `metrics` is typed as required, but a manifest.json on disk may omit it —
+  // guard so a metrics-less bundle never crashes the Tracker/Reports render.
+  if (!m || !Array.isArray(m.metrics)) return false;
   return m.metrics.some(isSubstantive);
 }

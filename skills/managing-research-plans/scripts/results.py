@@ -209,8 +209,10 @@ def compute_integrity(manifest, staging, now=None):
         if not fp.is_file():
             missing.append(f)
             continue
-        src = a.get("source", {})
-        if src.get("sha256") and sha256_file(fp) != src["sha256"]:
+        sha = a.get("source", {}).get("sha256")
+        if not sha:
+            bad_sum.append("%s (no recorded sha256)" % f)  # present but unverifiable
+        elif sha256_file(fp) != sha:
             bad_sum.append(f)
     checks.append({
         "name": "checksums",

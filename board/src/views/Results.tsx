@@ -11,6 +11,7 @@ import { Notice } from "./Tracker";
 import { parseExecutionPlan, preRenewalSlugs } from "../lib/parse";
 import type { ViewerRequest } from "../lib/artifactDisplay";
 import { actionsVisible } from "../lib/actions";
+import { hasSubstantiveFindings } from "../lib/findings";
 import type {
   Annotation,
   BoardData,
@@ -463,7 +464,9 @@ export default function Results({
           })}
           {actionsVisible(data) && (onRequestReview || onRequestReport) && (
             <div className="ml-auto flex items-center gap-2">
-              {onRequestReport && (
+              {/* No report for a null result: a bundle with no substantive
+                  finding gets no narrative — /report would refuse anyway. */}
+              {onRequestReport && hasSubstantiveFindings(bundle) && (
                 <button
                   className="rounded-full border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:border-emerald-500 dark:hover:border-emerald-400"
                   onClick={() =>

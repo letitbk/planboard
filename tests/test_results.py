@@ -525,6 +525,18 @@ class TestIntegrity(unittest.TestCase):
             integ = results.compute_integrity(manifest, staging, now="t")
             self.assertEqual(integ["status"], "passed")
 
+    def test_missing_sha256_is_a_checksum_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staging, _ = self._staging_with_fig(tmp)
+            manifest = {  # artifact present but no recorded sha256 → cannot verify
+                "metrics": [],
+                "artifacts": [{"id": "fig", "file": "artifacts/fig.png", "source": {}}],
+            }
+            integ = results.compute_integrity(manifest, staging, now="t")
+            cs = next(c for c in integ["checks"] if c["name"] == "checksums")
+            self.assertEqual(cs["verdict"], "fail")
+            self.assertEqual(integ["status"], "failed")
+
     def test_flags_dangling_artifact_ref(self):
         with tempfile.TemporaryDirectory() as tmp:
             staging, sha = self._staging_with_fig(tmp)

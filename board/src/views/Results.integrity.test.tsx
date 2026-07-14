@@ -71,4 +71,27 @@ describe("Result tab integrity + prose", () => {
     renderResults(dataWith(undefined, "CAPTURE_NOTE_PROSE_XYZ"));
     expect(screen.queryByText(/CAPTURE_NOTE_PROSE_XYZ/)).toBeNull();
   });
+
+  function renderWithReport(data: BoardData) {
+    return render(
+      <Results data={data} canAnnotate={false} canPost={false}
+        selectedComponent="01-x" onSelectComponent={noop} annotations={[]}
+        onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
+        onVerdict={noop} focusResults={null} navRequest={null} onRequestReport={noop} />,
+    );
+  }
+
+  it("offers Generate report when the bundle has substantive findings", () => {
+    renderWithReport(dataWith(undefined, null)); // default metric carries a statement
+    expect(screen.getByText("Generate report")).toBeTruthy();
+  });
+
+  it("hides Generate report when the bundle has no substantive findings", () => {
+    const d = dataWith(undefined, null);
+    d.files.executionPlans[0].results![0].manifest!.metrics = [
+      { label: "N", value: "1234", status: "descriptive" },
+    ];
+    renderWithReport(d);
+    expect(screen.queryByText("Generate report")).toBeNull();
+  });
 });

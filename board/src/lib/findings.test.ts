@@ -54,4 +54,11 @@ describe("hasSubstantiveFindings", () => {
   it("false when the manifest is unreadable", () => {
     expect(hasSubstantiveFindings(bundle(null))).toBe(false);
   });
+  it("does not throw when a finalized manifest omits the metrics field", () => {
+    const b = bundle([]);
+    // simulate a manifest.json that finalized without a metrics array
+    delete (b.manifest as { metrics?: unknown }).metrics;
+    expect(() => hasSubstantiveFindings(b)).not.toThrow();
+    expect(hasSubstantiveFindings(b)).toBe(false);
+  });
 });
