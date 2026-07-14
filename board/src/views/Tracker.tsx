@@ -5,6 +5,7 @@ import AnnotationLayer, {
 } from "../components/AnnotationLayer";
 import ReviewMenu from "../components/ReviewMenu";
 import { actionsVisible, planActionState } from "../lib/actions";
+import { hasSubstantiveFindings } from "../lib/findings";
 import RequestChangesButton from "../components/RequestChangesButton";
 import type {
   Annotation,
@@ -371,6 +372,7 @@ export default function Tracker({
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Plan</th>
               <th className="px-4 py-2">Results</th>
+              <th className="px-4 py-2">Report</th>
               <th className="px-4 py-2">Outcome / notes</th>
             </tr>
           </thead>
@@ -381,6 +383,20 @@ export default function Tracker({
                 slug !== null && !knownSlugs.has(slug);
               const serves = parseServes(r.serves);
               const mismatch = servesMismatch(r);
+              const g = slug
+                ? data.files.executionPlans.find((x) => x.component === slug)
+                : null;
+              const latestResult = g?.results?.[g.results.length - 1] ?? null;
+              const withReport = g
+                ? [...(g.results ?? [])].reverse().find((b) => b.publishedReport) ?? null
+                : null;
+              // A deliberate null result: latest bundle parsed, carries no
+              // substantive finding, and no report exists anywhere.
+              const noResult =
+                !!latestResult &&
+                !withReport &&
+                !!latestResult.manifest &&
+                !hasSubstantiveFindings(latestResult);
               return (
                 <tr
                   key={i}
@@ -480,44 +496,44 @@ export default function Tracker({
                   </td>
                   <td className="px-4 py-2.5">
                     {(() => {
-                      const g = slug
-                        ? data.files.executionPlans.find(
-                            (x) => x.component === slug,
-                          )
-                        : null;
-                      const latest = g?.results?.[g.results.length - 1];
-                      if (!latest)
+                      if (!latestResult)
                         return <span className="text-xs text-stone-400 dark:text-stone-500">—</span>;
                       const mark =
-                        latest.verdict?.status === "accepted"
+                        latestResult.verdict?.status === "accepted"
                           ? "✓"
-                          : latest.verdict?.status === "changes-requested"
+                          : latestResult.verdict?.status === "changes-requested"
                             ? "✕"
                             : "●";
-                      const withReport = [...(g!.results ?? [])]
-                        .reverse()
-                        .find((b) => b.publishedReport);
                       return (
-                        <span className="inline-flex items-center gap-2">
-                          <button
-                            className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
-                            onClick={() => onOpenResults(slug!)}
-                          >
-                            r{latest.resultsVersion} {mark}
-                          </button>
-                          {withReport && onOpenReport && (
-                            <button
-                              className="text-xs font-medium text-emerald-700 dark:text-emerald-400 underline hover:text-emerald-900 dark:hover:text-emerald-300"
-                              onClick={() =>
-                                onOpenReport(slug!, withReport.resultsVersion)
-                              }
-                            >
-                              report
-                            </button>
-                          )}
-                        </span>
+                        <button
+                          className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"
+                          onClick={() => onOpenResults(slug!)}
+                        >
+                          r{latestResult.resultsVersion} {mark}
+                        </button>
                       );
                     })()}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {withReport && onOpenReport ? (
+                      <button
+                        className="text-xs font-medium text-emerald-700 dark:text-emerald-400 underline hover:text-emerald-900 dark:hover:text-emerald-300"
+                        onClick={() =>
+                          onOpenReport(slug!, withReport.resultsVersion)
+                        }
+                      >
+                        report
+                      </button>
+                    ) : noResult ? (
+                      <span
+                        className="text-xs text-stone-400 dark:text-stone-500"
+                        title="This bundle has no substantive findings — no report is generated."
+                      >
+                        no result
+                      </span>
+                    ) : (
+                      <span className="text-xs text-stone-400 dark:text-stone-500">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-stone-600 dark:text-stone-400">{r.notes}</td>
                 </tr>

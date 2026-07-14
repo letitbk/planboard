@@ -493,5 +493,151 @@ class TestFinalizeProvenance(unittest.TestCase):
             self.assertEqual(m["modelUsage"]["reported"], {"model": "sonnet", "effort": None})
 
 
+class TestSubstantiveFindings(unittest.TestCase):
+    def test_is_substantive_rule(self):
+        yes = [
+            {"label": "a", "value": "1", "status": "robust"},
+            {"label": "a", "value": "1", "status": "marginal"},
+            {"label": "a", "value": "1", "statement": "Effect is positive."},
+        ]
+        no = [
+            {"label": "a", "value": "1", "status": "descriptive", "statement": "Count is 10."},
+            {"label": "a", "value": "1", "status": "retracted", "statement": "x"},
+            {"label": "a", "value": "1", "status": "superseded", "statement": "x"},
+            {"label": "a", "value": "1"},
+            {"label": "a", "value": "1", "statement": "   "},
+        ]
+        for mt in yes:
+            self.assertTrue(results.is_substantive(mt), mt)
+        for mt in no:
+            self.assertFalse(results.is_substantive(mt), mt)
+
+    def test_has_substantive_findings(self):
+        self.assertTrue(results.has_substantive_findings(
+            {"metrics": [{"label": "x", "value": "1"}, {"label": "y", "value": "2", "status": "robust"}]}))
+        self.assertFalse(results.has_substantive_findings(
+            {"metrics": [{"label": "x", "value": "1", "status": "descriptive", "statement": "c"}]}))
+        self.assertFalse(results.has_substantive_findings({"metrics": []}))
+        self.assertFalse(results.has_substantive_findings({}))
+
+
+class TestIntegrity(unittest.TestCase):
+    def _staging_with_fig(self, tmp):
+        staging = Path(tmp)
+        (staging / "artifacts").mkdir()
+        f = staging / "artifacts" / "fig.png"
+        f.write_bytes(b"fake image bytes")
+        return staging, results.sha256_file(f)
+
+    def test_all_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staging, sha = self._staging_with_fig(tmp)
+            manifest = {
+                "metrics": [{"label": "N", "value": "1", "status": "robust",
+                             "artifactIds": ["fig"]}],
+                "artifacts": [{"id": "fig", "file": "artifacts/fig.png",
+                               "source": {"sha256": sha}}],
+            }
+            integ = results.compute_integrity(manifest, staging, now="2026-07-13 10:00")
+            self.assertEqual(integ["status"], "passed")
+            self.assertEqual(integ["checkedAt"], "2026-07-13 10:00")
+            verdicts = {c["name"]: c["verdict"] for c in integ["checks"]}
+            self.assertEqual(verdicts, {"checksums": "pass", "artifacts-present": "pass",
+                                        "artifact-refs": "pass", "findings-sourced": "pass"})
+
+    def test_flags_unsourced_substantive_finding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staging, _ = self._staging_with_fig(tmp)
+            manifest = {  # robust finding with no artifactIds
+                "metrics": [{"label": "Effect", "value": "0.3", "status": "robust"}],
+                "artifacts": [],
+            }
+            integ = results.compute_integrity(manifest, staging, now="t")
+            self.assertEqual(integ["status"], "failed")
+            fs = next(c for c in integ["checks"] if c["name"] == "findings-sourced")
+            self.assertEqual(fs["verdict"], "fail")
+            self.assertIn("Effect", fs["detail"])
+
+    def test_descriptive_metric_need_not_be_sourced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staging, _ = self._staging_with_fig(tmp)
+            manifest = {  # descriptive count is not substantive → not required to source
+                "metrics": [{"label": "N", "value": "1234", "status": "descriptive"}],
+                "artifacts": [],
+            }
+            integ = results.compute_integrity(manifest, staging, now="t")
+            self.assertEqual(integ["status"], "passed")
+
+    def test_missing_sha256_is_a_checksum_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staging, _ = self._staging_with_fig(tmp)
+            manifest = {  # artifact present but no recorded sha256 → cannot verify
+                "metrics": [],
+                "artifacts": [{"id": "fig", "file": "artifacts/fig.png", "source": {}}],
+            }
+            integ = results.compute_integrity(manifest, staging, now="t")
+            cs = next(c for c in integ["checks"] if c["name"] == "checksums")
+            self.assertEqual(cs["verdict"], "fail")
+            self.assertEqual(integ["status"], "failed")
+
+    def test_flags_dangling_artifact_ref(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staging, sha = self._staging_with_fig(tmp)
+            manifest = {
+                "metrics": [{"label": "N", "value": "1", "status": "robust",
+                             "artifactIds": ["ghost"]}],
+                "artifacts": [{"id": "fig", "file": "artifacts/fig.png",
+                               "source": {"sha256": sha}}],
+            }
+            integ = results.compute_integrity(manifest, staging, now="t")
+            refs = next(c for c in integ["checks"] if c["name"] == "artifact-refs")
+            self.assertEqual(refs["verdict"], "fail")
+            self.assertEqual(integ["status"], "failed")
+
+    def test_finalize_seals_integrity_into_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            p = run_cli(root, "stage", "--component", "02-analysis")
+            staging = Path(p.stdout.strip())
+            p = run_cli(root, "copy", "--staging", str(staging),
+                        "--into", "artifacts", "output/fig1.png")
+            rec = json.loads(p.stdout)[0]
+            arts = [{"id": "fig", "kind": "figure", "title": "F",
+                     "file": "artifacts/fig1.png",
+                     "source": {"path": "output/fig1.png", "sha256": rec["sha256"],
+                                "bytes": rec["bytes"], "oversized": False},
+                     "producedBy": None}]
+            (staging / "manifest.json").write_text(
+                json.dumps(manifest_for(staging, entries=arts)), encoding="utf-8")
+            (staging / "report.md").write_text("# R\n", encoding="utf-8")
+            p = run_cli(root, "finalize", "--staging", str(staging))
+            self.assertEqual(p.returncode, 0, p.stderr)
+            doc = json.loads((root / "plans" / "execution" / "02-analysis" /
+                              "results" / "r1" / "manifest.json").read_text())
+            self.assertIn("integrity", doc)
+            self.assertEqual(doc["integrity"]["status"], "passed")
+            self.assertTrue(any(c["name"] == "findings-sourced"
+                                for c in doc["integrity"]["checks"]))
+
+    def test_validate_staged_accepts_sealed_integrity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staging, sha = self._staging_with_fig(tmp)
+            (staging / "report.md").write_text("# R\n", encoding="utf-8")
+            base = {"component": "02-analysis", "provenance": "planned",
+                    "trigger": "initial", "capturedAt": "t",
+                    "metrics": [], "artifacts": []}
+            good = dict(base, integrity={"status": "passed", "checkedAt": "t",
+                                         "checks": [{"name": "checksums", "verdict": "pass"}]})
+            (staging / "manifest.json").write_text(json.dumps(good), encoding="utf-8")
+            m, err = results.validate_staged(staging)
+            self.assertIsNone(err, err)
+            bad = dict(base, integrity={"status": "bogus", "checks": []})
+            (staging / "manifest.json").write_text(json.dumps(bad), encoding="utf-8")
+            m, err = results.validate_staged(staging)
+            self.assertIsNotNone(err)
+            self.assertIn("integrity", err)
+
+
 if __name__ == "__main__":
     unittest.main()

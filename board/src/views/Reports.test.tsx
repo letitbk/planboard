@@ -12,7 +12,9 @@ function bundle(over: Partial<ResultsBundle>): ResultsBundle {
   return {
     resultsVersion: 1, dir: "plans/execution/01-x/results/r1",
     manifest: { schemaVersion: 1, component: "01-x", resultsVersion: 1, planVersion: 1,
-      provenance: "planned", trigger: "initial", capturedAt: "t", metrics: [], artifacts: [] },
+      provenance: "planned", trigger: "initial", capturedAt: "t",
+      // a substantive finding by default → report-able (see null-result tests below)
+      metrics: [{ label: "Effect", value: "0.3", status: "robust" }], artifacts: [] },
     manifestRaw: { path: "plans/execution/01-x/results/r1/manifest.json", content: "{}" },
     report: null, verdict: null, verdictRaw: null, scripts: [],
     assets: { "fig1.png": "data:image/png;base64,AAAA" },
@@ -93,6 +95,27 @@ describe("Reports view", () => {
     const b = bundle({ publishedReport: null, reportFormats: { pdf: true, docx: false } });
     draw(data([b]));
     expect(screen.getByText(/markdown is missing/i)).toBeTruthy();
+  });
+  it("null-result: a bundle with no substantive findings shows the no-result state and no Generate button", () => {
+    const b = bundle({
+      publishedReport: null, reportFormats: { pdf: false, docx: false },
+      manifest: { schemaVersion: 1, component: "01-x", resultsVersion: 1, planVersion: 1,
+        provenance: "planned", trigger: "initial", capturedAt: "t",
+        metrics: [{ label: "N", value: "1234", status: "descriptive" }], artifacts: [] },
+    });
+    draw(data([b]), { onRequestReport: vi.fn() });
+    expect(screen.getByText(/No report — no substantive findings/i)).toBeTruthy();
+    expect(screen.queryByText("Generate report")).toBeNull();
+  });
+  it("null-result: no newer-bundle 'generate' nudge for a substantive-less latest bundle", () => {
+    const b2 = bundle({ resultsVersion: 2, dir: "plans/execution/01-x/results/r2",
+      publishedReport: null, reportFormats: { pdf: false, docx: false },
+      manifest: { schemaVersion: 1, component: "01-x", resultsVersion: 2, planVersion: 1,
+        provenance: "planned", trigger: "initial", capturedAt: "t",
+        metrics: [{ label: "N", value: "5", status: "descriptive" }], artifacts: [] } });
+    // view r1 (which has a report); r2 is the substantive-less latest
+    draw(data([bundle({}), b2]), { navRequest: { token: 1, resultsVersion: 1 }, onRequestReport: vi.fn() });
+    expect(screen.queryByText(/has no report yet — generate one/i)).toBeNull();
   });
   it("newer-bundle flag names the latest rN lacking a report and carries a Generate button targeting it", () => {
     const b2 = bundle({ resultsVersion: 2, dir: "plans/execution/01-x/results/r2",

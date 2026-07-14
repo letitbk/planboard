@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Markdown from "../components/Markdown";
 import ArtifactCard from "../components/ArtifactCard";
 import ViewerModal from "../components/ViewerModal";
 import ProvenanceFlow from "../components/ProvenanceFlow";
@@ -14,6 +13,7 @@ import { Notice } from "./Tracker";
 import { parseExecutionPlan, preRenewalSlugs } from "../lib/parse";
 import type { ViewerRequest } from "../lib/artifactDisplay";
 import { actionsVisible } from "../lib/actions";
+import { hasSubstantiveFindings } from "../lib/findings";
 import type {
   Annotation,
   BoardData,
@@ -23,6 +23,7 @@ import type {
   ReviewRequest,
   ScriptCommentAnnotation,
   ValidationBlock,
+  IntegrityBlock,
   VerdictRequest,
   ReopenRequest,
 } from "../lib/types";
@@ -133,6 +134,65 @@ function ValidationSection({ v }: { v: ValidationBlock }) {
           {v.notes}
         </p>
       )}
+    </details>
+  );
+}
+
+const INTEGRITY_CLS: Record<IntegrityBlock["status"], string> = {
+  passed: "border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300",
+  failed: "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-900 dark:text-amber-200",
+};
+
+/** Mechanical integrity pass (sha256, artifact refs, findings sourced), sealed
+ *  at finalize. Always shown on Results — the reviewing surface — so every
+ *  bundle carries a validation result; "not recorded" for pre-integrity bundles. */
+function IntegritySection({ integrity }: { integrity: IntegrityBlock | null }) {
+  if (!integrity) {
+    return (
+      <div
+        className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 px-4 py-2 text-sm"
+        data-annot-scope="integrity"
+        data-annot-section="integrity"
+      >
+        <span className="mr-2 rounded-full border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400 dark:text-stone-500">
+          not recorded
+        </span>
+        <span className="font-semibold text-stone-800 dark:text-stone-200">Integrity</span>
+        <span className="ml-2 text-xs text-stone-400 dark:text-stone-500">
+          captured before integrity checks
+        </span>
+      </div>
+    );
+  }
+  return (
+    <details
+      className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 px-4 py-2"
+      data-annot-scope="integrity"
+      data-annot-section="integrity"
+      open={integrity.status === "failed"}
+    >
+      <summary className="cursor-pointer select-none py-1 text-sm">
+        <span
+          className={`mr-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${INTEGRITY_CLS[integrity.status] ?? INTEGRITY_CLS.failed}`}
+        >
+          {integrity.status}
+        </span>
+        <span className="font-semibold text-stone-800 dark:text-stone-200">Integrity</span>
+        {integrity.checkedAt && (
+          <span className="ml-2 text-xs text-stone-400 dark:text-stone-500">{integrity.checkedAt}</span>
+        )}
+      </summary>
+      <ul className="mt-2 space-y-1 text-xs">
+        {integrity.checks.map((c, i) => (
+          <li key={i} className="flex flex-wrap gap-x-2">
+            <span className={c.verdict === "pass" ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}>
+              {c.verdict === "pass" ? "✓" : "✗"}
+            </span>
+            <span className="font-medium text-stone-700 dark:text-stone-300">{c.name}</span>
+            {c.detail && <span className="text-stone-500">— {c.detail}</span>}
+          </li>
+        ))}
+      </ul>
     </details>
   );
 }
@@ -409,7 +469,9 @@ export default function Results({
           })}
           {actionsVisible(data) && (onRequestReview || onRequestReport) && (
             <div className="ml-auto flex items-center gap-2">
-              {onRequestReport && (
+              {/* No report for a null result: a bundle with no substantive
+                  finding gets no narrative — /report would refuse anyway. */}
+              {onRequestReport && hasSubstantiveFindings(bundle) && (
                 <button
                   className="rounded-full border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:border-emerald-500 dark:hover:border-emerald-400"
                   onClick={() =>
@@ -557,12 +619,11 @@ export default function Results({
         )}
 
         {(() => {
-          const findingMode = !!(
-            m &&
-            m.metrics.some(
-              (mt) =>
-                (mt.artifactIds && mt.artifactIds.length > 0) || mt.statement,
-            )
+          // `metrics` is typed required, but a manifest.json may omit it —
+          // normalize once so a metrics-less bundle can't crash the tiles/gallery.
+          const metrics = m && Array.isArray(m.metrics) ? m.metrics : [];
+          const findingMode = metrics.some(
+            (mt) => (mt.artifactIds && mt.artifactIds.length > 0) || mt.statement,
           );
           const onZoom = (url: string, title: string) => setZoom({ url, title });
           const onView = (v: ViewerRequest) =>
@@ -576,26 +637,18 @@ export default function Results({
             : null;
           const bundleBody = (
             <>
-              {/* plan-vs-execution validation (v0.10) — promoted to the top:
-                  Results is the reviewing surface (reports-tab spec §7) */}
+              {/* Validation, promoted to the top: Results is the reviewing
+                  surface — "did it check out?". Integrity (mechanical, every
+                  bundle) then plan-vs-execution (planned bundles). No prose:
+                  the capture note now lives only in the Report narrative. */}
+              {m && <IntegritySection integrity={m.integrity ?? null} />}
               {m?.validation && <ValidationSection v={m.validation} />}
-
-              {/* capture note — the bundle's brief report.md */}
-              {bundle.report && (
-                <section
-                  className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-5"
-                  data-annot-scope="report"
-                  data-annot-section="report"
-                >
-                  <Markdown source={bundle.report.content} />
-                </section>
-              )}
 
               {m && findingMode ? (
                 <>
                   {/* key claims — compact tiles; figures live in the Evidence
                       gallery below and, in context, on the Reports tab */}
-                  {m.metrics.map((metric) => (
+                  {metrics.map((metric) => (
                     <section
                       key={metric.label}
                       data-annot-scope={`metric:${metric.label}`}
@@ -657,9 +710,9 @@ export default function Results({
               ) : (
                 <>
                   {/* backward-compat: metric tiles + full gallery */}
-                  {m && m.metrics.length > 0 && (
+                  {metrics.length > 0 && (
                     <div className="mb-4 flex flex-wrap gap-3">
-                      {m.metrics.map((metric) => (
+                      {metrics.map((metric) => (
                         <div
                           key={metric.label}
                           data-annot-scope={`metric:${metric.label}`}
@@ -728,8 +781,8 @@ export default function Results({
 
         {canAnnotate && (
           <p className="mb-2 text-xs text-stone-400 dark:text-stone-500">
-            Select any text — a metric, an artifact title or caption, report
-            text — to attach a comment.
+            Select any text — a metric, an artifact title or caption — to attach
+            a comment.
           </p>
         )}
 
