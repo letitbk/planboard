@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ModelChip from "./ModelChip";
 import { isScoredScorecard } from "../lib/types";
 import type { Scorecard, ScorecardChannelId } from "../lib/types";
 
@@ -54,7 +55,9 @@ export default function ScorePanel({ scorecard }: { scorecard: Scorecard }) {
     );
   }
 
-  const flags = scorecard.integrityFlags ?? [];
+  const flags = Array.isArray(scorecard.integrityFlags)
+    ? scorecard.integrityFlags
+    : [];
 
   return (
     <span className="relative inline-flex items-center gap-1">
@@ -102,18 +105,23 @@ function ScoreDetail({
 }) {
   return (
     <div className="absolute right-0 top-full z-20 mt-1 w-96 max-w-[90vw] rounded-lg border border-stone-200 bg-white p-3 text-left text-xs shadow-lg dark:border-stone-700 dark:bg-stone-900">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-stone-700 dark:text-stone-200">
           {scorecard.profile ?? ""} · plan v{scorecard.planVersion}
         </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
-          aria-label="Close"
-        >
-          ✕
-        </button>
+        <span className="flex items-center gap-2">
+          {scorecard.modelUsage && (
+            <ModelChip usage={scorecard.modelUsage} reportedLabel="reviewed by" />
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </span>
       </div>
       <table className="w-full border-collapse">
         <tbody>

@@ -369,20 +369,35 @@ export function parseScorecard(raw: string): Scorecard | null {
         return typeof parsed.reason === "string" ? (parsed as Scorecard) : null;
       }
       if (parsed.status !== "scored" || !Array.isArray(parsed.channels)) return null;
-      // Require exactly the five canonical channels, each an integer score 0..3.
-      const ids = parsed.channels.map(
-        (c: { id?: unknown }) => c && (c as { id?: unknown }).id,
-      );
-      const idsOk =
-        parsed.channels.length === SCORECARD_CHANNEL_IDS.length &&
-        SCORECARD_CHANNEL_IDS.every((id) => ids.includes(id));
-      const scoresOk = parsed.channels.every(
-        (c: { score?: unknown }) =>
+      // Require exactly the five canonical channels, IN ORDER, each an integer
+      // score 0..3. (All emitters write them in order; enforcing it keeps the
+      // render — which indexes by position/letter — honest.)
+      const ch = parsed.channels as { id?: unknown; score?: unknown }[];
+      const orderOk =
+        ch.length === SCORECARD_CHANNEL_IDS.length &&
+        SCORECARD_CHANNEL_IDS.every((id, i) => ch[i] && ch[i].id === id);
+      const scoresOk = ch.every(
+        (c) =>
           Number.isInteger(c.score) &&
           (c.score as number) >= 0 &&
           (c.score as number) <= 3,
       );
-      if (!idsOk || !scoresOk) return null;
+      if (!orderOk || !scoresOk) return null;
+      // total must equal the sum (derive when absent, reject when inconsistent).
+      const sum = ch.reduce((a, c) => a + (c.score as number), 0);
+      if (parsed.total == null) parsed.total = sum;
+      else if (parsed.total !== sum) return null;
+      // optional collections must be arrays; biggestLeak an object — else the
+      // render's .map()/property access would throw on a malformed card.
+      const okArr = (v: unknown) => v == null || Array.isArray(v);
+      if (
+        !okArr(parsed.integrityFlags) ||
+        !okArr(parsed.suggestedMoves) ||
+        !okArr(parsed.unresolvedForks)
+      )
+        return null;
+      if (parsed.biggestLeak != null && typeof parsed.biggestLeak !== "object")
+        return null;
       return parsed as Scorecard;
     }
 

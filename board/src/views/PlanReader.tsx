@@ -727,8 +727,14 @@ function SectionBlock({
  * banner fall back to the old two-half render.
  */
 function PlanBody({ content, level }: { content: string; level: DetailLevel }) {
-  if (/^## Part 2\b/m.test(content)) return <LegacyPlanBody content={content} />;
-  const sections = splitSections(content);
+  // Strip HTML comments before rendering: the execution-plan template carries a
+  // guidance comment that itself contains a literal <details class="agent-detail">
+  // example, which the agent-detail matcher would otherwise surface as content
+  // (and Markdown escapes comments into ugly literal text). Comments are never
+  // rendered content, so removing them does not perturb annotation anchoring.
+  const clean = content.replace(/<!--[\s\S]*?-->/g, "");
+  if (/^## Part 2\b/m.test(clean)) return <LegacyPlanBody content={clean} />;
+  const sections = splitSections(clean);
   return (
     <>
       {sections.map((s, i) =>

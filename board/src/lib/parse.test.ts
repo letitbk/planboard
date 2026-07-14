@@ -249,6 +249,35 @@ describe("scorecard parsing", () => {
     expect(sc!.reason).toContain("goal");
   });
 
+  const v3channels =
+    '"channels":[{"id":"goal","score":3},{"id":"decisions","score":2},{"id":"steps","score":2},{"id":"validation","score":1},{"id":"boundaries","score":0}]';
+  const v3head =
+    '{"schemaVersion":3,"status":"scored","component":"x","planVersion":1,"planPath":"p","rubricVersion":"0.4","date":"d",';
+  const fence = (mid: string) =>
+    "```json board-scorecard\n" + v3head + mid + "}\n```";
+
+  it("rejects reordered channels, inconsistent total, or non-array collections", () => {
+    // reordered channels
+    expect(
+      parseScorecard(
+        fence(
+          '"channels":[{"id":"decisions","score":2},{"id":"goal","score":3},{"id":"steps","score":2},{"id":"validation","score":1},{"id":"boundaries","score":0}]',
+        ),
+      ),
+    ).toBeNull();
+    // total inconsistent with the sum (8, not 99)
+    expect(parseScorecard(fence(v3channels + ',"total":99'))).toBeNull();
+    // integrityFlags is a string, not an array (would crash the render)
+    expect(parseScorecard(fence(v3channels + ',"integrityFlags":"none"'))).toBeNull();
+    // biggestLeak is a string, not an object
+    expect(parseScorecard(fence(v3channels + ',"biggestLeak":"steps"'))).toBeNull();
+  });
+
+  it("derives total from the channel scores when it is absent", () => {
+    const sc = parseScorecard(fence(v3channels));
+    expect(sc!.total).toBe(8);
+  });
+
   it("rejects a v3 scored card that is missing a channel or has an out-of-range score", () => {
     const missing =
       '```json board-scorecard\n{"schemaVersion":3,"status":"scored","component":"x","planVersion":1,"planPath":"p","rubricVersion":"0.4","date":"d","channels":[{"id":"goal","score":3},{"id":"decisions","score":2},{"id":"steps","score":2},{"id":"validation","score":1}]}\n```';

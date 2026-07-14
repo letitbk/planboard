@@ -19,7 +19,8 @@ describe("ConnBanner", () => {
         phase={{ kind: "applying", actionId: "a", bootId: "b", projectId: "p", since: 0 }}
       />,
     );
-    expect(screen.getByText(/board will refresh itself/)).toBeTruthy();
+    expect(screen.getByText(/Sent to Claude/)).toBeTruthy();
+    expect(screen.getByText(/research-plans:board to reopen/)).toBeTruthy();
   });
 
   it("stalled keeps waiting and names the recovery command", () => {
@@ -28,7 +29,7 @@ describe("ConnBanner", () => {
         phase={{ kind: "stalled", actionId: "a", bootId: "b", projectId: "p", since: 0 }}
       />,
     );
-    expect(screen.getByText(/Still applying/)).toBeTruthy();
+    expect(screen.getByText(/Sent to Claude/)).toBeTruthy();
     expect(screen.getByText(/research-plans:board/)).toBeTruthy();
   });
 
