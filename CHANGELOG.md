@@ -1,9 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.0] - 2026-07-13
+
+Two themes land together: the board can now steer which model runs each stage and record which model each part actually used, and the results/report split becomes honest — evidence and a mechanical integrity check on the Result tab, narrative on the Report tab, and no report at all when there is nothing to report.
 
 ### Added
-- **Board Models tab.** The per-stage model profile (previously edit-only via `/research-plans:models`) now has a first-class board tab. It shows the profile in every board mode; when the board is served live from your project it becomes editable inline — pick a model (the five aliases or a custom `claude-*` id) and effort per stage, then Save, and the board rewrites `plans/model-profile.md` and regenerates the `rp-*` review agents itself. Nudge-stage edits (plan, execute, sync) take effect immediately; agent-stage edits are flagged for a session restart. Mechanism is read-only, and a hand-edited (non-canonical) profile is shown read-only with a pointer back to the command. Saves are validated, atomic, and concurrency-guarded, and a reload/second tab reconciles via a new `GET /api/model-profile`.
+- **Board Models tab.** The per-stage model profile (previously edit-only via `/research-plans:models`) is now a first-class board tab — read-only in every mode; when served live from your project, edit model/effort per stage inline (the five aliases or a custom `claude-*` id) and Save, and the board rewrites `plans/model-profile.md` and regenerates the `rp-*` review agents itself. Nudge-stage edits (plan, execute, sync) apply immediately; agent-stage edits are flagged for a session restart. Saves are validated, atomic, and concurrency-guarded, and a reload / second tab reconciles via a new `GET /api/model-profile`.
+- **Up-front model choice.** `/research-plans:init` asks whether to use the recommended per-stage defaults or choose your own before writing the profile; the Models empty-state offers the same choice.
+- **Model provenance.** Each plan version, result bundle, report, and review now records which model it used — both *prescribed* (from the profile) and *reported* (self-attested by the session, shown honestly as reported, never as verified runtime truth) — surfaced as a small chip on the Plans, Results, Reports, and Reviews surfaces.
+- **Integrity pass on every bundle.** `/research-plans:results` seals a mechanical integrity check into each bundle's manifest at finalize (artifact checksums match, references resolve, every substantive finding is sourced to an artifact) — advisory, surfaced on the Result tab, never blocking.
+- **Tracker Report column.** The report link moves out of the Results column into its own Tracker column.
+
+### Changed
+- **Result and Report tabs split cleanly.** The Result tab is evidence + validation + integrity; the Report tab is the single home for narrative prose. A bundle with no substantive findings gets no report — `/research-plans:report` refuses (null-result gate) and the board shows a null-result state instead of an empty document.
+- **Plan/version diffs wrap** to the pane width instead of scrolling horizontally.
 
 ## [0.16.0] - 2026-07-13
 
