@@ -6,6 +6,8 @@ import AnnotationLayer, {
 } from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
 import { parseScorecard } from "../lib/parse";
+import ModelChip from "../components/ModelChip";
+import { coerceModelUsage } from "../lib/modelUsage";
 import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
 
 function bandColor(percent: number): string {
@@ -177,7 +179,10 @@ export default function Scorecard({
                 <h1 className="text-lg font-bold text-stone-900 dark:text-stone-100">
                   {sc.component} — plan v{sc.planVersion}
                 </h1>
-                <span className="text-xs text-stone-500">
+                <span className="flex items-center gap-2 text-xs text-stone-500">
+                  {sc.modelUsage && (
+                    <ModelChip usage={coerceModelUsage(sc.modelUsage)} reportedLabel="reviewed by" />
+                  )}
                   {sc.date} · rubric v{sc.rubricVersion}
                 </span>
               </div>

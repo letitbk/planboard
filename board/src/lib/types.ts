@@ -74,6 +74,24 @@ export interface ModelProfile {
   agentsGitignored: boolean | null; // null when git unavailable / collaborator mode
 }
 
+// ---- model provenance (which model each part used) ----
+
+// One side of a provenance record. `effort` is null when unknown (reported
+// effort is generally not introspectable) or unset.
+export interface ModelSide {
+  model: string;
+  effort: string | null;
+}
+
+// Attached to a plan version, result bundle, report, or scorecard/validation.
+// `prescribed` = what the profile assigned to the governing stage (reliable);
+// `reported` = what the capturing session/agent self-attested (best-effort,
+// NEVER presented as verified runtime truth). Either may be null.
+export interface ModelUsage {
+  prescribed: ModelSide | null;
+  reported: ModelSide | null;
+}
+
 // Result of a successful POST /api/model-profile (patched into App state).
 export interface ModelProfileSaveResult {
   ok: true;
@@ -148,6 +166,7 @@ export interface ResultsManifest {
   }[];
   artifacts: ResultArtifact[];
   validation?: ValidationBlock; // v0.10: plan-vs-execution audit, sealed at capture
+  modelUsage?: ModelUsage; // which model captured this bundle (reported = capture session)
 }
 
 // Independent-subagent audit of the bundle against its signed plan (v0.10).
@@ -180,6 +199,7 @@ export interface ValidationBlock {
   }[];
   notes?: string;
   reason?: string; // for not-applicable / skipped / unverifiable
+  modelUsage?: ModelUsage; // which model validated (reported = validator agent or session)
 }
 
 export interface ResultArtifact {
@@ -321,6 +341,7 @@ export interface Scorecard {
   excluded?: { id: number | string; why: string }[];
   topRevisions?: string[];
   split?: { verdict: string; detail: string };
+  modelUsage?: ModelUsage; // which model reviewed (reported = review agent or session)
 }
 
 export interface ScorecardThreshold {

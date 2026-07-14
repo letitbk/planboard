@@ -5,6 +5,9 @@
 // The board ALWAYS strips the first line before rendering when it starts with
 // the prefix — Marked treats an unclosed comment as swallowing the whole
 // document, so rendering must never see a malformed marker.
+import { coerceModelUsage } from "./modelUsage";
+import type { ModelUsage } from "./types";
+
 export interface ReportMarker {
   schemaVersion: number;
   component: string;
@@ -12,6 +15,7 @@ export interface ReportMarker {
   plan: number | null;
   verdict: "accepted" | "changes-requested" | "pending";
   generated: string;
+  modelUsage?: ModelUsage; // which model generated the report (reported only)
 }
 
 export interface ParsedReport {
@@ -49,6 +53,7 @@ export function parseReport(content: string): ParsedReport {
           schemaVersion: j.schemaVersion, component: j.component,
           bundle: j.bundle, plan: j.plan as number | null,
           verdict: j.verdict as ReportMarker["verdict"], generated: j.generated,
+          modelUsage: coerceModelUsage(j.modelUsage) ?? undefined,
         },
         malformed: false, body,
       };

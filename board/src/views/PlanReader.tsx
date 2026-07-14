@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import Markdown from "../components/Markdown";
+import ModelChip from "../components/ModelChip";
+import { parsePlanModelMarker } from "../lib/modelUsage";
 import DiffView from "../components/DiffView";
 import AnnotationLayer from "../components/AnnotationLayer";
 import ReviewMenu from "../components/ReviewMenu";
@@ -186,9 +188,20 @@ export default function PlanReader({
     setDiffOn(Boolean(doc?.isDraft && prevDoc));
   }, [doc?.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const parsed = useMemo(
-    () => (doc ? parseExecutionPlan(doc.content) : null),
+  // Strip the leading rp-model provenance marker before parsing/rendering/diff
+  // (a malformed one would otherwise swallow the plan body in Markdown).
+  const planMarker = useMemo(
+    () => (doc ? parsePlanModelMarker(doc.content) : null),
     [doc],
+  );
+  const docBody = planMarker ? planMarker.body : "";
+  const prevBody = useMemo(
+    () => (prevDoc ? parsePlanModelMarker(prevDoc.content).body : ""),
+    [prevDoc],
+  );
+  const parsed = useMemo(
+    () => (planMarker ? parseExecutionPlan(planMarker.body) : null),
+    [planMarker],
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -497,8 +510,8 @@ export default function PlanReader({
 
         {diffOn && prevDoc ? (
           <DiffView
-            before={prevDoc.content}
-            after={doc.content}
+            before={prevBody}
+            after={docBody}
             supersedesReason={parsed?.supersedes ?? null}
           />
         ) : (
@@ -506,6 +519,11 @@ export default function PlanReader({
             ref={scrollRef}
             className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-6"
           >
+            {planMarker?.modelUsage && (
+              <div className="mb-3 flex justify-end">
+                <ModelChip usage={planMarker.modelUsage} />
+              </div>
+            )}
             {annotatable ? (
               <AnnotationLayer
                 docKey={doc.path}
@@ -522,14 +540,14 @@ export default function PlanReader({
                 }
               >
                 <PlanBody
-                content={doc.content}
+                content={docBody}
                 open={agentOpen}
                 onToggle={() => setAgentOpen((o) => !o)}
               />
               </AnnotationLayer>
             ) : (
               <PlanBody
-                content={doc.content}
+                content={docBody}
                 open={agentOpen}
                 onToggle={() => setAgentOpen((o) => !o)}
               />

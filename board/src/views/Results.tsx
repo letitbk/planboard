@@ -8,6 +8,8 @@ import AnnotationLayer, {
   type AnchoredSelection,
 } from "../components/AnnotationLayer";
 import ReviewMenu from "../components/ReviewMenu";
+import ModelChip from "../components/ModelChip";
+import { coerceModelUsage } from "../lib/modelUsage";
 import { Notice } from "./Tracker";
 import { parseExecutionPlan, preRenewalSlugs } from "../lib/parse";
 import type { ViewerRequest } from "../lib/artifactDisplay";
@@ -84,6 +86,9 @@ function ValidationSection({ v }: { v: ValidationBlock }) {
         </span>
         {v.validatedAt && (
           <span className="ml-2 text-xs text-stone-400 dark:text-stone-500">{v.validatedAt}</span>
+        )}
+        {v.modelUsage && (
+          <ModelChip usage={coerceModelUsage(v.modelUsage)} reportedLabel="validated by" className="ml-2" />
         )}
       </summary>
       {v.reason && <p className="mt-2 text-xs text-stone-500">{v.reason}</p>}
@@ -446,6 +451,9 @@ export default function Results({
               {bundle.verdict.reviewer} · {bundle.verdict.date}
               {bundle.verdict.comment ? ` — “${bundle.verdict.comment}”` : ""}
             </span>
+          )}
+          {m?.modelUsage && (
+            <ModelChip usage={coerceModelUsage(m.modelUsage)} reportedLabel="captured by" />
           )}
           {m?.provenance === "retrofit" && (
             <span
