@@ -94,4 +94,12 @@ describe("Result tab integrity + prose", () => {
     renderWithReport(d);
     expect(screen.queryByText("Generate report")).toBeNull();
   });
+
+  it("renders without crashing when the manifest omits the metrics field", () => {
+    const d = dataWith(undefined, null);
+    delete (d.files.executionPlans[0].results![0].manifest as { metrics?: unknown })
+      .metrics;
+    expect(() => renderResults(d)).not.toThrow();
+    expect(screen.getByText(/01-x r1/)).toBeTruthy(); // verdict banner still renders
+  });
 });

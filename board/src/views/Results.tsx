@@ -611,12 +611,11 @@ export default function Results({
         )}
 
         {(() => {
-          const findingMode = !!(
-            m &&
-            m.metrics.some(
-              (mt) =>
-                (mt.artifactIds && mt.artifactIds.length > 0) || mt.statement,
-            )
+          // `metrics` is typed required, but a manifest.json may omit it —
+          // normalize once so a metrics-less bundle can't crash the tiles/gallery.
+          const metrics = m && Array.isArray(m.metrics) ? m.metrics : [];
+          const findingMode = metrics.some(
+            (mt) => (mt.artifactIds && mt.artifactIds.length > 0) || mt.statement,
           );
           const onZoom = (url: string, title: string) => setZoom({ url, title });
           const onView = (v: ViewerRequest) =>
@@ -641,7 +640,7 @@ export default function Results({
                 <>
                   {/* key claims — compact tiles; figures live in the Evidence
                       gallery below and, in context, on the Reports tab */}
-                  {m.metrics.map((metric) => (
+                  {metrics.map((metric) => (
                     <section
                       key={metric.label}
                       data-annot-scope={`metric:${metric.label}`}
@@ -703,9 +702,9 @@ export default function Results({
               ) : (
                 <>
                   {/* backward-compat: metric tiles + full gallery */}
-                  {m && m.metrics.length > 0 && (
+                  {metrics.length > 0 && (
                     <div className="mb-4 flex flex-wrap gap-3">
-                      {m.metrics.map((metric) => (
+                      {metrics.map((metric) => (
                         <div
                           key={metric.label}
                           data-annot-scope={`metric:${metric.label}`}
