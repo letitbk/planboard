@@ -190,9 +190,16 @@ describe("Models view (editing, live)", () => {
     expect(modelSel().value).toBe("opus");
   });
 
-  it("empty state offers Create from defaults and posts create:true", async () => {
+  it("empty state 'Use recommended defaults' posts create:true", async () => {
     render(<Models data={base("live")} modelProfile={undefined} onProfileChange={noop} />);
-    fireEvent.click(await screen.findByText("Create from defaults"));
+    fireEvent.click(await screen.findByText("Use recommended defaults"));
+    await waitFor(() => expect(postBody).toBeTruthy());
+    expect(postBody!.create).toBe(true);
+  });
+
+  it("empty state 'Choose your models' also posts create:true", async () => {
+    render(<Models data={base("live")} modelProfile={undefined} onProfileChange={noop} />);
+    fireEvent.click(await screen.findByText("Choose your models"));
     await waitFor(() => expect(postBody).toBeTruthy());
     expect(postBody!.create).toBe(true);
   });
@@ -222,13 +229,14 @@ describe("Models view (editing, live)", () => {
     await waitFor(() => expect(selects().length).toBe(12));
     fireEvent.change(selects()[6], { target: { value: "sonnet" } });
     fireEvent.click(saveBtn());
-    await screen.findByText("Create from defaults");
+    await screen.findByText("Use recommended defaults");
   });
 
-  it("hides Create from defaults during a sign-off gate", () => {
+  it("hides the create buttons during a sign-off gate", () => {
     const data: BoardData = { ...base("live"), gate: { component: "x", proposedVersion: 1 } };
     render(<Models data={data} modelProfile={undefined} onProfileChange={noop} />);
-    expect(screen.queryByText("Create from defaults")).toBeNull();
+    expect(screen.queryByText("Use recommended defaults")).toBeNull();
+    expect(screen.queryByText("Choose your models")).toBeNull();
     expect(screen.getByText(/No model profile is configured/)).toBeTruthy();
   });
 });

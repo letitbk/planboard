@@ -104,6 +104,9 @@ export default function Models({
   const [draft, setDraft] = useState<DraftRow[]>(() => toDraft(modelProfile?.rows ?? []));
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  // Set when the user chose "Choose your models" from the empty state, so the
+  // editable table that appears after creation shows an adjust-and-save hint.
+  const [pickAfterCreate, setPickAfterCreate] = useState(false);
 
   // Reset the editable draft whenever the authoritative snapshot changes
   // (mount fetch, a save, or a 409 rebase) — keyed on the content hash so live
@@ -208,6 +211,10 @@ export default function Models({
       rows: draft.map((r) => ({ stage: r.stage, model: r.model, effort: r.effort })),
     });
   const createDefaults = () => post({ boardToken: data.boardToken, create: true });
+  const chooseModels = () => {
+    setPickAfterCreate(true);
+    createDefaults();
+  };
   const revert = () => {
     setDraft(toDraft(modelProfile?.rows ?? []));
     setFeedback(null);
@@ -220,16 +227,26 @@ export default function Models({
         <Header />
         {canCreate ? (
           <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-700 p-6 text-center">
-            <p className="mb-3 text-sm text-stone-600 dark:text-stone-400">
-              No model profile yet — every stage runs on your session model.
+            <p className="mb-4 text-sm text-stone-600 dark:text-stone-400">
+              No model profile yet — every stage runs on your session model. Start from the
+              recommended per-stage defaults, or pick your own.
             </p>
-            <button
-              className="rounded-md border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 px-3 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:border-emerald-500 dark:hover:border-emerald-400 disabled:opacity-40"
-              disabled={saving}
-              onClick={createDefaults}
-            >
-              {saving ? "Creating…" : "Create from defaults"}
-            </button>
+            <div className="flex justify-center gap-3">
+              <button
+                className="rounded-md border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 px-3 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:border-emerald-500 dark:hover:border-emerald-400 disabled:opacity-40"
+                disabled={saving}
+                onClick={createDefaults}
+              >
+                {saving ? "Creating…" : "Use recommended defaults"}
+              </button>
+              <button
+                className="rounded-md border border-stone-300 dark:border-stone-600 px-3 py-1.5 text-sm font-medium text-stone-700 dark:text-stone-300 hover:border-stone-500 disabled:opacity-40"
+                disabled={saving}
+                onClick={chooseModels}
+              >
+                Choose your models
+              </button>
+            </div>
           </div>
         ) : (
           <p className="text-sm text-stone-500 dark:text-stone-400">
@@ -260,6 +277,12 @@ export default function Models({
             (modelProfile.warnings.length ? " (" + modelProfile.warnings.join("; ") + ")" : "")
           }
         />
+      )}
+
+      {canEdit && pickAfterCreate && (
+        <div className="mb-3 rounded-md border border-sky-200 dark:border-sky-900 bg-sky-50 dark:bg-sky-950 px-3 py-2 text-xs text-sky-800 dark:text-sky-200">
+          Profile created from defaults — adjust any row below and Save to change a stage's model.
+        </div>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
