@@ -1025,7 +1025,12 @@ export default function App({ data }: { data: BoardData }) {
             {(data.files.archives?.length
               ? [...TABS, { id: "archive" as Tab, label: "Archive" }]
               : TABS
-            ).map((t) => (
+            )
+              // A focused collaborator share omits the model profile (whole-project
+              // config), so hide the Models tab there — it would otherwise claim
+              // "no profile" for a project that has one.
+              .filter((t) => !(t.id === "models" && data.mode === "remote" && data.focus))
+              .map((t) => (
               <button
                 key={t.id}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium ${

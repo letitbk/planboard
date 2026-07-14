@@ -524,6 +524,11 @@ export default function PlanReader({
                 <ModelChip usage={planMarker.modelUsage} />
               </div>
             )}
+            {planMarker?.malformed && (
+              <div className="mb-3 rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+                This plan's model-provenance marker is unreadable — the plan body is shown; regenerate or fix the marker to restore the model chip.
+              </div>
+            )}
             {annotatable ? (
               <AnnotationLayer
                 docKey={doc.path}
