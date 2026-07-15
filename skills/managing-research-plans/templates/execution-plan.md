@@ -3,62 +3,66 @@
 Component: `<NN-slug>` · Master plan: [master-plan.md](../../master-plan.md) · Date: <YYYY-MM-DD>
 Provenance: <omit for a prospective plan. For work already done when this plan is written: `retrospective — written <YYYY-MM-DD>; covers work executed <start>–<end>`>
 Supersedes: v<N-1> — <one line: what changed and why>
-<!-- Omit the Supersedes line for v1. Never edit an earlier version; a revision is a new file.
+<!-- Keep this metadata in the body, not YAML frontmatter (some renderers strip frontmatter).
+     Omit the Supersedes line for v1. Never edit an earlier version; a revision is a new file.
      Provenance absent = prospective (the default, and every plan written before its work).
-     A retrospective plan is an honest label, not a lesser plan: it must still pass every
-     rubric item. Cite each claim to its dated source or commit; tag anything reconstructed
-     with hindsight inline as (reconstructed), the same honesty move as history.md's Uncertain. -->
+     A retrospective plan is an honest label, not a lesser plan; cite each claim to its dated
+     source or commit, and tag anything reconstructed with hindsight inline as (reconstructed).
 
-## Part 1 — For humans (the what & why)
+     WRITE IT SHORT. A plan is read cold by a coauthor, so plain language and brevity win:
+     carry only what the rubric scores — the goal, the consequential decisions with their
+     reasons, the approach and steps, how success is validated, and the boundaries — and
+     nothing else (no speculation about results, no boilerplate, no padding). Push low-level
+     how (code, exact commands, dense technical detail) into collapsible agent-detail blocks:
 
-<!-- The human-readable half: what this component is for and why. A coauthor with no chat
-     context should be able to read Part 1 alone and understand the work. On the board,
-     Part 1 is shown and Part 2 is collapsed under a toggle. Keep the "## Part 1 —"/"## Part 2 —"
-     banner lines verbatim: the board splits the plan on them. -->
+       <details class="agent-detail"><summary>Agent detail — exact commands</summary>
+
+       ```bash
+       python3 analysis/fit_model.py --spec ...
+       ```
+
+       </details>
+
+     Keep the blank lines around the inner fenced block so it renders. Put each agent-detail
+     block right where it belongs in the flow; a reader can skip it, the agent can open it. -->
+
+## Context
+
+<Why this work, what it builds on, and the question it answers — the narrative opening. A paragraph or two, readable by a coauthor with no chat context. Fold in a one-sentence statement of what this component is for.>
 
 ## Goal and success criteria
 
 Serves: <RQ numbers from the master plan, e.g. `RQ1` or `RQ1, RQ2`; `—` for infrastructure>
 
-<What this component will produce or establish, and the concrete criteria by which the
-researcher will judge that it succeeded. Every build step below must trace back to this.>
+<What this component will produce or establish, and the concrete criteria by which the researcher will judge that it succeeded. State the criteria so a third party could check them (thresholds, models, named outputs) rather than leaving them implicit. Every step below must trace back to this goal.>
 
-Stopping rule: <only for an iterated component — a collection round, a pilot/retest wave, a re-fielding. The condition that ends the series (target N reached, saturation, budget spent, a fixed number of waves). One wave under this rule is not a plan deviation; the series is done when this is met. Delete this line for a single-shot component.>
+Stopping rule: <only for an iterated component — a collection round, a pilot/retest wave, a re-fielding. The condition that ends the series (target N reached, saturation, budget spent, a fixed number of waves). Delete this line for a single-shot component.>
 
-## Context
-
-<Why this work, what it builds on, and what question it answers. A paragraph or two, readable by a coauthor with no chat context.>
-
-## Scope decisions
+## Decisions
 
 | Dimension | Decision | Why |
 |-----------|----------|-----|
-| <e.g., dependent variable> | <chosen option> | <one-line reason: the engagement, condensed> |
+| <e.g., dependent variable> | <chosen option> | <the reason, tied to this study's aims — with real depth, not a restatement of the choice> |
 | <e.g., sample restriction> | <chosen option> | <one-line reason> |
 
-<Every substantive dimension of the design gets a row: what was chosen and why. The reason column is what a reader checks first. A list is fine instead of a table for small components.>
-
-## Part 2 — For agents (the how)
-
-<!-- The technical half: how to execute. On the board this is collapsed by default under the
-     "Part 2 — For agents" toggle. -->
+<Every substantive choice that would change the outcome gets a row: what was chosen and why. The reason is what a reviewer checks first — give it depth and connect it to the research question or goal. The reason may be authored, chosen among options, approved, or jointly reached; what matters is that it is grounded, not who first phrased it. A list is fine instead of a table for small components.>
 
 ## Approach
 
-<The high-level pipeline, two to four stages, in a form another agent could pick up and execute.>
+<The high-level pipeline, two to four stages, in a form another agent could pick up and execute. Prose, not code.>
 
 ## Build steps
 
-1. <Numbered steps. Add sub-steps where the decisions are technical.>
+1. <Numbered steps at a grain where "did the agent do this?" has an answer. Surface the non-obvious, context-specific specifics; leave standard/interchangeable steps open. Put code and exact commands in agent-detail blocks, not inline.>
 2. <...>
 
 ## Verification
 
-<How the researcher will judge whether the work succeeded. Concrete and checkable: executable tests, data audits, citation validation, code review, human review of specific outputs. Not "review the results". For an analysis component, name the deliverable files: the journal-ready figure(s) and typeset table(s) (.png + .tex) this component will produce, per the project's output conventions (CLAUDE.md rule 7).>
+<How the researcher (or the agent) will TEST that the success criteria above were actually met — validation, not "review the results". Name the concrete checks: executable tests, data audits, citation validation, and the deliverable files a human will review. For an analysis component, name the journal-ready figure(s) and typeset table(s) (.png + .tex) this component will produce, per the project's output conventions (CLAUDE.md rule 7). A plan with no test of whether it hit its goal is not done here.>
 
 ## Out of scope
 
-<Explicit non-goals that keep execution from drifting beyond the planned work. Name the tempting adjacent work this plan deliberately does not do.>
+<Boundaries. Name both: the tempting adjacent work this plan will NOT do, and any files, data, or systems the agent must NOT touch — so the agent knows where to stop and what to leave alone.>
 
 ## Files to reuse
 

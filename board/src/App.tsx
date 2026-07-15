@@ -3,7 +3,6 @@ import Tracker from "./views/Tracker";
 import PlanReader from "./views/PlanReader";
 import Results from "./views/Results";
 import Timeline from "./views/Timeline";
-import Scorecard from "./views/Scorecard";
 import Archive from "./views/Archive";
 import Reports from "./views/Reports";
 import Models from "./views/Models";
@@ -51,7 +50,7 @@ import type {
   VerdictRequest,
 } from "./lib/types";
 
-type Tab = "tracker" | "plans" | "results" | "timeline" | "reviews" | "archive" | "reports" | "models";
+type Tab = "tracker" | "plans" | "results" | "timeline" | "archive" | "reports" | "models";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "tracker", label: "Tracker" },
@@ -59,7 +58,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "results", label: "Results" },
   { id: "reports", label: "Reports" },
   { id: "timeline", label: "Timeline" },
-  { id: "reviews", label: "Reviews" },
   { id: "models", label: "Models" },
 ];
 
@@ -1091,7 +1089,7 @@ export default function App({ data }: { data: BoardData }) {
               You’ve been asked to review this research plan.
             </span>{" "}
             Select text in any view to attach a comment — plans, tracker rows,
-            timeline entries, results, reports, and reviews all take them.
+            timeline entries, results, and reports all take them.
             When you’re done, open Feedback and press
             “Download feedback file”, then email the downloaded file back to
             the researcher. Don’t move or rename this HTML file until you’ve
@@ -1240,17 +1238,6 @@ export default function App({ data }: { data: BoardData }) {
           <Timeline
             data={data}
             navRequest={navRequest?.tab === "timeline" ? { token: navRequest.token, clearFilter: navRequest.clearTimelineFilter } : null}
-            canAnnotate={canAnnotate}
-            annotations={annotations}
-            onAddDocComment={addDocComment}
-            onPaintResult={onPaintResult}
-            onAddGeneral={addGeneral}
-          />
-        )}
-        {tab === "reviews" && (
-          <Scorecard
-            data={data}
-            navRequest={navRequest?.tab === "reviews" ? { token: navRequest.token, reviewPath: navRequest.reviewPath } : null}
             canAnnotate={canAnnotate}
             annotations={annotations}
             onAddDocComment={addDocComment}

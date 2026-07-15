@@ -13,6 +13,7 @@ This project uses the research-plans workflow (https://github.com/letitbk/resear
    - Figures: vector PDF plus a PNG preview, sized to a journal column, grayscale-safe. Use the /journal-figures skill if available; otherwise export to the same spec with standard tooling.
    - Tables: a typeset table (.png preview plus .tex source, booktabs style). Use the /journal-tables skill if available; otherwise modelsummary/kableExtra/gt to the same formats. A CSV of estimates is an intermediate, never the deliverable.
    - Every figure and table carries a title and a one-line caption suitable for the manuscript.
+8. An execution plan is short, plain-language, and read cold by a coauthor. Carry the five things it is judged on and cut the rest: (1) a goal with success criteria a third party could check; (2) the consequential decisions with reasons that have depth and connect to the research question — an authored reason, a choice among options, or an approval all count equally; (3) steps concrete enough that "did the agent do this?" has an answer; (4) a validation step that tests whether the success criteria were actually met, not just that code ran; (5) boundaries — what is out of scope and what not to touch. Push code and low-level commands into collapsible `<details class="agent-detail">` blocks so the default read stays scannable.
 
 The `managing-research-plans` skill (from the research-plans plugin) has these conventions in depth. If mid-session logging was missed, `/research-plans:sync` is the recovery checkpoint.
 <!-- research-plans:end -->

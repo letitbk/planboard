@@ -87,13 +87,15 @@ describe("navTargetFor", () => {
     ).toMatchObject({ tab: "reports", component: "05-hetero", resultsVersion: 3 });
   });
 
-  it("reviews doc comment targets the review path", () => {
+  it("a stale reviews doc comment (tab removed) falls back to the tracker", () => {
+    // The Reviews tab was removed in v0.4 (scores moved to the plan header); a
+    // stored review-scoped comment must degrade safely, not crash.
     expect(
       t({
         id: "7", type: "doc-comment", view: "reviews",
         docKey: "plans/reviews/review-01.md", anchored: true,
       }),
-    ).toMatchObject({ tab: "reviews", reviewPath: "plans/reviews/review-01.md" });
+    ).toMatchObject({ tab: "tracker" });
   });
 
   it("general comments navigate without a highlight", () => {

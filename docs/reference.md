@@ -21,7 +21,7 @@ Complete technical reference. For what the plugin is and why you'd use it, start
 | `/research-plans:renew` | Change the project's direction: archive the master plan, write a fresh one over the existing work. Numbering continues, carried components keep their plans and results, the rest stay browsable in the archive. Preferred over adopt when starting the workflow in an exploratory repo you want to take somewhere new. |
 | `/research-plans:plan` | Scope the next component and co-author its execution plan. |
 | `/research-plans:sync` | Post-execution checkpoint. Update the tracker, catch unlogged decisions, version the plan if execution deviated. |
-| `/research-plans:review` | Two-stage review: first a pass/fail threshold (is this a plan at all: goal and success criteria, reasoned scope decisions, executable steps, a named verification plan, prospectivity, recorded revisions), then a quality grade if it passes. Always includes a split assessment. |
+| `/research-plans:review` | Score the plan against the five-channel rubric (goal & success, decisions & reasons, steps, validation, boundaries; 0–3 each). Reports a profile, the biggest leak, and the forks to fix — a diagnosis, not a pass/fail. Includes a split assessment. |
 | `/research-plans:models` | View or edit the per-stage model profile; regenerates the project's `rp-*` review agents. |
 | `/research-plans:results` | Capture a versioned results bundle for a component — brief report, figure/table snapshots, key numbers, script snapshots, and an automatic plan-vs-execution validation. `--adopt` brings pre-existing artifacts under verification. |
 | `/research-plans:report` | Generate a shareable report for a bundle (markdown always; PDF/DOCX via pandoc) into `plans/reports/` — also available as the board's Generate report button; offered automatically at capture end. |
@@ -31,14 +31,13 @@ Everything is opt-in. The plugin does nothing in projects you have not initializ
 
 ## The board
 
-The board renders the whole project in your browser, in seven views — eight after a renewal:
+The board renders the whole project in your browser, in six views — seven after a renewal:
 
 - **Tracker** — components as a status board, with drift flags, per-row results badges, and a separate report column.
-- **Plan reader** — any version of any plan, with v1→v2 diffs (wrapped to the pane) and the reason each revision was made.
+- **Plan reader** — any version of any plan, with each version's five-channel score in the header (hover a chip for the evidence, click for the full diagnosis), v1→v2 diffs (wrapped to the pane), and the reason each revision was made. The plan reads as one narrative; a project-set detail level controls how much shows by default, and low-level agent detail collapses inline.
 - **Results** — the reviewing surface (see [Results](#results) below): validation first, then a mechanical integrity check, compact claim tiles, a figure/table gallery, and a per-artifact "produced by" script drawer with line-anchored comments. A provenance flow diagram maps each producing script to its artifacts — click a script to read the snapshot line by line (and comment on lines), click an artifact to zoom or jump to its card.
 - **Reports** — renders each bundle's generated report, figures in context, with `rN · plan vN` version chips, stale-report flags, and PDF/DOCX downloads on the local board.
-- **Timeline** — decisions, plan versions, results captures, verdicts, and reviews in one stream.
-- **Reviews** — saved rubric scorecards.
+- **Timeline** — decisions, plan versions, results captures, verdicts, and review scores in one stream.
 - **Models** — the per-stage [model profile](#model-profiles): read-only in every mode, and editable inline when the board is served live from your project (see below).
 - **Archive** — after a renewal, renders each archived master plan as it was, its component rows still linking to their plans and results. Pre-renewal components carry a quiet badge everywhere instead of drift flags.
 

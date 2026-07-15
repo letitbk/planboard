@@ -22,6 +22,7 @@ export interface BoardData {
   gate?: { component: string; proposedVersion: number }; // sign-off gate mode
   gateBatch?: GateBatchEntry[]; // batch sign-off wizard (one plan at a time)
   modelProfile?: ModelProfile; // per-stage model profile (Models tab); present-only
+  detailLevel?: "compact" | "standard" | "full"; // master-plan "Detail level:"; default "standard"
   project: { name: string; root?: string };
   git: {
     available: boolean;
@@ -339,23 +340,76 @@ export interface ParsedExecutionPlan {
   raw: string;
 }
 
+// The five rubric channels (schemaVersion 3). Order is fixed: G · D · S · V · B.
+export type ScorecardChannelId =
+  | "goal"
+  | "decisions"
+  | "steps"
+  | "validation"
+  | "boundaries";
+
+export const SCORECARD_CHANNEL_IDS: ScorecardChannelId[] = [
+  "goal",
+  "decisions",
+  "steps",
+  "validation",
+  "boundaries",
+];
+
+export interface ScorecardChannel {
+  id: ScorecardChannelId;
+  name?: string;
+  score: number; // integer 0..3
+  evidence?: string;
+  justification?: string;
+}
+
+// Non-scored workflow-integrity flags reported beside the profile.
+export interface ScorecardIntegrityFlag {
+  id: string; // "uncommitted" | "unsupported-sources" | "unrecorded-deviation" | …
+  note?: string;
+}
+
 export interface Scorecard {
   schemaVersion: number;
+  status?: "scored" | "unscorable"; // schemaVersion 3+; absent on legacy v1/v2
   component: string;
   planVersion: number;
   planPath: string;
   rubricVersion: string;
   date: string;
-  threshold?: ScorecardThreshold; // schemaVersion 2+
-  items: ScorecardItem[];
-  raw: number | null; // null on threshold fail/undetermined
-  applicableMax: number | null;
-  percent: number | null;
-  band: string; // "not a plan" (fail) | "undetermined" | grade bands
-  excluded?: { id: number | string; why: string }[];
-  topRevisions?: string[];
+  // --- v3 scored ---
+  channels?: ScorecardChannel[]; // exactly five when status === "scored"
+  total?: number; // 0..15
+  max?: number; // 15
+  profile?: string; // "G3·D2·S2·V1·B0"
+  biggestLeak?: { channel: string; note?: string };
+  suggestedMoves?: string[];
+  unresolvedForks?: string[];
+  integrityFlags?: ScorecardIntegrityFlag[];
+  // --- v3 unscorable ---
+  reason?: string;
+  // --- shared ---
   split?: { verdict: string; detail: string };
   modelUsage?: ModelUsage; // which model reviewed (reported = review agent or session)
+  // --- legacy v1/v2 (a legacy scorecard still parses so it can render behind the
+  //     "legacy review" affordance; on a v3 card these are absent at runtime — the
+  //     parser casts, and only legacy code paths read them) ---
+  threshold?: ScorecardThreshold;
+  items: ScorecardItem[];
+  raw: number | null;
+  applicableMax: number | null;
+  percent: number | null;
+  band: string;
+  excluded?: { id: number | string; why: string }[];
+  topRevisions?: string[];
+}
+
+// A v3 scored scorecard, narrowed. Legacy or unscorable cards return false.
+export function isScoredScorecard(
+  sc: Scorecard | null | undefined,
+): sc is Scorecard & { channels: ScorecardChannel[] } {
+  return !!sc && sc.status === "scored" && Array.isArray(sc.channels);
 }
 
 export interface ScorecardThreshold {

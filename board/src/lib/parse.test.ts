@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  AGENT_SECTIONS,
-  HUMAN_SECTIONS,
+  CONTRACT_SECTIONS,
+  METHOD_SECTIONS,
   allFiles,
   parseDecisionLog,
   parseExecutionPlan,
@@ -122,37 +122,35 @@ describe("decision log parsing", () => {
 });
 
 describe("execution plan parsing (contract: current template)", () => {
-  it("parses the literal template with all eight sections, Goal first", () => {
+  it("parses the single-narrative template, Context first", () => {
     const ep = parseExecutionPlan(read(join(TEMPLATES, "execution-plan.md")));
     expect(ep.ok).toBe(true);
     expect(ep.sections.map((s) => s.heading)).toEqual([
-      "Goal and success criteria",
       "Context",
-      "Scope decisions",
+      "Goal and success criteria",
+      "Decisions",
       "Approach",
       "Build steps",
       "Verification",
       "Out of scope",
       "Files to reuse",
+      "Sources",
     ]);
     expect(ep.goal).not.toBeNull();
     expect(ep.serves).toContain("RQ");
   });
 
-  it("keeps all eight sections when the human/agent Part banners are present", () => {
+  it("is one narrative with no Part 1/Part 2 banners", () => {
     const raw = read(join(TEMPLATES, "execution-plan.md"));
-    expect(raw).toContain("## Part 1 — For humans");
-    expect(raw).toContain("## Part 2 — For agents");
+    expect(raw).not.toContain("## Part 1");
+    expect(raw).not.toContain("## Part 2");
     const ep = parseExecutionPlan(raw);
     expect(ep.ok).toBe(true);
-    // Part banners are not counted as content sections.
-    const headings = ep.sections.map((s) => s.heading);
-    expect(headings).not.toContain("Part 1 — For humans (the what & why)");
-    expect(headings.length).toBe(8);
-    // The human/agent partition classifies exactly the eight sections.
-    expect([...HUMAN_SECTIONS, ...AGENT_SECTIONS].slice().sort()).toEqual(
-      headings.slice().sort(),
-    );
+    // Every section is classified into a detail-level tier (contract or method).
+    const tiers = [...CONTRACT_SECTIONS, ...METHOD_SECTIONS];
+    for (const h of ep.sections.map((s) => s.heading)) {
+      expect(tiers).toContain(h);
+    }
   });
 
   it("parses goal, serves, version, supersedes, sign-off from dev-data v2", () => {
@@ -188,34 +186,22 @@ describe("execution plan parsing (tolerance: real v0.1 artifact)", () => {
 });
 
 describe("scorecard parsing", () => {
-  it("parses a v1 scorecard (no threshold block) as before", () => {
-    const sc = parseScorecard(devData.files.reviews[0].content);
+  // Legacy v1/v2 scorecards still parse (for the "legacy review" affordance).
+  it("parses a legacy v1 scorecard (no threshold block)", () => {
+    const raw =
+      '```json board-scorecard\n{"schemaVersion":1,"component":"02-x","planVersion":2,"planPath":"p","rubricVersion":"0.1","date":"d","items":[{"id":1,"score":2}],"raw":18,"applicableMax":22,"percent":82,"band":"strong"}\n```';
+    const sc = parseScorecard(raw);
     expect(sc).not.toBeNull();
     expect(sc!.threshold).toBeUndefined();
-    expect(sc!.items.length).toBe(14);
     expect(sc!.percent).toBe(82);
-    expect(sc!.band).toBe("strong");
   });
 
-  it("parses a v2 PASS scorecard with threshold checks", () => {
-    const sc = parseScorecard(devData.files.reviews[1].content);
-    expect(sc).not.toBeNull();
+  it("parses a legacy v2 PASS scorecard with threshold checks", () => {
+    const raw =
+      '```json board-scorecard\n{"schemaVersion":2,"component":"03-x","planVersion":1,"planPath":"p","rubricVersion":"0.2","date":"d","threshold":{"verdict":"pass","checks":[{"id":"T1","result":"pass"}],"failures":[]},"items":[{"id":"G1","score":2}],"raw":11,"applicableMax":14,"percent":79,"band":"strong"}\n```';
+    const sc = parseScorecard(raw);
     expect(sc!.threshold!.verdict).toBe("pass");
-    expect(sc!.threshold!.checks.length).toBe(9);
-    expect(sc!.items.length).toBe(8);
-    expect(sc!.percent).toBe(79);
-    expect(sc!.excluded![0].id).toBe("G4");
-  });
-
-  it("parses a v2 FAIL scorecard: null grade fields, empty items", () => {
-    const sc = parseScorecard(devData.files.reviews[2].content);
-    expect(sc).not.toBeNull();
-    expect(sc!.threshold!.verdict).toBe("fail");
-    expect(sc!.threshold!.failures!.length).toBe(3);
-    expect(sc!.items).toEqual([]);
-    expect(sc!.percent).toBeNull();
-    expect(sc!.raw).toBeNull();
-    expect(sc!.band).toBe("not a plan");
+    expect(sc!.items!.length).toBe(1);
   });
 
   it("treats schemaVersion 2 WITHOUT a valid threshold as malformed", () => {
@@ -234,6 +220,71 @@ describe("scorecard parsing", () => {
   it("parses the scorecard template's fence shape without throwing", () => {
     const tpl = read(join(TEMPLATES, "review-scorecard.md"));
     expect(() => parseScorecard(tpl)).not.toThrow();
+  });
+
+  const V3 = (over = "") =>
+    '```json board-scorecard\n{"schemaVersion":3,"status":"scored","component":"03-x","planVersion":1,"planPath":"plans/execution/03-x/v1.md","rubricVersion":"0.4","date":"2026-07-14","channels":[{"id":"goal","score":3},{"id":"decisions","score":2},{"id":"steps","score":2},{"id":"validation","score":1},{"id":"boundaries","score":0}],"total":8,"max":15,"profile":"G3·D2·S2·V1·B0"' +
+    over +
+    "}\n```";
+
+  it("parses a v3 scored scorecard with the five channels", () => {
+    const sc = parseScorecard(V3());
+    expect(sc).not.toBeNull();
+    expect(sc!.status).toBe("scored");
+    expect(sc!.channels!.map((c) => c.id)).toEqual([
+      "goal",
+      "decisions",
+      "steps",
+      "validation",
+      "boundaries",
+    ]);
+    expect(sc!.total).toBe(8);
+  });
+
+  it("parses a v3 unscorable scorecard", () => {
+    const raw =
+      '```json board-scorecard\n{"schemaVersion":3,"status":"unscorable","component":"03-x","planVersion":1,"planPath":"p","rubricVersion":"0.4","date":"2026-07-14","reason":"no extractable goal"}\n```';
+    const sc = parseScorecard(raw);
+    expect(sc!.status).toBe("unscorable");
+    expect(sc!.reason).toContain("goal");
+  });
+
+  const v3channels =
+    '"channels":[{"id":"goal","score":3},{"id":"decisions","score":2},{"id":"steps","score":2},{"id":"validation","score":1},{"id":"boundaries","score":0}]';
+  const v3head =
+    '{"schemaVersion":3,"status":"scored","component":"x","planVersion":1,"planPath":"p","rubricVersion":"0.4","date":"d",';
+  const fence = (mid: string) =>
+    "```json board-scorecard\n" + v3head + mid + "}\n```";
+
+  it("rejects reordered channels, inconsistent total, or non-array collections", () => {
+    // reordered channels
+    expect(
+      parseScorecard(
+        fence(
+          '"channels":[{"id":"decisions","score":2},{"id":"goal","score":3},{"id":"steps","score":2},{"id":"validation","score":1},{"id":"boundaries","score":0}]',
+        ),
+      ),
+    ).toBeNull();
+    // total inconsistent with the sum (8, not 99)
+    expect(parseScorecard(fence(v3channels + ',"total":99'))).toBeNull();
+    // integrityFlags is a string, not an array (would crash the render)
+    expect(parseScorecard(fence(v3channels + ',"integrityFlags":"none"'))).toBeNull();
+    // biggestLeak is a string, not an object
+    expect(parseScorecard(fence(v3channels + ',"biggestLeak":"steps"'))).toBeNull();
+  });
+
+  it("derives total from the channel scores when it is absent", () => {
+    const sc = parseScorecard(fence(v3channels));
+    expect(sc!.total).toBe(8);
+  });
+
+  it("rejects a v3 scored card that is missing a channel or has an out-of-range score", () => {
+    const missing =
+      '```json board-scorecard\n{"schemaVersion":3,"status":"scored","component":"x","planVersion":1,"planPath":"p","rubricVersion":"0.4","date":"d","channels":[{"id":"goal","score":3},{"id":"decisions","score":2},{"id":"steps","score":2},{"id":"validation","score":1}]}\n```';
+    expect(parseScorecard(missing)).toBeNull();
+    const badScore =
+      '```json board-scorecard\n{"schemaVersion":3,"status":"scored","component":"x","planVersion":1,"planPath":"p","rubricVersion":"0.4","date":"d","channels":[{"id":"goal","score":4},{"id":"decisions","score":2},{"id":"steps","score":2},{"id":"validation","score":1},{"id":"boundaries","score":0}]}\n```';
+    expect(parseScorecard(badScore)).toBeNull();
   });
 });
 

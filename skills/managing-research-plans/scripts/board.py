@@ -659,6 +659,16 @@ def apply_model_profile(root, body):
     }
 
 
+def detail_level(master_content):
+    """The master plan's `Detail level:` line (compact|standard|full), or None."""
+    m = re.search(
+        r"^Detail level:\s*(compact|standard|full)\s*$",
+        master_content or "",
+        re.MULTILINE | re.IGNORECASE,
+    )
+    return m.group(1).lower() if m else None
+
+
 def collect_payload(root, mode, focus):
     plans = root / "plans"
     if not (plans / "master-plan.md").is_file():
@@ -784,6 +794,11 @@ def collect_payload(root, mode, focus):
             **({"archives": archives} if archives else {}),
         },
     }
+    # Reader detail level (board default collapse); present-only, harmless on any
+    # share. Client defaults to "standard" when absent.
+    dl = detail_level(payload["files"]["masterPlan"]["content"])
+    if dl:
+        payload["detailLevel"] = dl
     # Committed, review-relevant project config — present-only, rides every
     # mode EXCEPT a focused remote share (whole-project material, like the
     # decision log). A profile-less project keeps a byte-identical payload.
@@ -1374,8 +1389,18 @@ def serve(root, payload, args):
     if threading.current_thread() is threading.main_thread():
         signal.signal(signal.SIGTERM, lambda *a: (_ for _ in ()).throw(SystemExit(130)))
 
+    # Plain live serving has NO idle timeout — the board stays open until the
+    # researcher acts or closes it. Gate/batch modes (and any explicit --timeout)
+    # keep a bounded wait + exit 2, because sign-off recovery relies on the
+    # timeout persisting the draft and denying the write cleanly.
+    if args.timeout is not None:
+        wait_timeout = args.timeout
+    elif gate_mode or batch_mode:
+        wait_timeout = 3600
+    else:
+        wait_timeout = None
     try:
-        got = done.wait(timeout=args.timeout)
+        got = done.wait(timeout=wait_timeout)
         server.shutdown()
         if batch_mode:
             appr, rej = result["approved"], result["rejected"]
@@ -1389,7 +1414,7 @@ def serve(root, payload, args):
                       % (c, v, " — %s" % cm if cm else ""))
             sys.exit(0)  # approvals are persisted tickets; a timeout loses nothing
         if not got:
-            print("board: no feedback received within %ds" % args.timeout, file=sys.stderr)
+            print("board: no feedback received within %ds" % wait_timeout, file=sys.stderr)
             sys.exit(2)
         print(result["doc"])
         sys.exit(result.get("exit", 0))
@@ -2391,7 +2416,10 @@ def parse_args(argv=None):
                          "(one-component adoption / resumed batch)")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
-    ap.add_argument("--timeout", type=int, default=3600, metavar="SECONDS")
+    # Default None = no idle timeout for plain live serving (Plannotator-style).
+    # Gate/batch pass an explicit timeout; serve() also keeps a bounded wait for
+    # those modes even if one is omitted. An explicit --timeout always bounds.
+    ap.add_argument("--timeout", type=int, default=None, metavar="SECONDS")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--seed-annotations", default=None, metavar="FILE",
                     help="inject reviewer-produced comments (JSON list) as pending "

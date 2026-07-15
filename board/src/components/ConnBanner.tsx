@@ -6,16 +6,18 @@ export default function ConnBanner({ phase }: { phase: ConnPhase }) {
   if (phase.kind === "accepted" || phase.kind === "applying") {
     return (
       <div className="border-t border-sky-200 dark:border-sky-900 bg-sky-50 dark:bg-sky-950 px-5 py-1.5 text-center text-xs text-sky-800 dark:text-sky-300">
-        Applying… the board will refresh itself when Claude is done. Reviewer
-        runs can take many minutes.
+        Sent to Claude. A review or report request reopens the board with its
+        result; other actions close it — run /research-plans:board to reopen.
+        Reviewer runs can take many minutes.
       </div>
     );
   }
   if (phase.kind === "stalled") {
     return (
       <div className="border-t border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-5 py-1.5 text-center text-xs text-amber-800 dark:text-amber-300">
-        Still applying — reviewer runs can take many minutes. If this session
-        ended, run /research-plans:board to reconnect.
+        Sent to Claude. If this was a review or report it reopens with the
+        result; otherwise the board has closed — run /research-plans:board to
+        reopen. Reviewer runs can take many minutes.
       </div>
     );
   }

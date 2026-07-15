@@ -1,7 +1,7 @@
 .DS_Store
 .claude/
 logs/
-board/node_modules/
+board/node_modules
 board/dist/
 .superpowers/
 __pycache__/

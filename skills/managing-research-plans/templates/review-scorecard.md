@@ -1,55 +1,50 @@
 # Review — <Component> v<N>
 
-Plan: [v<N>.md](../execution/<NN-slug>/v<N>.md) · Rubric: plan-rubric.md (v0.3) · Date: <YYYY-MM-DD>
-Provenance: **<prospective | retrospective — covers \<range\>>** <!-- from the plan's Provenance header; stated in the verdict so a retrospective plan is never read as prospective -->
-Threshold: **PASS (9/9)** <!-- or: **UNDETERMINED — T8 unknown** or: **FAIL — T1, T4** -->
-Score: **<raw> / <applicable max> (<pct>%)** — <band>
-<!-- Omit the Score line entirely on FAIL or UNDETERMINED. -->
+Plan: [v<N>.md](../execution/<NN-slug>/v<N>.md) · Rubric: plan-rubric.md (v0.4) · Date: <YYYY-MM-DD>
+Profile: **G<0-3> · D<0-3> · S<0-3> · V<0-3> · B<0-3> = <total>/15**
+Flags: **<none | uncommitted | unsupported-sources | unrecorded-deviation …>** <!-- non-scored workflow-integrity flags; omit or "none" when clean -->
+<!-- On an unreadable plan, replace the Profile/Flags lines with: Status: **unscorable — <what cannot be extracted>** and omit the channel table. -->
 
-## Threshold
+## Channels
 
-| ID | Check | Result | Note |
-|----|-------|--------|------|
-| T1 | Goal + success criteria | pass | "<evidence quote>" |
-| T8 | Prospective | N/A | unexecuted — commit before executing |
+<One row per channel, exactly five. The prose table and the JSON block below MUST agree — the board renders the JSON.>
 
-<On FAIL, add a verdict paragraph per failed check using the rubric's near-miss language, plus the nearest archetype (to-do list / prompt log / frozen preregistration / methods section). On UNDETERMINED, name the missing evidence.>
+| Channel | Score | Evidence | Justification |
+|---------|-------|----------|---------------|
+| Goal & success | <0-3> | "<quote>" | <one line> |
+| Decisions & reasons | <0-3> | "<quote>" | <one line> |
+| Steps | <0-3> | "<quote>" | <one line> |
+| Validation | <0-3> | "<quote>" | <one line> |
+| Boundaries | <0-3> | "<quote>" | <one line> |
 
-## Grading items
+## Diagnosis
 
-<Only when the threshold PASSES. One row per item, G1–G8. The prose table and the JSON block below MUST agree — the board renders the JSON.>
-
-| # | Item | Score | Evidence | Justification |
-|---|------|-------|----------|---------------|
-| G1 | Decisions specific, reasoned, grounded | <0/1/2/N-A/unknown> | <quote or artifact> | <one line> |
-
-## Top revisions
-
-1. <the three concrete revisions that would most improve the plan — on FAIL, this is the fix list>
+- **Biggest leak:** <lowest channel — where the most authorship is being handed to the agent>.
+- **Unresolved forks:** <the specific open decisions dragging the score down — the fix-it list for the next revision>.
+- **Suggested moves:** <one concrete move per leak>.
 
 ## Split assessment
 
-<"Right-sized" with a reason, or the concrete proposed split per split-criteria.md. Mandatory in every review, including threshold failures.>
+<"Right-sized" with a reason, or the concrete proposed split per split-criteria.md. Always included.>
 
 ## Data
 
 ```json board-scorecard
-{"schemaVersion": 2, "component": "<NN-slug>", "planVersion": 0,
- "planPath": "plans/execution/<NN-slug>/v<N>.md", "rubricVersion": "0.2", "date": "<YYYY-MM-DD>",
- "threshold": {"verdict": "pass",
-   "checks": [
-     {"id": "T1", "name": "Goal + success criteria", "result": "pass", "evidence": "<quote>", "note": "<one line>"},
-     {"id": "T8", "name": "Prospective", "result": "na", "note": "unexecuted"}
-   ],
-   "failures": []},
- "items": [
-   {"id": "G1", "name": "Decisions specific, reasoned, grounded", "score": 2, "evidence": "<quote>", "justification": "<one line>"},
-   {"id": "G4", "name": "Revisions are substantive amendments", "score": null, "status": "N/A", "justification": "unexecuted v1"}
+{"schemaVersion": 3, "status": "scored", "component": "<NN-slug>", "planVersion": <N>,
+ "planPath": "plans/execution/<NN-slug>/v<N>.md", "rubricVersion": "0.4", "date": "<YYYY-MM-DD>",
+ "channels": [
+   {"id": "goal",       "name": "Goal & success",      "score": 3, "evidence": "<quote>", "justification": "<one line>"},
+   {"id": "decisions",  "name": "Decisions & reasons",  "score": 2, "evidence": "<quote>", "justification": "<one line>"},
+   {"id": "steps",      "name": "Steps",                "score": 2, "evidence": "<quote>", "justification": "<one line>"},
+   {"id": "validation", "name": "Validation",           "score": 1, "evidence": "<quote>", "justification": "<one line>"},
+   {"id": "boundaries", "name": "Boundaries",           "score": 0, "evidence": "<quote>", "justification": "<one line>"}
  ],
- "raw": 0, "applicableMax": 0, "percent": 0, "band": "<revise before executing|execute and address flags|strong>",
- "excluded": [{"id": "G4", "why": "N/A — unexecuted v1"}],
- "topRevisions": ["<revision 1>", "<revision 2>", "<revision 3>"],
- "split": {"verdict": "<right-sized|split required>", "detail": "<one paragraph>"}}
+ "total": 8, "max": 15, "profile": "G3·D2·S2·V1·B0",
+ "biggestLeak": {"channel": "boundaries", "note": "<where the most authorship is handed to the agent>"},
+ "suggestedMoves": ["<one concrete move per leak>"],
+ "unresolvedForks": ["<open decision 1>", "<open decision 2>"],
+ "integrityFlags": [{"id": "uncommitted", "note": "<why>"}],
+ "split": {"verdict": "right-sized", "detail": "<one paragraph>"}}
 ```
 
-<On FAIL or UNDETERMINED the fence uses: "threshold": {"verdict": "fail" | "undetermined", "checks": [...], "failures": [{"id": "T1", "verdict": "<near-miss language>", "fix": "<concrete fix>"}]}, "items": [], "raw": null, "applicableMax": null, "percent": null, "band": "not a plan" (fail) or "undetermined". Check results use "pass" | "fail" | "na" | "unknown".>
+<An unreadable plan uses instead: {"schemaVersion": 3, "status": "unscorable", "component": "<NN-slug>", "planVersion": <N>, "planPath": "…", "rubricVersion": "0.4", "date": "<YYYY-MM-DD>", "reason": "<what cannot be extracted and how to fix it>"} — no channels, no total, no profile.>
