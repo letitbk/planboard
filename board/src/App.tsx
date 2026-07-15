@@ -1272,6 +1272,7 @@ export default function App({ data }: { data: BoardData }) {
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
+            onOutline={setOutline}
           />
         )}
           </div>

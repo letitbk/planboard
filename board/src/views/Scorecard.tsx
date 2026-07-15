@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Markdown from "../components/Markdown";
 import AnnotationLayer, {
   GeneralCommentBox,
@@ -9,6 +9,7 @@ import { parseScorecard } from "../lib/parse";
 import ModelChip from "../components/ModelChip";
 import { coerceModelUsage } from "../lib/modelUsage";
 import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
+import type { OutlineEntry } from "../lib/outline";
 
 function bandColor(percent: number): string {
   if (percent < 50) return "bg-red-500";
@@ -24,6 +25,7 @@ export default function Scorecard({
   onPaintResult,
   onAddGeneral,
   navRequest,
+  onOutline,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -36,6 +38,7 @@ export default function Scorecard({
   ) => void;
   onAddGeneral: (view: string, comment: string) => void;
   navRequest?: { token: number; reviewPath?: string } | null;
+  onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const reviews = data.files.reviews;
   const [idx, setIdx] = useState(reviews.length - 1);
@@ -46,6 +49,26 @@ export default function Scorecard({
     if (i >= 0) setIdx(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navRequest?.token]);
+
+  const outlineEntries = useMemo<OutlineEntry[]>(
+    () =>
+      data.files.reviews.map((r, i) => {
+        const s = parseScorecard(r.content);
+        const label = s
+          ? s.threshold?.verdict === "fail"
+            ? `${s.component} v${s.planVersion} — threshold failed`
+            : s.threshold?.verdict === "undetermined"
+              ? `${s.component} v${s.planVersion} — undetermined`
+              : `${s.component} v${s.planVersion} — ${s.percent}%`
+          : (r.path.split("/").pop() ?? r.path);
+        return { id: r.path, label, level: 1, onSelect: () => setIdx(i) };
+      }),
+    [data.files.reviews],
+  );
+  useEffect(() => {
+    onOutline?.(outlineEntries);
+    return () => onOutline?.([]);
+  }, [onOutline, outlineEntries]);
 
   if (reviews.length === 0) {
     return (
@@ -74,39 +97,7 @@ export default function Scorecard({
     });
 
   return (
-    <div className="flex gap-5">
-      <aside className="w-56 shrink-0">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-          Saved reviews
-        </h2>
-        <ul className="space-y-1">
-          {reviews.map((r, i) => {
-            const s = parseScorecard(r.content);
-            const label = s
-              ? s.threshold?.verdict === "fail"
-                ? `${s.component} v${s.planVersion} — threshold failed`
-                : s.threshold?.verdict === "undetermined"
-                  ? `${s.component} v${s.planVersion} — undetermined`
-                  : `${s.component} v${s.planVersion} — ${s.percent}%`
-              : r.path.split("/").pop();
-            return (
-              <li key={r.path}>
-                <button
-                  className={`w-full rounded-md px-2.5 py-1.5 text-left text-sm ${
-                    i === Math.min(idx, reviews.length - 1)
-                      ? "bg-stone-900 dark:bg-stone-200 font-medium text-white dark:text-stone-900"
-                      : "text-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800"
-                  }`}
-                  onClick={() => setIdx(i)}
-                >
-                  {label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
-
+    <div className="min-w-0">
       <div className="min-w-0 flex-1">
         {(() => {
           const body = !sc ? (
