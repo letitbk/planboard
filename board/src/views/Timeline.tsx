@@ -11,6 +11,7 @@ import {
   parseScorecard,
 } from "../lib/parse";
 import type { OutlineEntry } from "../lib/outline";
+import { isScoredScorecard } from "../lib/types";
 import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
 
 type EventKind = "decision" | "plan" | "result" | "review" | "reconstructed";
@@ -273,24 +274,30 @@ function buildEvents(data: BoardData): TimelineEvent[] {
 
   for (const r of data.files.reviews) {
     const sc = parseScorecard(r.content);
-    if (sc) {
-      const failedIds =
-        sc.threshold?.checks
-          .filter((c) => c.result === "fail")
-          .map((c) => c.id)
-          .join(", ") ?? "";
-      const body =
-        sc.threshold?.verdict === "fail"
-          ? `**Threshold failed — not a plan yet** (${failedIds}).`
-          : sc.threshold?.verdict === "undetermined"
-            ? `**Threshold undetermined** — missing evidence; grade withheld.`
-            : `Scored **${sc.raw}/${sc.applicableMax} (${sc.percent}%)** — ${sc.band}.`;
+    if (sc && sc.status === "unscorable") {
       events.push({
         kind: "review",
         sortKey: `${sc.date} 00:00`,
         title: `${sc.component} v${sc.planVersion}`,
-        body,
-        searchText: `review ${sc.component} ${sc.band}`,
+        body: `**Unscorable** — ${sc.reason ?? "fix readability first"}.`,
+        searchText: `review ${sc.component} unscorable`,
+      });
+    } else if (isScoredScorecard(sc)) {
+      events.push({
+        kind: "review",
+        sortKey: `${sc.date} 00:00`,
+        title: `${sc.component} v${sc.planVersion}`,
+        body: `Scored **${sc.profile ?? ""} = ${sc.total}/15**${sc.biggestLeak ? ` — biggest leak: ${sc.biggestLeak.channel}` : ""}.`,
+        searchText: `review ${sc.component} ${sc.profile ?? ""}`,
+      });
+    } else if (sc) {
+      // Legacy v1/v2 scorecard — the new profile is unavailable until rescored.
+      events.push({
+        kind: "review",
+        sortKey: `${sc.date} 00:00`,
+        title: `${sc.component} v${sc.planVersion}`,
+        body: `Legacy review${sc.percent != null ? ` — ${sc.percent}%` : ""}.`,
+        searchText: `review ${sc.component} legacy`,
       });
     } else {
       events.push({

@@ -2943,3 +2943,32 @@ class TestArtifactHeaders(unittest.TestCase):
             with urllib.request.urlopen(url + "/artifact/01-data-prep/r1/fig1.png", timeout=5) as r:
                 self.assertEqual(r.headers["Content-Type"], "image/png")
                 self.assertEqual(r.headers["Content-Disposition"], "inline")
+
+
+class TestDetailLevel(unittest.TestCase):
+    def test_parses_valid_variants(self):
+        self.assertEqual(board.detail_level("Detail level: compact\n"), "compact")
+        self.assertEqual(board.detail_level("Detail level:  Full \n"), "full")
+        self.assertEqual(board.detail_level("x\nDetail level: standard\ny\n"), "standard")
+
+    def test_rejects_absent_or_invalid(self):
+        self.assertIsNone(board.detail_level("# no line here\n"))
+        self.assertIsNone(board.detail_level("Detail level: verbose\n"))
+        self.assertIsNone(board.detail_level(""))
+
+    def test_payload_omits_when_absent(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            self.assertNotIn("detailLevel", board.collect_payload(root, "live", None))
+
+    def test_payload_includes_when_present(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            mp = root / "plans" / "master-plan.md"
+            mp.write_text(
+                mp.read_text(encoding="utf-8").replace(
+                    "# Test Project — Master Plan\n",
+                    "# Test Project — Master Plan\nDetail level: compact\n", 1),
+                encoding="utf-8")
+            self.assertEqual(
+                board.collect_payload(root, "live", None)["detailLevel"], "compact")

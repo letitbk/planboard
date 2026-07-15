@@ -13,6 +13,7 @@ import type {
   TrackerRow,
   TrackerStatus,
 } from "./types";
+import { SCORECARD_CHANNEL_IDS } from "./types";
 
 const STATUSES: TrackerStatus[] = [
   "not started",
@@ -239,20 +240,44 @@ export function parseHistory(raw: string): ParsedHistoryEntry[] {
 }
 
 const EXEC_SECTIONS = [
-  "Goal and success criteria",
   "Context",
-  "Scope decisions",
+  "Goal and success criteria",
+  "Decisions",
+  "Scope decisions", // legacy alias — older plans used this heading
   "Approach",
   "Build steps",
   "Verification",
   "Out of scope",
   "Files to reuse",
+  "Sources",
 ];
 
-// Feature #3 — the human/agent split. Part 1 (human-readable) is shown on the
-// board; Part 2 (agent/technical) is collapsed under a toggle. These classify
-// the eight EXEC_SECTIONS; the literal "## Part 1 —" / "## Part 2 —" banner lines
-// in the template are the render/collapse boundary (see PlanReader).
+// Reader detail level for the single-narrative plan (set per project in the
+// master plan's `Detail level:` line). `compact` shows the CONTRACT sections;
+// `standard` adds the METHOD sections; `full` additionally expands the inline
+// agent-detail (<details class="agent-detail">) blocks. Every plan is authored
+// in full — this only sets the board's default collapse, and any reader can
+// toggle a section or block open. "Scope decisions" is the legacy alias of
+// "Decisions" and is classified with it.
+export const CONTRACT_SECTIONS = [
+  "Context",
+  "Goal and success criteria",
+  "Decisions",
+  "Scope decisions",
+  "Out of scope",
+];
+export const METHOD_SECTIONS = [
+  "Approach",
+  "Build steps",
+  "Verification",
+  "Files to reuse",
+  "Sources",
+];
+
+// Legacy classification for pre-v0.4 plans that still carry the "## Part 1 —" /
+// "## Part 2 —" banners. Retained so those plans keep rendering with the old
+// human/agent collapse; new single-narrative plans use the detail-level tiers
+// above. (Deprecated — remove once no pre-v0.4 plans remain.)
 export const HUMAN_SECTIONS = [
   "Goal and success criteria",
   "Context",
@@ -335,13 +360,51 @@ export function parseScorecard(raw: string): Scorecard | null {
   if (!m) return null;
   try {
     const parsed = JSON.parse(m[1]);
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.items)) {
-      return null;
+    if (!parsed || typeof parsed !== "object") return null;
+    const sv = parsed.schemaVersion ?? 1;
+
+    // schemaVersion 3 — the five-channel rubric, discriminated on `status`.
+    if (sv >= 3) {
+      if (parsed.status === "unscorable") {
+        return typeof parsed.reason === "string" ? (parsed as Scorecard) : null;
+      }
+      if (parsed.status !== "scored" || !Array.isArray(parsed.channels)) return null;
+      // Require exactly the five canonical channels, IN ORDER, each an integer
+      // score 0..3. (All emitters write them in order; enforcing it keeps the
+      // render — which indexes by position/letter — honest.)
+      const ch = parsed.channels as { id?: unknown; score?: unknown }[];
+      const orderOk =
+        ch.length === SCORECARD_CHANNEL_IDS.length &&
+        SCORECARD_CHANNEL_IDS.every((id, i) => ch[i] && ch[i].id === id);
+      const scoresOk = ch.every(
+        (c) =>
+          Number.isInteger(c.score) &&
+          (c.score as number) >= 0 &&
+          (c.score as number) <= 3,
+      );
+      if (!orderOk || !scoresOk) return null;
+      // total must equal the sum (derive when absent, reject when inconsistent).
+      const sum = ch.reduce((a, c) => a + (c.score as number), 0);
+      if (parsed.total == null) parsed.total = sum;
+      else if (parsed.total !== sum) return null;
+      // optional collections must be arrays; biggestLeak an object — else the
+      // render's .map()/property access would throw on a malformed card.
+      const okArr = (v: unknown) => v == null || Array.isArray(v);
+      if (
+        !okArr(parsed.integrityFlags) ||
+        !okArr(parsed.suggestedMoves) ||
+        !okArr(parsed.unresolvedForks)
+      )
+        return null;
+      if (parsed.biggestLeak != null && typeof parsed.biggestLeak !== "object")
+        return null;
+      return parsed as Scorecard;
     }
-    // schemaVersion >= 2 REQUIRES a valid threshold block; a v2 scorecard with
-    // a missing/invalid threshold is malformed and must not silently render as
-    // v1 (which would show a grade the review may never have issued).
-    if ((parsed.schemaVersion ?? 1) >= 2) {
+
+    // Legacy v1/v2 — kept so old scorecards still render behind the "legacy
+    // review" affordance. schemaVersion >= 2 REQUIRES a valid threshold block.
+    if (!Array.isArray(parsed.items)) return null;
+    if (sv >= 2) {
       const t = parsed.threshold;
       const valid =
         t &&

@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildFilesTree, type FileNode } from "./filesTree";
-import type { BoardData, BoardFile } from "./types";
-
-function review(component: string | null, version: number): BoardFile {
-  const block = component
-    ? "```json board-scorecard\n" +
-      JSON.stringify({ schemaVersion: 1, component, planVersion: version, items: [] }) +
-      "\n```\n"
-    : "no scorecard here";
-  return { path: `plans/reviews/${component ?? "junk"}-v${version}.md`, content: block };
-}
+import type { BoardData } from "./types";
 
 function bundle(v: number, withReport: boolean) {
   return {
@@ -50,7 +41,7 @@ function data(): BoardData {
         },
         { component: "02-draft-only", versions: [], draft: { path: "plans/execution/02-draft-only/.draft-v1.md", content: "d", proposedVersion: 1 } },
       ],
-      reviews: [review("01-x", 2), review("03-review-only", 1), review(null, 9)],
+      reviews: [],
     },
   } as unknown as BoardData;
 }
@@ -66,7 +57,7 @@ describe("buildFilesTree", () => {
     expect(tree[1]).toMatchObject({ id: "decision-log", route: { tab: "timeline" } });
   });
 
-  it("groups a component's plans/results/reports/reviews; Plans is a group of versions", () => {
+  it("groups a component's plans/results/reports; Plans is a group of versions", () => {
     const comp = buildFilesTree(data()).find((n) => n.id === "component:01-x")!;
     const plans = child(comp, "01-x:plans");
     expect(plans.children!.map((c) => c.label)).toEqual(["v1", "v2"]);
@@ -77,7 +68,6 @@ describe("buildFilesTree", () => {
     expect(child(comp, "01-x:results").children!.map((c) => c.label)).toEqual(["r1", "r2"]);
     // only r1 has a published report:
     expect(child(comp, "01-x:reports").children!.map((c) => c.label)).toEqual(["r1 report"]);
-    expect(child(comp, "01-x:reviews").children!.length).toBe(1);
   });
 
   it("gives a draft-only component a Plans leaf that routes to its Plans view", () => {
@@ -85,15 +75,5 @@ describe("buildFilesTree", () => {
     const plans = child(comp, "02-draft-only:plans");
     expect(plans.children).toBeUndefined();
     expect(plans.route).toMatchObject({ tab: "plans", component: "02-draft-only" });
-  });
-
-  it("gives a review-only component (no execution group) Reviews but no Plans node", () => {
-    const comp = buildFilesTree(data()).find((n) => n.id === "component:03-review-only")!;
-    expect(comp.children!.map((c) => c.id)).toEqual(["03-review-only:reviews"]);
-  });
-
-  it("routes an unparseable review to an Unassigned reviews node", () => {
-    const un = buildFilesTree(data()).find((n) => n.id === "unassigned-reviews")!;
-    expect(un.children![0].route).toMatchObject({ tab: "reviews", reviewPath: "plans/reviews/junk-v9.md" });
   });
 });

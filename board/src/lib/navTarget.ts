@@ -5,13 +5,12 @@ import type { Annotation, BoardData } from "./types";
 import { REPORT_DOCKEY_RE } from "./reportMarker";
 
 export interface NavTarget {
-  tab: "tracker" | "plans" | "results" | "timeline" | "reviews" | "archive" | "reports";
+  tab: "tracker" | "plans" | "results" | "timeline" | "archive" | "reports";
   component?: string;
   planPath?: string; // -> PlanReader resolves to its doc index
   resultsVersion?: number; // -> Results resolves to its bundle index
   scriptPath?: string; // -> Results opens this script viewer
   archivePath?: string; // -> Archive resolves to its version index
-  reviewPath?: string; // -> Scorecard resolves to its review index
   clearTimelineFilter?: boolean;
   annotationId: string;
   anchored: boolean;
@@ -58,13 +57,6 @@ export function navTargetFor(a: Annotation, _data: BoardData): NavTarget {
           return {
             tab: "timeline",
             clearTimelineFilter: true,
-            annotationId: a.id,
-            anchored: a.anchored,
-          };
-        case "reviews":
-          return {
-            tab: "reviews",
-            reviewPath: a.docKey,
             annotationId: a.id,
             anchored: a.anchored,
           };

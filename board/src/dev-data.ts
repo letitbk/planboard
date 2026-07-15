@@ -164,7 +164,9 @@ const cleaningV2 = `# Data Cleaning — Execution Plan v2
 Component: \`02-data-cleaning\` · Master plan: [master-plan.md](../../master-plan.md) · Date: 2026-07-01
 Supersedes: v1 — duplicated household IDs discovered in two countries; added an explicit exclusion rule.
 
-## Part 1 — For humans (the what & why)
+## Context
+
+Prepare the ISSP extract for analysis: recode missing values, harmonize country codes, and produce a documented analysis sample.
 
 ## Goal and success criteria
 
@@ -172,19 +174,13 @@ Serves: RQ1, RQ2
 
 Produce a documented analysis sample from the raw ISSP extract. Success: every recode and exclusion is logged with row counts; the cleaned file reproduces exactly from the committed script; the duplicate report is reviewed and signed off by the researcher.
 
-## Context
-
-Prepare the ISSP extract for analysis: recode missing values, harmonize country codes, and produce a documented analysis sample.
-
-## Scope decisions
+## Decisions
 
 | Dimension | Decision | Why |
 |-----------|----------|-----|
 | Missing codes | Recode 97/98 to NA | Codebook lists them as refusals |
 | Countries | Keep all 31 | Attrition handled at modeling stage |
 | Duplicates | Drop exact duplicates only | Household IDs collide in two countries; partial matches kept |
-
-## Part 2 — For agents (the how)
 
 ## Approach
 
@@ -197,13 +193,21 @@ Load raw extract, apply recode table, drop exact duplicates, write cleaned parqu
 3. Drop exact duplicate rows (log counts per country)
 4. Write cleaned data + row-count log
 
+<details class="agent-detail"><summary>Agent detail — exact commands</summary>
+
+\`\`\`bash
+python3 clean/build_sample.py --in raw/issp.csv --out data/clean.parquet --log logs/clean.log
+\`\`\`
+
+</details>
+
 ## Verification
 
 Row counts before/after each step logged; spot-check 20 random rows against raw; duplicate report reviewed by researcher.
 
 ## Out of scope
 
-No imputation; no derived scales (descriptives component owns those).
+No imputation; no derived scales (descriptives component owns those). Do not modify the raw extract.
 
 ---
 Signed off: Jane Doe, 2026-07-01
@@ -370,18 +374,25 @@ No models; no country-level covariates yet.
 
 const review = `# Review — Data Cleaning v2
 
-Plan: [v2.md](../execution/02-data-cleaning/v2.md) · Rubric: plan-rubric.md (draft v0.1) · Date: 2026-07-02
-Score: **18 / 22 (82%)** — strong
+Plan: [v2.md](../execution/02-data-cleaning/v2.md) · Rubric: plan-rubric.md (v0.4) · Date: 2026-07-02
+Profile: **G3 · D3 · S2 · V2 · B2 = 12/15**
+Flags: **none**
 
-## Items
+## Channels
 
-| # | Item | Score | Evidence | Justification |
-|---|------|-------|----------|---------------|
-| 1 | Written and self-contained | 2 | "Prepare the ISSP extract…" | Readable cold |
+| Channel | Score | Evidence | Justification |
+|---------|-------|----------|---------------|
+| Goal & success | 3 | "a clean ISSP extract with < 2% missing on key vars" | Checkable criteria |
+| Decisions & reasons | 3 | "drop duplicate household IDs — a known ISSP export bug" | Grounded, goal-linked |
+| Steps | 2 | "Build steps 1–4" | Concrete; one step vague |
+| Validation | 2 | "cross-check row counts against the codebook N" | Tests the goal |
+| Boundaries | 2 | "No imputation; do not touch the raw extract" | Both stated |
 
-## Top revisions
+## Diagnosis
 
-1. Name the spot-check seed so verification is reproducible.
+- **Biggest leak:** Steps — step 3's recode is under-specified.
+- **Unresolved forks:** the exact refusal-code handling.
+- **Suggested moves:** name the recode rule for refusal codes.
 
 ## Split assessment
 
@@ -390,52 +401,44 @@ Right-sized: one coherent cleaning component with a single verification routine.
 ## Data
 
 \`\`\`json board-scorecard
-{"schemaVersion":1,"component":"02-data-cleaning","planVersion":2,
- "planPath":"plans/execution/02-data-cleaning/v2.md","rubricVersion":"0.1","date":"2026-07-02",
- "items":[
-  {"id":1,"name":"Written and self-contained","score":2,"evidence":"Prepare the ISSP extract for analysis","justification":"Readable cold"},
-  {"id":2,"name":"Prospective","score":2,"evidence":"v2 committed 2026-07-01; outputs 2026-07-02","justification":"Plan precedes outputs"},
-  {"id":3,"name":"Revisable with versions","score":2,"evidence":"v2 supersedes v1 with reason","justification":"Real event-triggered revision"},
-  {"id":4,"name":"Researcher-committed","score":2,"evidence":"Signed off: Jane Doe","justification":"Signed; choices researcher's"},
-  {"id":5,"name":"All sections present","score":2,"evidence":"7 sections","justification":"Complete"},
-  {"id":6,"name":"Scope decisions carry reasons","score":2,"evidence":"3 rows with reasons","justification":"Each dimension reasoned"},
-  {"id":7,"name":"Verification checkable","score":1,"evidence":"spot-check 20 random rows","justification":"No seed named"},
-  {"id":8,"name":"Decisions specific and grounded","score":2,"evidence":"duplicate household IDs","justification":"Project-specific"},
-  {"id":9,"name":"Domain knowledge non-generic","score":1,"evidence":"codebook refusal codes","justification":"Some grounding"},
-  {"id":10,"name":"Choices consequential","score":2,"evidence":"exclusion rule","justification":"Materially affects sample"},
-  {"id":11,"name":"Revisions substantive","score":null,"status":"N/A","justification":"Scored at v2 creation"},
-  {"id":12,"name":"Another agent could pick it up","score":2,"evidence":"Build steps 1-4","justification":"Concrete"},
-  {"id":13,"name":"Out of scope constrains","score":1,"evidence":"No imputation","justification":"Somewhat generic"},
-  {"id":14,"name":"Right-sized","score":2,"evidence":"one cleaning component","justification":"Single verification"}],
- "raw":18,"applicableMax":22,"percent":82,"band":"strong",
- "excluded":[{"id":11,"why":"N/A — scored at creation"}],
- "topRevisions":["Name the spot-check seed so verification is reproducible."],
+{"schemaVersion":3,"status":"scored","component":"02-data-cleaning","planVersion":2,
+ "planPath":"plans/execution/02-data-cleaning/v2.md","rubricVersion":"0.4","date":"2026-07-02",
+ "channels":[
+  {"id":"goal","name":"Goal & success","score":3,"evidence":"a clean ISSP extract with < 2% missing on key vars","justification":"Checkable criteria"},
+  {"id":"decisions","name":"Decisions & reasons","score":3,"evidence":"drop duplicate household IDs — a known ISSP export bug","justification":"Grounded, goal-linked"},
+  {"id":"steps","name":"Steps","score":2,"evidence":"Build steps 1-4","justification":"Concrete; step 3 recode vague"},
+  {"id":"validation","name":"Validation","score":2,"evidence":"cross-check row counts against the codebook N","justification":"Tests the goal"},
+  {"id":"boundaries","name":"Boundaries","score":2,"evidence":"No imputation; do not touch the raw extract","justification":"Both stated"}],
+ "total":12,"max":15,"profile":"G3·D3·S2·V2·B2",
+ "biggestLeak":{"channel":"steps","note":"step 3's recode is under-specified"},
+ "suggestedMoves":["Name the recode rule for refusal codes."],
+ "unresolvedForks":["Exact refusal-code handling"],
+ "integrityFlags":[],
  "split":{"verdict":"right-sized","detail":"One coherent cleaning component with a single verification routine."}}
 \`\`\`
 `;
 
 const reviewV2Pass = `# Review — Descriptive Analysis v1
 
-Plan: [v1.md](../execution/03-descriptives/v1.md) · Rubric: plan-rubric.md (v0.2) · Date: 2026-07-02
-Threshold: **PASS (9/9; T8 N/A, T9 N/A — unexecuted)**
-Score: **11 / 14 (79%)** — strong
+Plan: [v1.md](../execution/03-descriptives/v1.md) · Rubric: plan-rubric.md (v0.4) · Date: 2026-07-02
+Profile: **G3 · D2 · S2 · V2 · B1 = 10/15**
+Flags: **uncommitted**
 
-## Threshold
+## Channels
 
-| ID | Check | Result | Note |
-|----|-------|--------|------|
-| T1 | Goal + success criteria | pass | goal + cross-check criteria stated |
-| T8 | Prospective | na | unexecuted — commit before executing |
+| Channel | Score | Evidence | Justification |
+|---------|-------|----------|---------------|
+| Goal & success | 3 | "a per-country table comparable to published CRI descriptives" | Checkable |
+| Decisions & reasons | 2 | "use ISSP design weights" | Real but link to goal implicit |
+| Steps | 2 | "weighted and unweighted side by side" | Concrete |
+| Validation | 2 | "cross-check against the cleaning log N" | Tests the goal |
+| Boundaries | 1 | "No models" | Out-of-scope only; no don't-touch |
 
-## Grading items
+## Diagnosis
 
-| # | Item | Score | Evidence | Justification |
-|---|------|-------|----------|---------------|
-| G1 | Decisions specific, reasoned, grounded | 2 | "Comparability with published CRI descriptives" | Project-specific reason |
-
-## Top revisions
-
-1. Name the exact weight variable from the codebook.
+- **Biggest leak:** Boundaries — nothing says what not to touch.
+- **Unresolved forks:** the exact weight variable from the codebook.
+- **Suggested moves:** name the weight variable; state what the analysis must not modify.
 
 ## Split assessment
 
@@ -444,83 +447,66 @@ Right-sized: one descriptive component with a single verification routine.
 ## Data
 
 \`\`\`json board-scorecard
-{"schemaVersion":2,"component":"03-descriptives","planVersion":1,
- "planPath":"plans/execution/03-descriptives/v1.md","rubricVersion":"0.2","date":"2026-07-02",
- "threshold":{"verdict":"pass","checks":[
-  {"id":"T1","name":"Goal + success criteria","result":"pass","evidence":"Success: a per-country table...","note":"explicit criteria"},
-  {"id":"T2","name":"Scope decisions with reasons","result":"pass","note":"weights row reasoned"},
-  {"id":"T3","name":"Approach / build steps","result":"pass"},
-  {"id":"T4","name":"Verification plan","result":"pass","note":"cross-check vs cleaning log"},
-  {"id":"T5","name":"Readable cold","result":"pass"},
-  {"id":"T6","name":"Goal-driven","result":"pass"},
-  {"id":"T7","name":"Executable + fidelity-checkable","result":"pass"},
-  {"id":"T8","name":"Prospective","result":"na","note":"unexecuted"},
-  {"id":"T9","name":"Revisable","result":"na","note":"no deviation yet"}],
-  "failures":[]},
- "items":[
-  {"id":"G1","name":"Decisions specific, reasoned, grounded","score":2,"evidence":"Comparability with published CRI descriptives","justification":"Project-specific"},
-  {"id":"G2","name":"Domain knowledge non-generic","score":1,"evidence":"ISSP design weights","justification":"Some grounding"},
-  {"id":"G3","name":"Choices consequential","score":2,"evidence":"weighted and unweighted side by side","justification":"Shapes evidence"},
-  {"id":"G4","name":"Revisions substantive","score":null,"status":"N/A","justification":"unexecuted v1"},
-  {"id":"G5","name":"Readability quality","score":2,"evidence":"whole plan","justification":"Reads cold"},
-  {"id":"G6","name":"Verification checkability","score":2,"evidence":"cross-checked against cleaning log","justification":"Concrete"},
-  {"id":"G7","name":"Out of scope constrains","score":1,"evidence":"No models","justification":"Somewhat generic"},
-  {"id":"G8","name":"Right-sized","score":1,"evidence":"one component","justification":"Missingness add-on borderline"}],
- "raw":11,"applicableMax":14,"percent":79,"band":"strong",
- "excluded":[{"id":"G4","why":"N/A — unexecuted v1"}],
- "topRevisions":["Name the exact weight variable from the codebook."],
+{"schemaVersion":3,"status":"scored","component":"03-descriptives","planVersion":1,
+ "planPath":"plans/execution/03-descriptives/v1.md","rubricVersion":"0.4","date":"2026-07-02",
+ "channels":[
+  {"id":"goal","name":"Goal & success","score":3,"evidence":"a per-country table comparable to published CRI descriptives","justification":"Checkable"},
+  {"id":"decisions","name":"Decisions & reasons","score":2,"evidence":"use ISSP design weights","justification":"Real but goal-link implicit"},
+  {"id":"steps","name":"Steps","score":2,"evidence":"weighted and unweighted side by side","justification":"Concrete"},
+  {"id":"validation","name":"Validation","score":2,"evidence":"cross-check against the cleaning log N","justification":"Tests the goal"},
+  {"id":"boundaries","name":"Boundaries","score":1,"evidence":"No models","justification":"Out-of-scope only; no don't-touch"}],
+ "total":10,"max":15,"profile":"G3·D2·S2·V2·B1",
+ "biggestLeak":{"channel":"boundaries","note":"nothing says what not to touch"},
+ "suggestedMoves":["Name the weight variable; state what the analysis must not modify."],
+ "unresolvedForks":["The exact weight variable from the codebook"],
+ "integrityFlags":[{"id":"uncommitted","note":"plan not committed before its outputs"}],
  "split":{"verdict":"right-sized","detail":"One descriptive component with a single verification routine."}}
 \`\`\`
 `;
 
 const reviewV2Fail = `# Review — Regression Modeling v1
 
-Plan: [v1.md](../execution/04-regression/v1.md) · Rubric: plan-rubric.md (v0.2) · Date: 2026-07-02
-Threshold: **FAIL — T1, T4**
+Plan: [v1.md](../execution/04-regression/v1.md) · Rubric: plan-rubric.md (v0.4) · Date: 2026-07-02
+Profile: **G1 · D0 · S2 · V0 · B0 = 3/15**
+Flags: **none**
 
-## Threshold
+## Channels
 
-| ID | Check | Result | Note |
-|----|-------|--------|------|
-| T1 | Goal + success criteria | fail | steps only; no success criteria anywhere |
-| T4 | Verification plan | fail | "check the results" names no check |
+| Channel | Score | Evidence | Justification |
+|---------|-------|----------|---------------|
+| Goal & success | 1 | "fit the models" | Objective only; criteria implicit |
+| Decisions & reasons | 0 | "use random forest, logit, OLS" | Choices with no reasons |
+| Steps | 2 | "run each model, save output" | Concrete enough |
+| Validation | 0 | "check the results" | Names no test of the goal |
+| Boundaries | 0 | — | Nothing about limits |
 
-Nearest archetype: a to-do list — no reasons and no success criteria.
+## Diagnosis
 
-## Top revisions
-
-1. State the goal and the criteria for judging success.
-2. Name at least one verification check and where it applies.
-3. Give each modeling choice a reason.
+- **Biggest leak:** three channels at 0 — most authorship is being handed to the agent.
+- **Unresolved forks:** the estimand, the success threshold, the model rationale, the scope.
+- **Suggested moves:** state the goal + success threshold; give each model a reason; name a validation test; bound the scope.
 
 ## Split assessment
 
-Split not assessable until it is a plan; on its face it also mixes main models and robustness.
+Mixes main models and robustness; split into a main-models component and a robustness component.
 
 ## Data
 
 \`\`\`json board-scorecard
-{"schemaVersion":2,"component":"04-regression","planVersion":1,
- "planPath":"plans/execution/04-regression/v1.md","rubricVersion":"0.2","date":"2026-07-02",
- "threshold":{"verdict":"fail","checks":[
-  {"id":"T1","name":"Goal + success criteria","result":"fail"},
-  {"id":"T2","name":"Scope decisions with reasons","result":"fail"},
-  {"id":"T3","name":"Approach / build steps","result":"pass"},
-  {"id":"T4","name":"Verification plan","result":"fail"},
-  {"id":"T5","name":"Readable cold","result":"pass"},
-  {"id":"T6","name":"Goal-driven","result":"unknown"},
-  {"id":"T7","name":"Executable + fidelity-checkable","result":"pass"},
-  {"id":"T8","name":"Prospective","result":"na"},
-  {"id":"T9","name":"Revisable","result":"na"}],
-  "failures":[
-   {"id":"T1","verdict":"No extractable goal or success criteria — a task list, not a plan yet.","fix":"State the goal and the criteria for judging success."},
-   {"id":"T2","verdict":"Choices without reasons — what makes a to-do list not a plan.","fix":"Give each modeling choice a reason."},
-   {"id":"T4","verdict":"Verification is owed but never named.","fix":"Name at least one check and where it applies."}]},
- "items":[],
- "raw":null,"applicableMax":null,"percent":null,"band":"not a plan",
- "excluded":[],
- "topRevisions":["State the goal and the criteria for judging success.","Name at least one verification check and where it applies.","Give each modeling choice a reason."],
- "split":{"verdict":"split required","detail":"Mixes main models and robustness; split once it clears the threshold."}}
+{"schemaVersion":3,"status":"scored","component":"04-regression","planVersion":1,
+ "planPath":"plans/execution/04-regression/v1.md","rubricVersion":"0.4","date":"2026-07-02",
+ "channels":[
+  {"id":"goal","name":"Goal & success","score":1,"evidence":"fit the models","justification":"Objective only; criteria implicit"},
+  {"id":"decisions","name":"Decisions & reasons","score":0,"evidence":"use random forest, logit, OLS","justification":"Choices with no reasons"},
+  {"id":"steps","name":"Steps","score":2,"evidence":"run each model, save output","justification":"Concrete enough"},
+  {"id":"validation","name":"Validation","score":0,"evidence":"check the results","justification":"Names no test of the goal"},
+  {"id":"boundaries","name":"Boundaries","score":0,"evidence":"","justification":"Nothing about limits"}],
+ "total":3,"max":15,"profile":"G1·D0·S2·V0·B0",
+ "biggestLeak":{"channel":"decisions","note":"three channels at 0 — most authorship handed to the agent"},
+ "suggestedMoves":["State the goal + success threshold.","Give each model a reason.","Name a validation test.","Bound the scope."],
+ "unresolvedForks":["The estimand","The success threshold","The model rationale","The scope"],
+ "integrityFlags":[],
+ "split":{"verdict":"split required","detail":"Mixes main models and robustness; split into a main-models component and a robustness component."}}
 \`\`\`
 `;
 
@@ -823,6 +809,7 @@ export const devData: BoardData = {
   generatedAt: "2026-07-02T12:00:00-04:00",
   mode: "live",
   focus: null,
+  detailLevel: "standard",
   modelProfile: {
     path: "plans/model-profile.md",
     exists: true,

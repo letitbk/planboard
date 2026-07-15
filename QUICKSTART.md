@@ -61,7 +61,7 @@ Started using the plugin mid-project? `/research-plans:results --adopt` scans yo
 /research-plans:review
 ```
 
-The review runs in two stages. First a threshold: is this a plan at all? Nine pass or fail checks (a goal with success criteria, reasoned scope decisions, executable steps, a named verification plan, readability, prospectivity, recorded revisions). A document that fails gets told exactly why, in plain terms ("no success criteria: a task list, not a plan yet"), with the fixes. Only a plan that passes gets the second stage: a quality grade on eight items with quoted evidence and the three revisions that would help most. The bands: below 50 percent, revise before executing; 50 to 75 percent, fine to execute but address the flags; above 75 percent, strong. The rubric is a draft; disagreements with it are useful feedback.
+The review scores the plan on five things, each from 0 to 3: whether the goal and success criteria are clear enough for someone else to check; whether the consequential decisions carry real reasons tied to the research goal (the heart of it — a choice you made, approved, or reached together all count); whether the steps are concrete enough to tell if they were done; whether the plan includes a way to test that it actually hit its goal; and whether it says what is out of scope and what not to touch. It reports the five numbers as a profile, names the biggest gap ("where the most is being handed to the agent"), and lists the specific decisions to fix next. The numbers are a diagnosis to act on, not a pass or fail. The rubric is a draft; disagreements with it are useful feedback.
 
 ## 7. See the whole project on the board
 

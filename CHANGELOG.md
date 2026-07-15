@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.18.0] - 2026-07-14
+
+Plan review gets shorter and moves into the plan itself: a five-number rubric replaces the old pass/fail-plus-grade, each plan version's score shows in the plan header (the Reviews tab is gone), and plans read as one narrative you can collapse to taste.
+
+### Added
+- **Five-channel rubric (v0.4).** `/research-plans:review` scores a plan on five 0–3 channels — Goal & success, Decisions & reasons (the spine), Steps, Validation, Boundaries — and reports a profile, the biggest leak, and the specific decisions to fix next. It's a diagnosis, not a pass/fail: there is no threshold gate, readability is a precondition, and prospectivity/revisability become non-scored integrity flags. The spine credits a decision you authored, chose, or approved equally, scoring the depth of the reasoning and its link to the research goal — and Validation asks whether the plan can actually test that it hit its goal.
+- **Score in the plan header.** Each plan version's score renders as a strip in its header — hover a chip for the evidence, click for the full diagnosis (channels, biggest leak, suggested moves, unresolved forks, split, reviewed-by model); integrity flags show as badges. The score re-runs on every signed version.
+- **Reader detail level.** `/research-plans:init` asks a detail level (compact / standard / full); the board opens plans collapsed to it, and any reader can toggle a section or block open.
+
+### Changed
+- **Plans read as one narrative.** The `Part 1 — For humans` / `Part 2 — For agents` split is gone. A plan is one continuous story (context first), with low-level agent detail in inline collapsible blocks.
+- **"Review With" is capped** to at most five material, channel-tagged comments per reviewer (the panel keeps the top few) — actionable feedback, not nitpicking.
+- **The live board closes on action and no longer times out.** Submitting an action closes the board instead of refreshing it in place; `/research-plans:board` reopens it at the same URL, an idle board no longer sleeps, and a review or report request still reopens with its result. The sign-off gate keeps its own bounded timeout.
+- The **Reviews tab is removed** — scores live in the plan header now.
+
 ## [0.17.0] - 2026-07-13
 
 Two themes land together: the board can now steer which model runs each stage and record which model each part actually used, and the results/report split becomes honest — evidence and a mechanical integrity check on the Result tab, narrative on the Report tab, and no report at all when there is nothing to report.
