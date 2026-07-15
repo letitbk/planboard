@@ -14,6 +14,7 @@ import { parseExecutionPlan, preRenewalSlugs } from "../lib/parse";
 import type { ViewerRequest } from "../lib/artifactDisplay";
 import { actionsVisible } from "../lib/actions";
 import { hasSubstantiveFindings } from "../lib/findings";
+import type { OutlineEntry } from "../lib/outline";
 import type {
   Annotation,
   BoardData,
@@ -229,6 +230,7 @@ export default function Results({
   onRequestReport,
   onReopen,
   navRequest,
+  onOutline,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -254,6 +256,7 @@ export default function Results({
     resultsVersion?: number;
     scriptPath?: string;
   } | null;
+  onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const groups = data.files.executionPlans.filter(
     (g) => (g.results ?? []).length > 0,
@@ -340,6 +343,31 @@ export default function Results({
     [annotations, group, bundle],
   );
 
+  const outlineEntries = useMemo<OutlineEntry[]>(() => {
+    const m = bundle?.manifest;
+    if (!m) return [];
+    // Normalize like the view does (Results.tsx:622) — a manifest.json may omit
+    // metrics/artifacts, and `.some`/`.length` on undefined would crash. An
+    // existing regression test deletes metrics (Results.integrity.test.tsx:98).
+    const metrics = Array.isArray(m.metrics) ? m.metrics : [];
+    const artifacts = Array.isArray(m.artifacts) ? m.artifacts : [];
+    const findingMode = metrics.some((mt) => (mt.artifactIds?.length ?? 0) > 0 || mt.statement);
+    const jump = (id: string) => () =>
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const es: OutlineEntry[] = [];
+    if (m.integrity) es.push({ id: "results-integrity", label: "Integrity", level: 1, onSelect: jump("results-integrity") });
+    if (m.validation) es.push({ id: "results-validation", label: "Validation", level: 1, onSelect: jump("results-validation") });
+    if (findingMode || metrics.length > 0) es.push({ id: "results-findings", label: "Findings", level: 1, onSelect: jump("results-findings") });
+    if (artifacts.length > 0) es.push({ id: "results-artifacts", label: "Artifacts", level: 1, onSelect: jump("results-artifacts") });
+    es.push({ id: "results-provenance", label: "Provenance", level: 1, onSelect: jump("results-provenance") });
+    return es;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundle?.dir]);
+  useEffect(() => {
+    onOutline?.(outlineEntries);
+    return () => onOutline?.([]);
+  }, [onOutline, outlineEntries]);
+
   if (!group || !bundle) {
     return (
       <div className="rounded-lg border border-dashed border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-10 text-center text-sm text-stone-500">
@@ -416,34 +444,7 @@ export default function Results({
     }));
 
   return (
-    <div className="flex gap-5">
-      <aside className="w-56 shrink-0">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-          Components
-        </h2>
-        <ul className="space-y-1">
-          {groups.map((g) => (
-            <li key={g.component}>
-              <button
-                className={`w-full rounded-md px-2.5 py-1.5 text-left text-sm ${
-                  g.component === group.component
-                    ? "bg-stone-900 dark:bg-stone-200 font-medium text-white dark:text-stone-900"
-                    : "text-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800"
-                }`}
-                onClick={() => onSelectComponent(g.component)}
-              >
-                {g.component}
-                {preRenewal.has(g.component) && (
-                  <span className="ml-1 rounded bg-stone-200 dark:bg-stone-700 px-1 py-0.5 text-[10px] text-stone-600 dark:text-stone-400">
-                    pre-renewal
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
-
+    <div className="min-w-0">
       <div className="min-w-0 flex-1">
         {/* version strip */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -642,56 +643,117 @@ export default function Results({
                   surface — "did it check out?". Integrity (mechanical, every
                   bundle) then plan-vs-execution (planned bundles). No prose:
                   the capture note now lives only in the Report narrative. */}
-              {m && <IntegritySection integrity={m.integrity ?? null} />}
-              {m?.validation && <ValidationSection v={m.validation} />}
+              {m && (
+                <div id="results-integrity">
+                  <IntegritySection integrity={m.integrity ?? null} />
+                </div>
+              )}
+              {m?.validation && (
+                <div id="results-validation">
+                  <ValidationSection v={m.validation} />
+                </div>
+              )}
 
               {m && findingMode ? (
                 <>
-                  {/* key claims — compact tiles; figures live in the Evidence
-                      gallery below and, in context, on the Reports tab */}
-                  {metrics.map((metric) => (
-                    <section
-                      key={metric.label}
-                      data-annot-scope={`metric:${metric.label}`}
-                      data-annot-section={`metric ${metric.label}`}
-                      className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-5"
-                    >
-                      <div className="mb-1 flex flex-wrap items-center gap-2">
-                        {metric.status && (
-                          <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                              STATUS_CLS[metric.status] ?? STATUS_CLS.descriptive
-                            }`}
-                          >
-                            {metric.status}
+                  <div id="results-findings">
+                    {/* key claims — compact tiles; figures live in the Evidence
+                        gallery below and, in context, on the Reports tab */}
+                    {metrics.map((metric) => (
+                      <section
+                        key={metric.label}
+                        data-annot-scope={`metric:${metric.label}`}
+                        data-annot-section={`metric ${metric.label}`}
+                        className="mb-4 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-5"
+                      >
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                          {metric.status && (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                STATUS_CLS[metric.status] ?? STATUS_CLS.descriptive
+                              }`}
+                            >
+                              {metric.status}
+                            </span>
+                          )}
+                          <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+                            {metric.label}
                           </span>
-                        )}
-                        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
-                          {metric.label}
-                        </span>
-                      </div>
-                      {metric.statement && (
-                        <p className="mb-1 font-serif text-lg leading-snug text-stone-900 dark:text-stone-100">
-                          {metric.statement}
-                        </p>
-                      )}
-                      <div className="text-base font-bold text-stone-900 dark:text-stone-100">
-                        {metric.value}
-                      </div>
-                      {metric.note && (
-                        <div className="mt-0.5 text-xs text-stone-400 dark:text-stone-500">
-                          {metric.note}
                         </div>
-                      )}
-                    </section>
-                  ))}
+                        {metric.statement && (
+                          <p className="mb-1 font-serif text-lg leading-snug text-stone-900 dark:text-stone-100">
+                            {metric.statement}
+                          </p>
+                        )}
+                        <div className="text-base font-bold text-stone-900 dark:text-stone-100">
+                          {metric.value}
+                        </div>
+                        {metric.note && (
+                          <div className="mt-0.5 text-xs text-stone-400 dark:text-stone-500">
+                            {metric.note}
+                          </div>
+                        )}
+                      </section>
+                    ))}
+                  </div>
 
-                  {m.artifacts.length === 0 && <SummaryOnlyNotice />}
-                  {m.artifacts.length > 0 && (
-                    <section className="mb-4">
-                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-                        Evidence
-                      </h3>
+                  <div id="results-artifacts">
+                    {m.artifacts.length === 0 && <SummaryOnlyNotice />}
+                    {m.artifacts.length > 0 && (
+                      <section className="mb-4">
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                          Evidence
+                        </h3>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          {m.artifacts.map((art) => (
+                            <ArtifactCard
+                              key={art.id}
+                              art={art}
+                              bundle={bundle}
+                              openScript={openScript}
+                              setOpenScript={setOpenScript}
+                              onZoom={onZoom}
+                              onView={onView}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div id="results-findings">
+                    {/* backward-compat: metric tiles + full gallery */}
+                    {metrics.length > 0 && (
+                      <div className="mb-4 flex flex-wrap gap-3">
+                        {metrics.map((metric) => (
+                          <div
+                            key={metric.label}
+                            data-annot-scope={`metric:${metric.label}`}
+                            data-annot-section={`metric ${metric.label}`}
+                            className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 px-4 py-2 text-left"
+                          >
+                            <div className="text-[11px] uppercase tracking-wide text-stone-500">
+                              {metric.label}
+                            </div>
+                            <div className="text-lg font-bold text-stone-900 dark:text-stone-100">
+                              {metric.value}
+                            </div>
+                            {metric.note && (
+                              <div className="text-[11px] text-stone-400 dark:text-stone-500">
+                                {metric.note}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div id="results-artifacts">
+                    {m && m.artifacts.length === 0 ? (
+                      <SummaryOnlyNotice />
+                    ) : m ? (
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         {m.artifacts.map((art) => (
                           <ArtifactCard
@@ -705,64 +767,21 @@ export default function Results({
                           />
                         ))}
                       </div>
-                    </section>
-                  )}
-                </>
-              ) : (
-                <>
-                  {/* backward-compat: metric tiles + full gallery */}
-                  {metrics.length > 0 && (
-                    <div className="mb-4 flex flex-wrap gap-3">
-                      {metrics.map((metric) => (
-                        <div
-                          key={metric.label}
-                          data-annot-scope={`metric:${metric.label}`}
-                          data-annot-section={`metric ${metric.label}`}
-                          className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 px-4 py-2 text-left"
-                        >
-                          <div className="text-[11px] uppercase tracking-wide text-stone-500">
-                            {metric.label}
-                          </div>
-                          <div className="text-lg font-bold text-stone-900 dark:text-stone-100">
-                            {metric.value}
-                          </div>
-                          {metric.note && (
-                            <div className="text-[11px] text-stone-400 dark:text-stone-500">
-                              {metric.note}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {m && m.artifacts.length === 0 ? (
-                    <SummaryOnlyNotice />
-                  ) : m ? (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      {m.artifacts.map((art) => (
-                        <ArtifactCard
-                          key={art.id}
-                          art={art}
-                          bundle={bundle}
-                          openScript={openScript}
-                          setOpenScript={setOpenScript}
-                          onZoom={onZoom}
-                          onView={onView}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
+                    ) : null}
+                  </div>
                 </>
               )}
 
               {/* provenance flow diagram (v0.11) — now closes the review read */}
               {m && (
-                <ProvenanceFlow
-                  bundle={bundle}
-                  planGoal={planGoal}
-                  onOpenScript={setOpenScript}
-                  onZoom={onZoom}
-                />
+                <div id="results-provenance">
+                  <ProvenanceFlow
+                    bundle={bundle}
+                    planGoal={planGoal}
+                    onOpenScript={setOpenScript}
+                    onZoom={onZoom}
+                  />
+                </div>
               )}
             </>
           );

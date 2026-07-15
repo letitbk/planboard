@@ -1203,6 +1203,7 @@ export default function App({ data }: { data: BoardData }) {
             focusResults={data.focusResults ?? null}
             onRequestReview={guardConn(requestReview)}
             onRequestReport={guardConn(requestReport)}
+            onOutline={setOutline}
           />
         )}
         {tab === "archive" && (
