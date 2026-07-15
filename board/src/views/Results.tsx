@@ -297,14 +297,15 @@ export default function Results({
   // above nulls openScript on the bundle change (same-render effect order) —
   // otherwise the reset would immediately close the requested script.
   const pendingNavScript = useRef<{ script: string | null } | null>(null);
+  const navLastComponent = useRef(group?.component);
   useEffect(() => {
     if (!navRequest) return;
     const script = navRequest.scriptPath ?? null;
+    const componentChanged = navLastComponent.current !== group?.component;
+    navLastComponent.current = group?.component;
     if (navRequest.resultsVersion !== undefined) {
-      const i = bundles.findIndex(
-        (b) => b.resultsVersion === navRequest.resultsVersion,
-      );
-      if (i >= 0 && i !== Math.min(idx, bundles.length - 1)) {
+      const i = bundles.findIndex((b) => b.resultsVersion === navRequest.resultsVersion);
+      if (i >= 0 && (componentChanged || i !== Math.min(idx, bundles.length - 1))) {
         pendingNavScript.current = { script };
         setIdx(i);
         return;
