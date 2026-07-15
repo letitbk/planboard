@@ -6,6 +6,7 @@ import AnnotationLayer, {
 } from "../components/AnnotationLayer";
 import { Notice } from "./Tracker";
 import { parseMasterPlan, parseServes, slugFromLink } from "../lib/parse";
+import type { OutlineEntry } from "../lib/outline";
 import type {
   Annotation,
   BoardData,
@@ -38,6 +39,7 @@ export default function Archive({
   onOpenResults,
   navRequest,
   onOpenReport,
+  onOutline,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -53,6 +55,7 @@ export default function Archive({
   onOpenResults: (slug: string) => void;
   navRequest?: { token: number; archivePath?: string } | null;
   onOpenReport?: (slug: string, resultsVersion: number) => void;
+  onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const archives = data.files.archives ?? [];
   const [idx, setIdx] = useState(Math.max(0, archives.length - 1));
@@ -64,6 +67,12 @@ export default function Archive({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navRequest?.token]);
   const archive = archives[Math.min(idx, archives.length - 1)] ?? null;
+
+  // Archive has no outline of its own — explicitly clear it (robust to future
+  // cleanup changes in whichever view precedes it).
+  useEffect(() => {
+    onOutline?.([]);
+  }, [onOutline]);
 
   if (!archive) {
     return (

@@ -20,7 +20,6 @@ import {
   parseMasterPlan,
   parseScorecard,
   parseServes,
-  preRenewalSlugs,
 } from "../lib/parse";
 import { actionsVisible, planActionState } from "../lib/actions";
 import RequestChangesButton from "../components/RequestChangesButton";
@@ -33,6 +32,7 @@ import type {
   ReviewRequest,
   SignoffRequest,
 } from "../lib/types";
+import type { OutlineEntry } from "../lib/outline";
 
 type DocKind = "signed" | "workingDraft" | "draftSnapshot";
 
@@ -57,7 +57,6 @@ export default function PlanReader({
   data,
   canAnnotate,
   selectedComponent,
-  onSelectComponent,
   annotations,
   onAddPlanComment,
   onPaintResult,
@@ -67,11 +66,11 @@ export default function PlanReader({
   onSignoff,
   navRequest,
   onOpenReport,
+  onOutline,
 }: {
   data: BoardData;
   canAnnotate: boolean;
   selectedComponent: string | null;
-  onSelectComponent: (slug: string) => void;
   annotations: Annotation[];
   onAddPlanComment: (
     a: Omit<PlanCommentAnnotation, "id" | "type">,
@@ -89,9 +88,9 @@ export default function PlanReader({
   // card. Internal selection stays authoritative; each new token overrides.
   navRequest?: { token: number; planPath?: string } | null;
   onOpenReport?: (slug: string, resultsVersion: number) => void;
+  onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const groups = data.files.executionPlans;
-  const preRenewal = preRenewalSlugs(data);
   const group =
     groups.find((g) => g.component === selectedComponent) ?? groups[0] ?? null;
 
@@ -222,6 +221,23 @@ export default function PlanReader({
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, []);
 
+  const outlineEntries = useMemo<OutlineEntry[]>(
+    () =>
+      parsed?.ok && !(diffOn && prevDoc)
+        ? parsed.sections.map((s) => ({
+            id: s.heading,
+            label: s.heading,
+            level: 1,
+            onSelect: () => scrollToSection(s.heading),
+          }))
+        : [],
+    [parsed, diffOn, prevDoc, scrollToSection],
+  );
+  useEffect(() => {
+    onOutline?.(outlineEntries);
+    return () => onOutline?.([]);
+  }, [onOutline, outlineEntries]);
+
   const docAnnotations = useMemo(
     () =>
       annotations.filter(
@@ -261,57 +277,7 @@ export default function PlanReader({
   const annotatable = canAnnotate && doc.docKind !== "draftSnapshot";
 
   return (
-    <div className="flex gap-5">
-      {/* Sidebar */}
-      <aside className="w-56 shrink-0">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-          Components
-        </h2>
-        <ul className="space-y-1">
-          {groups.map((g) => (
-            <li key={g.component}>
-              <button
-                className={`w-full rounded-md px-2.5 py-1.5 text-left text-sm ${
-                  g.component === group.component
-                    ? "bg-stone-900 dark:bg-stone-200 font-medium text-white dark:text-stone-900"
-                    : "text-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800"
-                }`}
-                onClick={() => onSelectComponent(g.component)}
-              >
-                {g.component}
-                {preRenewal.has(g.component) && (
-                  <span className="ml-1 rounded bg-stone-200 dark:bg-stone-700 px-1 py-0.5 text-[10px] text-stone-600 dark:text-stone-400">
-                    pre-renewal
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        {parsed?.ok && parsed.sections.length > 0 && (
-          <div>
-            <h2 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-              Sections
-            </h2>
-            <ul className="space-y-0.5">
-              {parsed.sections.map((s) => (
-                <li key={s.heading}>
-                  <button
-                    className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
-                    onClick={() => scrollToSection(s.heading)}
-                  >
-                    {s.heading}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </aside>
-
-      {/* Main pane */}
-      <div className="min-w-0 flex-1">
+    <div className="min-w-0">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           {docs.map((d, i) =>
             d.docKind === "draftSnapshot" ? null : (
@@ -570,7 +536,6 @@ export default function PlanReader({
             working draft to comment.
           </p>
         )}
-      </div>
     </div>
   );
 }

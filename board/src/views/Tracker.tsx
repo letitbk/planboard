@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from "react";
 import Markdown from "../components/Markdown";
 import AnnotationLayer, {
   GeneralCommentBox,
@@ -6,6 +7,7 @@ import AnnotationLayer, {
 import ReviewMenu from "../components/ReviewMenu";
 import { actionsVisible, planActionState } from "../lib/actions";
 import { hasSubstantiveFindings } from "../lib/findings";
+import type { OutlineEntry } from "../lib/outline";
 import RequestChangesButton from "../components/RequestChangesButton";
 import type {
   Annotation,
@@ -49,6 +51,7 @@ export default function Tracker({
   onSignoff,
   onOpenArchive,
   onOpenReport,
+  onOutline,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -67,8 +70,27 @@ export default function Tracker({
   onSignoff?: (req: SignoffRequest) => void;
   onOpenArchive?: () => void;
   onOpenReport?: (slug: string, resultsVersion: number) => void;
+  onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const mp = parseMasterPlan(data.files.masterPlan.content);
+
+  const outlineEntries = useMemo<OutlineEntry[]>(() => {
+    const m = parseMasterPlan(data.files.masterPlan.content);
+    if (!m.ok) return [];
+    return m.components.map((r) => ({
+      id: `tracker-row-${r.num}`,
+      label: `${r.num}. ${r.component}`,
+      level: 1,
+      onSelect: () =>
+        document
+          .getElementById(`tracker-row-${r.num}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    }));
+  }, [data.files.masterPlan.content]);
+  useEffect(() => {
+    onOutline?.(outlineEntries);
+    return () => onOutline?.([]);
+  }, [onOutline, outlineEntries]);
 
   const docAnnotations = annotations.filter(
     (a): a is DocCommentAnnotation =>
@@ -400,6 +422,7 @@ export default function Tracker({
               return (
                 <tr
                   key={i}
+                  id={`tracker-row-${r.num}`}
                   className="border-b border-stone-100 dark:border-stone-800 last:border-0"
                   data-annot-scope={`row:${r.num}`}
                   data-annot-section={`row ${r.num}: ${r.component}`}

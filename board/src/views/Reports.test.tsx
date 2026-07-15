@@ -46,7 +46,7 @@ const noop = () => {};
 function draw(d: BoardData, over: Record<string, unknown> = {}) {
   return render(
     <Reports data={d} canAnnotate={false} selectedComponent="01-x"
-      onSelectComponent={noop} annotations={[]} onAddDocComment={noop}
+      annotations={[]} onAddDocComment={noop}
       onPaintResult={noop} focusResults={null} navRequest={null} {...over} />,
   );
 }

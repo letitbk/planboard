@@ -10,6 +10,7 @@ import {
   parseHistory,
   parseScorecard,
 } from "../lib/parse";
+import type { OutlineEntry } from "../lib/outline";
 import { isScoredScorecard } from "../lib/types";
 import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
 
@@ -42,6 +43,7 @@ export default function Timeline({
   onPaintResult,
   onAddGeneral,
   navRequest,
+  onOutline,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -54,6 +56,7 @@ export default function Timeline({
   ) => void;
   onAddGeneral: (view: string, comment: string) => void;
   navRequest?: { token: number; clearFilter?: boolean } | null;
+  onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const events = useMemo(() => buildEvents(data), [data]);
   const [filter, setFilter] = useState<EventKind | "all">("all");
@@ -66,6 +69,32 @@ export default function Timeline({
     setQuery("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navRequest?.token]);
+
+  const outlineEntries = useMemo<OutlineEntry[]>(
+    () =>
+      events
+        .filter(
+          (e) =>
+            (filter === "all" || e.kind === filter) &&
+            (!query || e.searchText.toLowerCase().includes(query.toLowerCase())),
+        )
+        .map((e, i) => ({
+          // Index-keyed: `kind + sortKey` collides for same-date events (reviews
+          // are dated `date + " 00:00"`; the dev fixture has 3 on 2026-07-02).
+          id: `timeline-evt-${i}`,
+          label: e.title,
+          level: 1,
+          onSelect: () =>
+            document
+              .getElementById(`timeline-evt-${i}`)
+              ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        })),
+    [events, filter, query],
+  );
+  useEffect(() => {
+    onOutline?.(outlineEntries);
+    return () => onOutline?.([]);
+  }, [onOutline, outlineEntries]);
 
   const visible = events.filter((e) => {
     if (filter !== "all" && e.kind !== filter) return false;
@@ -116,7 +145,7 @@ export default function Timeline({
           const list = (
             <ol className="relative ml-2 space-y-4 border-l border-stone-200 dark:border-stone-800 pl-6">
               {visible.map((e, i) => (
-                <li key={i} className="relative">
+                <li key={i} id={`timeline-evt-${i}`} className="relative">
                   <span
                     className={`absolute -left-[31px] top-1.5 h-2.5 w-2.5 rounded-full ${KIND_STYLE[e.kind].dot}`}
                   />

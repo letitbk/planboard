@@ -95,7 +95,6 @@ describe("PlanReader per-bundle report chip keying", () => {
         data={data(results)}
         canAnnotate={false}
         selectedComponent="01-x"
-        onSelectComponent={noop}
         annotations={[]}
         onAddPlanComment={noop}
         onPaintResult={noop}

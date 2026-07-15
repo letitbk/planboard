@@ -8,6 +8,7 @@ import Reports from "./views/Reports";
 import Models from "./views/Models";
 import BatchGate from "./views/BatchGate";
 import ThemeToggle from "./components/ThemeToggle";
+import Sidebar from "./components/Sidebar";
 import { allFiles, payloadContentHash } from "./lib/parse";
 import {
   buildFeedbackDocument,
@@ -35,6 +36,8 @@ import {
   type ConnEvent,
 } from "./lib/reconnect";
 import { navTargetFor, type NavTarget } from "./lib/navTarget";
+import { buildFilesTree } from "./lib/filesTree";
+import type { OutlineEntry } from "./lib/outline";
 import type { ReopenRequest, SignoffRequest } from "./lib/types";
 import type {
   Annotation,
@@ -896,6 +899,8 @@ export default function App({ data }: { data: BoardData }) {
   // ---- Click-sync (control surface, spec §2): card -> highlight and back.
   const navTokenRef = useRef(0);
   const [navRequest, setNavRequest] = useState<({ token: number } & NavTarget) | null>(null);
+  const [outline, setOutline] = useState<OutlineEntry[]>([]);
+  const filesTree = useMemo(() => buildFilesTree(data), [data]);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showSyncNotice = (msg: string) => {
@@ -922,30 +927,25 @@ export default function App({ data }: { data: BoardData }) {
     };
     requestAnimationFrame(() => requestAnimationFrame(() => attempt(tries)));
   };
-  const openAnnotation = (a: Annotation) => {
-    const target = navTargetFor(a, data);
+  // Shared route primitive. navRequest is RETAINED state keyed by token (App
+  // never clears it; views react to the token, and a remount can re-apply it).
+  const applyRoute = (target: NavTarget) => {
     setTab(target.tab);
     if (target.component) setSelectedComponent(target.component);
     navTokenRef.current += 1;
     setNavRequest({ ...target, token: navTokenRef.current });
+  };
+  const openAnnotation = (a: Annotation) => {
+    const target = navTargetFor(a, data);
+    applyRoute(target);
     if (!target.anchored) {
       showSyncNotice("No highlight in this document — opened its view instead.");
       return;
     }
     scrollToSelector(`mark[data-annotation="${a.id}"], [data-annotation="${a.id}"]`);
   };
-  const openReport = (slug: string, resultsVersion: number) => {
-    setSelectedComponent(slug);
-    setTab("reports");
-    navTokenRef.current += 1;
-    setNavRequest({
-      tab: "reports",
-      resultsVersion,
-      annotationId: "",
-      anchored: false,
-      token: navTokenRef.current,
-    });
-  };
+  const openReport = (slug: string, resultsVersion: number) =>
+    applyRoute({ tab: "reports", component: slug, resultsVersion, annotationId: "", anchored: false });
   const openCard = (id: string) => {
     setDrawerOpen(true);
     scrollToSelector(`[data-card-id="${id}"]`);
@@ -976,6 +976,7 @@ export default function App({ data }: { data: BoardData }) {
   const headerRef = useRef<HTMLElement | null>(null);
   const headerOffset = useHeaderOffset(headerRef);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const isCoarse = useMediaQuery("(pointer: coarse)");
   const panelOpen = canAnnotate && drawerOpen;
   const panelProps = {
     annotations,
@@ -1125,6 +1126,18 @@ export default function App({ data }: { data: BoardData }) {
       <div className="mx-auto flex w-full max-w-[1440px]">
         <main className="min-w-0 flex-1 px-5 py-6">
           <div className="mx-auto max-w-5xl">
+        <div className="flex gap-5">
+          <Sidebar
+            outline={outline}
+            tree={filesTree}
+            onNavigate={applyRoute}
+            activeTab={tab}
+            activeComponent={selectedComponent}
+            storageKey={`rp-sidebar:${data.projectId ?? data.project.name}`}
+            defaultCollapsed={isCoarse}
+            topOffsetPx={headerOffset}
+          />
+          <div className="min-w-0 flex-1">
         {tab === "tracker" && (
           <Tracker
             data={data}
@@ -1148,6 +1161,7 @@ export default function App({ data }: { data: BoardData }) {
               data.files.archives?.length ? () => setTab("archive") : undefined
             }
             onOpenReport={openReport}
+            onOutline={setOutline}
           />
         )}
         {tab === "plans" && (
@@ -1157,7 +1171,6 @@ export default function App({ data }: { data: BoardData }) {
             navRequest={navRequest?.tab === "plans" ? { token: navRequest.token, planPath: navRequest.planPath } : null}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
-            onSelectComponent={setSelectedComponent}
             annotations={annotations}
             onAddPlanComment={addPlanComment}
             onPaintResult={onPaintResult}
@@ -1168,6 +1181,7 @@ export default function App({ data }: { data: BoardData }) {
             canPost={canPost}
             onRequestReview={guardConn(requestReview)}
             onOpenReport={openReport}
+            onOutline={setOutline}
           />
         )}
         {tab === "results" && (
@@ -1178,7 +1192,6 @@ export default function App({ data }: { data: BoardData }) {
             canAnnotate={canAnnotate}
             canPost={canPost}
             selectedComponent={selectedComponent}
-            onSelectComponent={setSelectedComponent}
             annotations={annotations}
             onAddResultComment={addResultComment}
             onAddScriptComment={addScriptComment}
@@ -1187,6 +1200,7 @@ export default function App({ data }: { data: BoardData }) {
             focusResults={data.focusResults ?? null}
             onRequestReview={guardConn(requestReview)}
             onRequestReport={guardConn(requestReport)}
+            onOutline={setOutline}
           />
         )}
         {tab === "archive" && (
@@ -1207,6 +1221,7 @@ export default function App({ data }: { data: BoardData }) {
               setTab("results");
             }}
             onOpenReport={openReport}
+            onOutline={setOutline}
           />
         )}
         {tab === "reports" && (
@@ -1214,7 +1229,6 @@ export default function App({ data }: { data: BoardData }) {
             data={data}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
-            onSelectComponent={setSelectedComponent}
             annotations={annotations}
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
@@ -1225,6 +1239,7 @@ export default function App({ data }: { data: BoardData }) {
                 ? { token: navRequest.token, resultsVersion: navRequest.resultsVersion }
                 : null
             }
+            onOutline={setOutline}
           />
         )}
         {tab === "models" && (
@@ -1232,6 +1247,7 @@ export default function App({ data }: { data: BoardData }) {
             data={data}
             modelProfile={modelProfile}
             onProfileChange={setModelProfile}
+            onOutline={setOutline}
           />
         )}
         {tab === "timeline" && (
@@ -1243,8 +1259,11 @@ export default function App({ data }: { data: BoardData }) {
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
+            onOutline={setOutline}
           />
         )}
+          </div>
+        </div>
           </div>
         </main>
         {panelOpen && isDesktop && (

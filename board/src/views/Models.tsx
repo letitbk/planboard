@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Markdown from "../components/Markdown";
 import { Notice } from "./Tracker";
 import { actionsVisible } from "../lib/actions";
+import type { OutlineEntry } from "../lib/outline";
 import type {
   BoardData,
   ModelProfile,
@@ -90,10 +91,12 @@ export default function Models({
   data,
   modelProfile,
   onProfileChange,
+  onOutline,
 }: {
   data: BoardData;
   modelProfile?: ModelProfile;
   onProfileChange: (mp: ModelProfile | undefined) => void;
+  onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const live = data.mode === "live";
   const canEdit = actionsVisible(data) && modelProfile?.editable === true;
@@ -146,6 +149,24 @@ export default function Models({
       return !b || b.model !== r.model || b.effort !== r.effort;
     });
   }, [draft, modelProfile]);
+
+  const outlineEntries = useMemo<OutlineEntry[]>(
+    () =>
+      (modelProfile?.rows ?? []).map((r) => ({
+        id: `models-row-${r.stage}`,
+        label: r.label,
+        level: 1,
+        onSelect: () =>
+          document
+            .getElementById(`models-row-${r.stage}`)
+            ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      })),
+    [modelProfile?.baselineHash], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(() => {
+    onOutline?.(outlineEntries);
+    return () => onOutline?.([]);
+  }, [onOutline, outlineEntries]);
 
   const allValid = draft.every((r) => modelValid(r.model));
   const canSave = canEdit && dirty && allValid && !saving;
@@ -299,6 +320,7 @@ export default function Models({
             {rows.map((r) => (
               <tr
                 key={r.stage}
+                id={`models-row-${r.stage}`}
                 className="border-b border-stone-100 dark:border-stone-800/60 last:border-0"
               >
                 <td className="px-4 py-2 text-stone-800 dark:text-stone-200">{r.label}</td>
