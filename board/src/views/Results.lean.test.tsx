@@ -45,7 +45,7 @@ const noop = () => {};
 function renderLeanFixture() {
   return render(
     <Results data={leanFindingData()} canAnnotate={false} canPost={false}
-      selectedComponent="01-x" onSelectComponent={noop} annotations={[]}
+      selectedComponent="01-x" annotations={[]}
       onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
       onVerdict={noop} focusResults={null} navRequest={null} />,
   );

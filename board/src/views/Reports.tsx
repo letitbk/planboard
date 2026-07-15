@@ -38,7 +38,6 @@ export default function Reports({
   data,
   canAnnotate,
   selectedComponent,
-  onSelectComponent,
   annotations,
   onAddDocComment,
   onPaintResult,
@@ -50,7 +49,6 @@ export default function Reports({
   data: BoardData;
   canAnnotate: boolean;
   selectedComponent: string | null;
-  onSelectComponent: (slug: string) => void;
   annotations: Annotation[];
   onAddDocComment: (a: Omit<DocCommentAnnotation, "id" | "type">) => void;
   onPaintResult: (

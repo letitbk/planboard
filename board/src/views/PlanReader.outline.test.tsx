@@ -35,7 +35,7 @@ it("publishes an outline built from the plan's sections", () => {
   let published: OutlineEntry[] = [];
   render(
     <PlanReader
-      data={data()} canAnnotate={false} selectedComponent="01-x" onSelectComponent={vi.fn()}
+      data={data()} canAnnotate={false} selectedComponent="01-x"
       annotations={[]} onAddPlanComment={vi.fn()} onPaintResult={vi.fn()} onOpenResults={vi.fn()}
       canPost={false} navRequest={null} onOutline={(e) => (published = e)}
     />,
@@ -54,7 +54,7 @@ it("publishes no outline while a draft is diffed against its predecessor", () =>
   let published: OutlineEntry[] = [];
   render(
     <PlanReader
-      data={d} canAnnotate={false} selectedComponent="01-x" onSelectComponent={vi.fn()}
+      data={d} canAnnotate={false} selectedComponent="01-x"
       annotations={[]} onAddPlanComment={vi.fn()} onPaintResult={vi.fn()} onOpenResults={vi.fn()}
       canPost={false} navRequest={null} onOutline={(e) => (published = e)}
     />,

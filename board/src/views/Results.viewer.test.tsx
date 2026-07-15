@@ -50,7 +50,7 @@ describe("Results viewer wiring", () => {
   it("clicking a view button opens the modal and renders the csv", async () => {
     render(
       <Results data={csvData()} canAnnotate={false} canPost={false}
-        selectedComponent="01-x" onSelectComponent={noop} annotations={[]}
+        selectedComponent="01-x" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
         onVerdict={noop} focusResults={null} navRequest={null} />,
     );

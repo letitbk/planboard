@@ -48,7 +48,7 @@ it("publishes an outline built from the rendered report's headings", () => {
   let published: OutlineEntry[] = [];
   render(
     <Reports data={data([bundle({})])} canAnnotate={false} selectedComponent="01-x"
-      onSelectComponent={noop} annotations={[]} onAddDocComment={noop}
+      annotations={[]} onAddDocComment={noop}
       onPaintResult={noop} focusResults={null} navRequest={null}
       onOutline={(e) => (published = e)} />,
   );

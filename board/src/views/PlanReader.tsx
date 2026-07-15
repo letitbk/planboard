@@ -18,7 +18,6 @@ import {
   parseExecutionPlan,
   parseMasterPlan,
   parseServes,
-  preRenewalSlugs,
 } from "../lib/parse";
 import { actionsVisible, planActionState } from "../lib/actions";
 import RequestChangesButton from "../components/RequestChangesButton";
@@ -56,7 +55,6 @@ export default function PlanReader({
   data,
   canAnnotate,
   selectedComponent,
-  onSelectComponent,
   annotations,
   onAddPlanComment,
   onPaintResult,
@@ -71,7 +69,6 @@ export default function PlanReader({
   data: BoardData;
   canAnnotate: boolean;
   selectedComponent: string | null;
-  onSelectComponent: (slug: string) => void;
   annotations: Annotation[];
   onAddPlanComment: (
     a: Omit<PlanCommentAnnotation, "id" | "type">,
@@ -92,7 +89,6 @@ export default function PlanReader({
   onOutline?: (entries: OutlineEntry[]) => void;
 }) {
   const groups = data.files.executionPlans;
-  const preRenewal = preRenewalSlugs(data);
   const group =
     groups.find((g) => g.component === selectedComponent) ?? groups[0] ?? null;
 

@@ -45,7 +45,6 @@ function renderReader(navRequest: { token: number; planPath?: string } | null) {
       data={data()}
       canAnnotate={false}
       selectedComponent="01-x"
-      onSelectComponent={vi.fn()}
       annotations={[]}
       onAddPlanComment={vi.fn()}
       onPaintResult={vi.fn()}
@@ -70,7 +69,6 @@ describe("PlanReader click-sync round trip", () => {
         data={data()}
         canAnnotate={false}
         selectedComponent="01-x"
-        onSelectComponent={vi.fn()}
         annotations={[]}
         onAddPlanComment={vi.fn()}
         onPaintResult={vi.fn()}

@@ -219,7 +219,6 @@ export default function Results({
   canAnnotate,
   canPost,
   selectedComponent,
-  onSelectComponent,
   annotations,
   onAddResultComment,
   onAddScriptComment,
@@ -236,7 +235,6 @@ export default function Results({
   canAnnotate: boolean;
   canPost: boolean;
   selectedComponent: string | null;
-  onSelectComponent: (slug: string) => void;
   annotations: Annotation[];
   onAddResultComment: (a: Omit<ResultCommentAnnotation, "id" | "type">) => void;
   onAddScriptComment: (a: Omit<ScriptCommentAnnotation, "id" | "type">) => void;

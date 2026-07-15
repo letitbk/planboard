@@ -1173,7 +1173,6 @@ export default function App({ data }: { data: BoardData }) {
             navRequest={navRequest?.tab === "plans" ? { token: navRequest.token, planPath: navRequest.planPath } : null}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
-            onSelectComponent={setSelectedComponent}
             annotations={annotations}
             onAddPlanComment={addPlanComment}
             onPaintResult={onPaintResult}
@@ -1195,7 +1194,6 @@ export default function App({ data }: { data: BoardData }) {
             canAnnotate={canAnnotate}
             canPost={canPost}
             selectedComponent={selectedComponent}
-            onSelectComponent={setSelectedComponent}
             annotations={annotations}
             onAddResultComment={addResultComment}
             onAddScriptComment={addScriptComment}
@@ -1233,7 +1231,6 @@ export default function App({ data }: { data: BoardData }) {
             data={data}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
-            onSelectComponent={setSelectedComponent}
             annotations={annotations}
             onAddDocComment={addDocComment}
             onPaintResult={onPaintResult}
