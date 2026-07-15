@@ -1241,6 +1241,7 @@ export default function App({ data }: { data: BoardData }) {
                 ? { token: navRequest.token, resultsVersion: navRequest.resultsVersion }
                 : null
             }
+            onOutline={setOutline}
           />
         )}
         {tab === "models" && (
