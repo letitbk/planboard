@@ -408,7 +408,7 @@ export default function PlanReader({
               Unsigned draft
             </span>
             {stale && (
-              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:text-red-300">
+              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:bg-red-950 dark:text-red-300">
                 Stale — a signed version already supersedes this draft
               </span>
             )}
