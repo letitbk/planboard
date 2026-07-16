@@ -69,6 +69,7 @@ export default function ScriptViewer({
           const n = i + 1;
           const selected = lo !== null && hi !== null && n >= lo && n <= hi;
           const savedHit = saved.find((s) => n >= s.lineStart && n <= s.lineEnd);
+          const savedAnchor = savedHit && n === savedHit.lineStart ? savedHit : null;
           return (
             <div
               key={n}
@@ -93,22 +94,34 @@ export default function ScriptViewer({
                     : "text-stone-400 dark:text-stone-500"
                 }`}
                 data-annotation={
-                  savedHit && n === savedHit.lineStart ? savedHit.id : undefined
+                  savedAnchor ? savedAnchor.id : undefined
                 }
-                role={canAnnotate ? "button" : undefined}
-                tabIndex={canAnnotate ? 0 : savedHit && n === savedHit.lineStart ? 0 : undefined}
-                aria-label={canAnnotate ? `Select line ${n} for comment` : undefined}
+                role={canAnnotate || savedAnchor ? "button" : undefined}
+                tabIndex={canAnnotate || savedAnchor ? 0 : undefined}
+                aria-label={
+                  savedAnchor
+                    ? `Open comment on line ${n}`
+                    : canAnnotate
+                      ? `Select line ${n} for comment`
+                      : undefined
+                }
                 onKeyDown={(e) => {
-                  if (canAnnotate && e.key === "Enter") {
+                  if (savedAnchor && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    // Enter bubbles to App's delegated annotation handler.
+                    // Space has no delegated key behavior, so emit the same
+                    // bubbling click that pointer activation uses.
+                    if (e.key === " ") e.currentTarget.click();
+                    return;
+                  }
+                  if (canAnnotate && (e.key === "Enter" || e.key === " ")) {
                     e.preventDefault();
                     e.stopPropagation();
                     clickLine(n, e.shiftKey);
                   }
                 }}
                 title={
-                  savedHit && n === savedHit.lineStart
-                    ? "Open this line comment"
-                    : undefined
+                  savedAnchor ? "Open this line comment" : undefined
                 }
               >
                 {n}
