@@ -1,5 +1,5 @@
 ---
-description: Capture a versioned results bundle for a component — report, figures/tables, key numbers, and script snapshots; no argument reconciles all components needing capture; --adopt brings in pre-existing artifacts
+description: Capture or reconcile versioned results bundles; use --adopt for pre-existing artifacts
 argument-hint: [component name/number | --adopt | (none = reconcile all)]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(python3:*), Bash(python:*), Bash(Rscript:*), Bash(bash:*), Bash(tee:*), Bash(mkdir:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
