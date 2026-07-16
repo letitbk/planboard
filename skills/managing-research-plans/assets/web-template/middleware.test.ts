@@ -88,7 +88,7 @@ describe("inlined auth parity", () => {
 
   it("matches the shared cookie and pull-key decisions", () => {
     const cookie = signCookie(SECRET, NOW, 60);
-    const cases = [
+    const cases: { web: Record<string, string>; bag: Record<string, string> }[] = [
       { web: { cookie: `board_session=${cookie}` }, bag: { cookie: `board_session=${cookie}` } },
       { web: { "x-board-key": PULL_KEY }, bag: { "x-board-key": PULL_KEY } },
       { web: { "x-board-key": "wrong" }, bag: { "x-board-key": "wrong" } },
