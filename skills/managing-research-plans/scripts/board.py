@@ -83,6 +83,7 @@ SLOT = '<script id="board-data" type="application/json">{}</script>'
 SLOT_OPEN = '<script id="board-data" type="application/json">'
 GITIGNORE_LINES = [
     "/.board-feedback.md",
+    "/.board-feedback.md.tmp",
     "/.rp-seed-*.json",
     "/.rp-review-*.txt",
     "/.board.lock",
@@ -94,6 +95,7 @@ GITIGNORE_LINES = [
     "/.board-web/",
     "/.board-web-inbox/",
     "/.board-web-pulled.json",
+    "/.board-web-pulled.json.tmp",
 ]
 
 FENCE_RE = re.compile(r"```json board-feedback\n(.*?)\n```", re.DOTALL)
@@ -1675,9 +1677,16 @@ def pull(root, args):
     # Only after every document is safely on disk do we mark ids pulled.
     pulled_path = _pulled_path(root)
     pulled_tmp = pulled_path.with_name(pulled_path.name + ".tmp")
-    pulled_tmp.write_text(json.dumps(sorted(pulled | {c["id"] for c in new})),
-                          encoding="utf-8")
-    os.replace(pulled_tmp, pulled_path)
+    try:
+        pulled_tmp.write_text(
+            json.dumps(sorted(pulled | {c["id"] for c in new})),
+            encoding="utf-8")
+        os.replace(pulled_tmp, pulled_path)
+    finally:
+        try:
+            pulled_tmp.unlink()
+        except FileNotFoundError:
+            pass
     for inbox_path, doc in docs:
         inspect_feedback_document(root, doc)   # route (prints)
         inbox_path.unlink()

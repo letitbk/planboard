@@ -1376,6 +1376,8 @@ class TestPull(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "simulated replace failure"):
                     board.pull(root, board.parse_args(["--pull"]))
                 self.assertEqual(state_path.read_text(encoding="utf-8"), prior)
+                self.assertFalse(state_path.with_name(
+                    ".board-web-pulled.json.tmp").exists())
             finally:
                 board.os.replace = original_replace
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
@@ -1422,6 +1424,7 @@ class TestPull(unittest.TestCase):
                 gi = gi_path.read_text(encoding="utf-8")
                 self.assertIn("/.board-web-inbox/", gi)
                 self.assertIn("/.board-web-pulled.json", gi)
+                self.assertIn("/.board-web-pulled.json.tmp", gi)
             finally:
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
