@@ -106,6 +106,13 @@ describe("App (static mode render/route)", () => {
     );
   });
 
+  it("stacks the global sidebar above content below the desktop breakpoint", () => {
+    render(<App data={fixture()} />);
+    const layout = screen.getByTestId("board-content-layout");
+    expect(layout.className).toContain("flex-col");
+    expect(layout.className).toContain("lg:flex-row");
+  });
+
   it("routes Files -> component -> Plans -> vN, then collapses the sidebar", () => {
     render(<App data={fixture()} />);
 

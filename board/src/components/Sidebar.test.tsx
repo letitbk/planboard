@@ -31,7 +31,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
   const onNavigate = vi.fn();
   const onSelect = vi.fn();
   const outline: OutlineEntry[] = [{ id: "g", label: "Goal", level: 1, onSelect }];
-  render(
+  const { container } = render(
     <Sidebar
       outline={outline}
       tree={tree}
@@ -42,10 +42,18 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
       {...over}
     />,
   );
-  return { onNavigate, onSelect };
+  return { container, onNavigate, onSelect };
 }
 
 describe("Sidebar", () => {
+  it("uses full width until the desktop breakpoint", () => {
+    const { container } = renderSidebar();
+    const aside = container.querySelector("aside")!;
+    expect(aside.className).toContain("w-full");
+    expect(aside.className).toContain("lg:w-56");
+    expect(aside.className).toContain("lg:sticky");
+  });
+
   it("shows Outline by default and fires onSelect", () => {
     const { onSelect } = renderSidebar();
     fireEvent.click(screen.getByText("Goal"));

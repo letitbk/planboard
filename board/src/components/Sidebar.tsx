@@ -65,7 +65,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className="sticky w-56 shrink-0 self-start overflow-y-auto border-r border-stone-200 pr-3 dark:border-stone-800"
+      className="w-full self-start overflow-y-auto border-b border-stone-200 pb-3 dark:border-stone-800 lg:sticky lg:w-56 lg:shrink-0 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-3"
       style={{ top: topOffsetPx, maxHeight: `calc(100vh - ${topOffsetPx + 16}px)` }}
     >
       <div className="mb-3 flex items-center gap-1">

@@ -1168,7 +1168,7 @@ export default function App({ data }: { data: BoardData }) {
       <div className="mx-auto flex w-full max-w-[1440px]">
         <main className="min-w-0 flex-1 px-5 py-6">
           <div className="mx-auto max-w-5xl">
-        <div className="flex gap-5">
+        <div data-testid="board-content-layout" className="flex flex-col gap-5 lg:flex-row">
           <Sidebar
             outline={outline}
             tree={filesTree}
