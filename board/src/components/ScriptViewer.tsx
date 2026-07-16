@@ -60,7 +60,7 @@ export default function ScriptViewer({
         </span>
         {canAnnotate && (
           <span className="text-[11px] text-stone-400 dark:text-stone-500">
-            click a line (shift-click to extend) to comment
+            click or press Enter on a line (Shift extends) to comment
           </span>
         )}
       </div>
@@ -95,7 +95,16 @@ export default function ScriptViewer({
                 data-annotation={
                   savedHit && n === savedHit.lineStart ? savedHit.id : undefined
                 }
-                tabIndex={savedHit && n === savedHit.lineStart ? 0 : undefined}
+                role={canAnnotate ? "button" : undefined}
+                tabIndex={canAnnotate ? 0 : savedHit && n === savedHit.lineStart ? 0 : undefined}
+                aria-label={canAnnotate ? `Select line ${n} for comment` : undefined}
+                onKeyDown={(e) => {
+                  if (canAnnotate && e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    clickLine(n, e.shiftKey);
+                  }
+                }}
                 title={
                   savedHit && n === savedHit.lineStart
                     ? "Open this line comment"
