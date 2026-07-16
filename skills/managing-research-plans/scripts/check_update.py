@@ -14,10 +14,7 @@ from pathlib import Path
 
 DEFAULT_STATE = {
     "lastAttempt": 0.0,
-    "lastSuccess": 0.0,
-    "lastSeenRemoteVersion": "",
     "lastNotifiedVersion": "",
-    "installedVersionAtLastCheck": "",
 }
 
 
@@ -196,10 +193,6 @@ def main():
     if not installed_manifest or "version" not in installed_manifest:
         return 0
     installed_version = installed_manifest["version"]
-
-    state["lastSuccess"] = now
-    state["lastSeenRemoteVersion"] = remote_version
-    state["installedVersionAtLastCheck"] = installed_version
 
     if not is_newer(remote_version, installed_version) or not should_notify(state, remote_version):
         write_state(state_path, state)

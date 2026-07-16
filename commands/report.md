@@ -1,5 +1,5 @@
 ---
-description: Generate a shareable results report for a component's bundle — plan context, findings with their figures/tables embedded under each, validation, provenance; markdown always, PDF/DOCX via pandoc
+description: Generate a shareable results-bundle report in Markdown, with PDF/DOCX via pandoc
 argument-hint: <component name/number> [rN — default: latest bundle]
 allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, Bash(pandoc:*), Bash(python3:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*), Bash(command:*)
 ---

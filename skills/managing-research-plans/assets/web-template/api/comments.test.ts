@@ -2,7 +2,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const store: Record<string, unknown> = {};
 vi.mock("../lib/blobstore", () => ({
-  putComment: vi.fn(async (_t: string, c: any) => { store[c.id] = c; }),
+  putComment: vi.fn(async (_t: string, c: any) => {
+    const existing = store[c.id] as any;
+    if (!existing) {
+      store[c.id] = c;
+      return "created";
+    }
+    const withoutTime = ({ receivedAt: _receivedAt, ...value }: any) => value;
+    return JSON.stringify(withoutTime(existing)) === JSON.stringify(withoutTime(c))
+      ? "replay"
+      : "conflict";
+  }),
   listComments: vi.fn(async () => Object.values(store)),
 }));
 
@@ -23,10 +33,34 @@ describe("POST /api/comments", () => {
     const result = await run("POST", {}, goodBody, env, now);
     expect(result.status).toBe(401);
   });
-  it("stores an authed comment (upsert by id)", async () => {
+  it("stores the first authed comment", async () => {
     const authHeaders = { "x-board-key": "pull-1" };
     expect((await run("POST", authHeaders, goodBody, env, now)).status).toBe(200);
-    await run("POST", authHeaders, goodBody, env, now); // retry same id → no duplicate
+    expect(Object.keys(store).length).toBe(1);
+  });
+  it("accepts an identical replay with one stored comment", async () => {
+    const authHeaders = { "x-board-key": "pull-1" };
+    expect((await run("POST", authHeaders, goodBody, env, now)).status).toBe(200);
+    expect((await run("POST", authHeaders, goodBody, env, now)).status).toBe(200);
+    expect(Object.keys(store).length).toBe(1);
+  });
+  it("returns 409 for conflicting id reuse and preserves the first comment", async () => {
+    const authHeaders = { "x-board-key": "pull-1" };
+    expect((await run("POST", authHeaders, goodBody, env, now)).status).toBe(200);
+    const conflict = {
+      ...goodBody,
+      annotation: { ...goodBody.annotation, comment: "replacement" },
+    };
+    expect((await run("POST", authHeaders, conflict, env, now)).status).toBe(409);
+    expect((store[goodBody.id] as any).annotation.comment).toBe("c");
+  });
+  it("accepts concurrent identical posts with one stored comment", async () => {
+    const authHeaders = { "x-board-key": "pull-1" };
+    const results = await Promise.all([
+      run("POST", authHeaders, goodBody, env, now),
+      run("POST", authHeaders, goodBody, env, now),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
     expect(Object.keys(store).length).toBe(1);
   });
   it("400 on invalid body", async () => {

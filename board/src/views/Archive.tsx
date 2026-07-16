@@ -140,6 +140,7 @@ export default function Archive({
           )}
 
           <section className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-stone-200 dark:border-stone-800 text-left text-xs uppercase tracking-wide text-stone-500">
@@ -242,6 +243,7 @@ export default function Archive({
                 })}
               </tbody>
             </table>
+            </div>
           </section>
         </>
       )}

@@ -121,6 +121,21 @@ class TestBatchGuard(unittest.TestCase):
             msg = self._die_message(root)
             self.assertIn("1 pending draft", msg)
 
+    def test_order_bound_orphan_is_retired_before_batch_preflight(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_init_component(root)
+            add_draft(root, "03-x")
+            ticket = write_ticket(root, "03-x", 1, DRAFT)
+            doc = json.loads(ticket.read_text(encoding="utf-8"))
+            doc["orderActionId"] = "missing-order"
+            ticket.write_text(json.dumps(doc), encoding="utf-8")
+
+            payload = board.apply_gate_batch(root, {}, allow_single=True)
+
+            self.assertEqual(len(payload["gateBatch"]), 1)
+            self.assertFalse(ticket.exists())
+
     def test_numeric_newest_draft_selected(self):
         # Pre-existing bug: lexicographic sort picked .draft-v9 over .draft-v10.
         with tempfile.TemporaryDirectory() as tmp:
@@ -256,6 +271,36 @@ class TestTicketErrorMessages(unittest.TestCase):
             self.assertIn("content-hash mismatch", reason)
             self.assertIn("board", reason)
             self.assertNotIn("--gate-batch", reason)
+
+    def test_order_bound_orphan_fast_denies_in_actual_hook(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            ticket = write_ticket(root, "03-x", 1, DRAFT)
+            doc = json.loads(ticket.read_text(encoding="utf-8"))
+            doc["orderActionId"] = "missing-order"
+            ticket.write_text(json.dumps(doc), encoding="utf-8")
+
+            decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
+
+            self.assertEqual(decision, "deny")
+            self.assertIn("not bound to the current pending board order", reason)
+
+    def test_order_bound_ticket_with_matching_order_allows_actual_hook(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            ticket = write_ticket(root, "03-x", 1, DRAFT)
+            doc = json.loads(ticket.read_text(encoding="utf-8"))
+            doc["orderActionId"] = "current-order"
+            ticket.write_text(json.dumps(doc), encoding="utf-8")
+            (root / "plans" / ".board-feedback.md").write_text(
+                "# Feedback\n\n```json board-feedback\n"
+                '{"actionId": "current-order"}\n```\n', encoding="utf-8")
+
+            decision, _ = run_gate_reason(root, comp / "v1.md", SIGNED)
+
+            self.assertEqual(decision, "allow")
 
 
 class TestTicketRoundTripAfterTimeout(unittest.TestCase):

@@ -347,6 +347,9 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
               onChange={(e) => p.onReviewerChange(e.target.value)}
               maxLength={120}
             />
+            <p className="text-[11px] text-stone-500">
+              Names are self-entered and not verified.
+            </p>
             {!p.reviewer.trim() && p.annotations.length > 0 && (
               <p className="text-[11px] text-stone-500">
                 Enter your name to save comments below.

@@ -31,7 +31,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
   const onNavigate = vi.fn();
   const onSelect = vi.fn();
   const outline: OutlineEntry[] = [{ id: "g", label: "Goal", level: 1, onSelect }];
-  render(
+  const { container } = render(
     <Sidebar
       outline={outline}
       tree={tree}
@@ -42,10 +42,18 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
       {...over}
     />,
   );
-  return { onNavigate, onSelect };
+  return { container, onNavigate, onSelect };
 }
 
 describe("Sidebar", () => {
+  it("uses full width until the desktop breakpoint", () => {
+    const { container } = renderSidebar();
+    const aside = container.querySelector("aside")!;
+    expect(aside.className).toContain("w-full");
+    expect(aside.className).toContain("lg:w-56");
+    expect(aside.className).toContain("lg:sticky");
+  });
+
   it("shows Outline by default and fires onSelect", () => {
     const { onSelect } = renderSidebar();
     fireEvent.click(screen.getByText("Goal"));
@@ -54,19 +62,67 @@ describe("Sidebar", () => {
 
   it("switches to Files and navigates a leaf via its route", () => {
     const { onNavigate } = renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     fireEvent.click(screen.getByText("Plans")); // expand depth-1 group
     fireEvent.click(screen.getByText("v1"));
     expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ tab: "plans", planPath: "p/v1.md" }));
   });
 
+  it("labels its tabs and file tree with the expected semantics", () => {
+    renderSidebar();
+    expect(screen.getByRole("tablist", { name: "Sidebar views" })).not.toBeNull();
+    expect(screen.getByRole("tab", { name: /outline/i }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
+    expect(screen.getByRole("tree", { name: "Project files" })).not.toBeNull();
+    expect(screen.getByRole("treeitem", { name: "01-x" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("uses roving focus and arrow keys for sidebar tabs", () => {
+    renderSidebar();
+    const outline = screen.getByRole("tab", { name: /outline/i });
+    const files = screen.getByRole("tab", { name: /files/i });
+    expect(outline.tabIndex).toBe(0);
+    expect(files.tabIndex).toBe(-1);
+
+    outline.focus();
+    fireEvent.keyDown(outline, { key: "ArrowRight" });
+
+    expect(document.activeElement).toBe(files);
+    expect(files.tabIndex).toBe(0);
+    expect(outline.tabIndex).toBe(-1);
+    expect(files.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("moves through and activates file-tree items from the keyboard", () => {
+    const { onNavigate } = renderSidebar();
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
+    const masterPlan = screen.getByRole("treeitem", { name: "Master plan" });
+    const initialTabStops = screen
+      .getAllByRole("treeitem")
+      .filter((item) => item.tabIndex === 0);
+    expect(initialTabStops).toEqual([masterPlan]);
+    masterPlan.focus();
+    fireEvent.keyDown(masterPlan, { key: "ArrowDown" });
+    const component = screen.getByRole("treeitem", { name: "01-x" });
+    expect(document.activeElement).toBe(component);
+    expect(component.tabIndex).toBe(0);
+    expect(masterPlan.tabIndex).toBe(-1);
+
+    const plans = screen.getByRole("treeitem", { name: "Plans" });
+    fireEvent.keyDown(plans, { key: "ArrowRight" });
+    const plan = screen.getByRole("treeitem", { name: "v1" });
+    plan.focus();
+    fireEvent.keyDown(plan, { key: "Enter" });
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ tab: "plans", planPath: "p/v1.md" }));
+  });
+
   it("marks the active component only on plans/results/reports tabs", () => {
     const { onNavigate: _ } = renderSidebar({ activeTab: "reviews" });
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     expect(screen.getByText("01-x").closest("button")?.getAttribute("data-active")).toBeNull();
     cleanup();
     renderSidebar({ activeTab: "plans" });
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     expect(screen.getByText("01-x").closest("button")?.getAttribute("data-active")).toBe("true");
   });
 
@@ -75,6 +131,11 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
     expect(localStorage.getItem("rp-sidebar:test")).toContain("collapsed");
     expect(screen.queryByText("Goal")).toBeNull();
+    const expand = screen.getByRole("button", { name: /expand sidebar/i });
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(expand);
+    fireEvent.click(expand);
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: /outline/i }));
     cleanup();
     localStorage.clear();
     renderSidebar({ defaultCollapsed: true });

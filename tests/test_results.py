@@ -492,6 +492,32 @@ class TestFinalizeProvenance(unittest.TestCase):
             self.assertIsNone(m["modelUsage"]["prescribed"])
             self.assertEqual(m["modelUsage"]["reported"], {"model": "sonnet", "effort": None})
 
+    def test_profile_read_error_is_advisory_but_visible(self):
+        import contextlib
+        import io
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            p = run_cli(root, "stage", "--component", "02-analysis")
+            staging = Path(p.stdout.strip())
+            (staging / "manifest.json").write_text(
+                json.dumps(manifest_for(staging)), encoding="utf-8")
+            (staging / "report.md").write_text("# Report\n", encoding="utf-8")
+            original = results.models.load_profile
+            results.models.load_profile = lambda *_args: (_ for _ in ()).throw(
+                OSError("profile unreadable"))
+            self.addCleanup(setattr, results.models, "load_profile", original)
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+                results.cmd_finalize(
+                    root, SimpleNamespace(staging=str(staging), reported_model="sonnet"))
+
+            manifest = json.loads((root / "plans" / "execution" / "02-analysis" /
+                                   "results" / "r1" / "manifest.json").read_text())
+            self.assertIsNone(manifest["modelUsage"]["prescribed"])
+            self.assertIn("profile unreadable", stderr.getvalue())
+
 
 class TestSubstantiveFindings(unittest.TestCase):
     def test_is_substantive_rule(self):
@@ -637,6 +663,28 @@ class TestIntegrity(unittest.TestCase):
             m, err = results.validate_staged(staging)
             self.assertIsNotNone(err)
             self.assertIn("integrity", err)
+
+
+class TestResultsCommandDocs(unittest.TestCase):
+    def test_adopt_reconcile_and_regeneration_route_to_reference(self):
+        repo = Path(__file__).resolve().parents[1]
+        command = (repo / "commands" / "results.md").read_text(encoding="utf-8")
+        reference = (repo / "skills" / "managing-research-plans" / "references" /
+                     "results-adopt.md").read_text(encoding="utf-8")
+
+        self.assertIn("references/results-adopt.md", command)
+        for heading in ("Adopt existing results", "Reconcile missing results",
+                        "Regeneration and run recipes", "Summary-only bundles"):
+            self.assertIn(heading, command)
+            self.assertIn(heading, reference)
+        self.assertNotIn("8. **Adopt mode", command)
+        self.assertNotIn("9. **Reconcile mode", command)
+        self.assertNotIn("## Regeneration,", command)
+        self.assertIn("inline steps 4 through 7", reference)
+        self.assertIn("inline steps 2 through 7", reference)
+        for field in ("`command`", "`cwd`", "`args`", "`expectedOutputs`",
+                      "`approvedHash`"):
+            self.assertIn(field, reference)
 
 
 if __name__ == "__main__":

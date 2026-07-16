@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, it, expect } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import Tracker from "./Tracker";
 import type { BoardData } from "../lib/types";
 import type { OutlineEntry } from "../lib/outline";
@@ -55,6 +55,11 @@ function renderOutline(): OutlineEntry[] {
 }
 
 describe("Tracker outline", () => {
+  it("contains the component table when the viewport is narrow", () => {
+    renderOutline();
+    expect(screen.getByRole("table").parentElement?.classList.contains("overflow-x-auto")).toBe(true);
+  });
+
   it("publishes one entry per component row, id/label keyed on the row number", () => {
     const published = renderOutline();
     expect(published.map((e) => e.id)).toEqual(["tracker-row-1", "tracker-row-2"]);

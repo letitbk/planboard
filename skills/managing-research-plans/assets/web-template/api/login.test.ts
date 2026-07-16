@@ -15,6 +15,8 @@ describe("login", () => {
     const result = run({ password: "wrong" }, env, now);
     expect(result.status).toBe(401);
     expect(result.html).toBeTruthy();
+    expect(result.html).toContain('role="alert"');
+    expect(result.html).toContain("Incorrect password. Try again.");
     expect(result.setCookie).toBeUndefined();
   });
 });

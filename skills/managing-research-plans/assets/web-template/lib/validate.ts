@@ -26,7 +26,9 @@ export function validateCommentBody(
   let serialized: string;
   try { serialized = JSON.stringify(body); }
   catch { return { ok: false, error: "unserializable" }; }
-  if (serialized.length > MAX_TOTAL_BYTES) return { ok: false, error: "too large" };
+  if (Buffer.byteLength(serialized, "utf8") > MAX_TOTAL_BYTES) {
+    return { ok: false, error: "too large" };
+  }
   const b = body as Record<string, unknown>;
   if (typeof b.id !== "string" || !UUID_RE.test(b.id)) return { ok: false, error: "bad id" };
   if (!isStr(b.clientId, 200)) return { ok: false, error: "bad clientId" };

@@ -35,7 +35,7 @@ const noop = () => {};
 function renderOutline(data: BoardData): OutlineEntry[] {
   let published: OutlineEntry[] = [];
   render(
-    <Results data={data} canAnnotate={false} canPost={false}
+    <Results data={data} canAnnotate={false}
       selectedComponent="01-x" annotations={[]}
       onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
       onVerdict={noop} focusResults={null} navRequest={null}
@@ -80,7 +80,7 @@ describe("Results outline", () => {
     const data = dataWithManifest(manifest);
     let published: OutlineEntry[] = [];
     const { container } = render(
-      <Results data={data} canAnnotate={false} canPost={false}
+      <Results data={data} canAnnotate={false}
         selectedComponent="01-x" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
         onVerdict={noop} focusResults={null} navRequest={null}

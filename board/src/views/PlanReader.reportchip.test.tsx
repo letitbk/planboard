@@ -72,6 +72,31 @@ function data(results: ResultsBundle[]): BoardData {
 const noop = () => {};
 
 describe("PlanReader per-bundle report chip keying", () => {
+  it("keeps the stale-draft warning legible in dark mode", () => {
+    const boardData = data([]);
+    boardData.files.executionPlans[0].draft = {
+      path: "plans/execution/01-x/.draft-v1.md",
+      content: "# Stale draft\n",
+      proposedVersion: 1,
+    };
+
+    render(
+      <PlanReader
+        data={boardData}
+        canAnnotate={false}
+        selectedComponent="01-x"
+        annotations={[]}
+        onAddPlanComment={noop}
+        onPaintResult={noop}
+        onOpenResults={noop}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Stale —/).classList.contains("dark:bg-red-950"),
+    ).toBe(true);
+  });
+
   it("keys each bundle's chip group so React doesn't warn about missing keys", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const onOpenReport = vi.fn();
@@ -99,7 +124,6 @@ describe("PlanReader per-bundle report chip keying", () => {
         onAddPlanComment={noop}
         onPaintResult={noop}
         onOpenResults={noop}
-        canPost={false}
         onOpenReport={onOpenReport}
       />,
     );

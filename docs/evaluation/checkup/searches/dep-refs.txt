@@ -1,0 +1,20 @@
+   3 commands/report.md:24:pandoc
+   2 commands/review.md:17:gh 
+   2 commands/plan.md:19:gh 
+   2 commands/models.md:12:gh 
+   2 commands/board.md:96:gh 
+   1 commands/sync.md:30:gh 
+   1 commands/sync.md:14:gh 
+   1 commands/results.md:19:gh 
+   1 commands/results.md:15:journal-tables
+   1 commands/report.md:4:pandoc
+   1 commands/report.md:2:pandoc
+   1 commands/report.md:24:command -v pandoc
+   1 commands/init.md:21:gh 
+   1 commands/board.md:92:gh 
+   1 commands/board.md:82:npx vercel
+   1 commands/board.md:80:npx vercel
+   1 commands/board.md:77:npx vercel
+   1 commands/board.md:76:npx vercel
+   1 commands/board.md:72:npx vercel
+   1 commands/board.md:72:gh 

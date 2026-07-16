@@ -130,6 +130,25 @@ describe("viewKind (artifact viewer)", () => {
 });
 
 describe("inlineSafe / anchorProps (artifact viewer)", () => {
+  it("matches the pinned Python artifact policy vector", () => {
+    // Mirrored in tests/test_board.py. SVG is intentionally server-inline for
+    // sandboxed image rendering but not safe for top-level client navigation.
+    const vectors: Array<[string, boolean, boolean]> = [
+      ["a.md", true, true], ["T.CSV", true, true],
+      ["a.tsv", true, true], ["a.txt", true, true],
+      ["a.log", true, true], ["a.json", true, true],
+      ["a.tex", true, true], ["a.png", true, true],
+      ["a.jpg", true, true], ["a.jpeg", true, true],
+      ["a.gif", true, true], ["a.webp", true, true],
+      ["a.pdf", true, true], ["a.svg", true, false],
+      ["a.html", false, false], ["a.xlsx", false, false],
+      ["a.xml", false, false], ["noext", false, false],
+    ];
+    for (const [name, _serverInline, clientInlineSafe] of vectors) {
+      expect(inlineSafe(name), name).toBe(clientInlineSafe);
+    }
+  });
+
   it("marks text, raster, pdf as inline-safe; svg/html/xlsx/unknown not", () => {
     for (const f of ["a.md", "a.csv", "a.png", "a.pdf"]) expect(inlineSafe(f)).toBe(true);
     // svg: served inline for <img> figures but sandboxed — anchors download

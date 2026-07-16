@@ -39,7 +39,7 @@ function dataWith(integrity: IntegrityBlock | undefined, report: string | null):
 const noop = () => {};
 function renderResults(data: BoardData) {
   return render(
-    <Results data={data} canAnnotate={false} canPost={false}
+    <Results data={data} canAnnotate={false}
       selectedComponent="01-x" annotations={[]}
       onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
       onVerdict={noop} focusResults={null} navRequest={null} />,
@@ -74,7 +74,7 @@ describe("Result tab integrity + prose", () => {
 
   function renderWithReport(data: BoardData) {
     return render(
-      <Results data={data} canAnnotate={false} canPost={false}
+      <Results data={data} canAnnotate={false}
         selectedComponent="01-x" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
         onVerdict={noop} focusResults={null} navRequest={null} onRequestReport={noop} />,

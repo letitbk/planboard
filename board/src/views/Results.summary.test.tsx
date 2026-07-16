@@ -39,7 +39,7 @@ const noop = () => {};
 describe("summary-only notice", () => {
   it("renders in finding mode when the bundle has zero artifacts", () => {
     render(
-      <Results data={summaryOnlyFindingData()} canAnnotate={false} canPost={false}
+      <Results data={summaryOnlyFindingData()} canAnnotate={false}
         selectedComponent="01-x" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
         onVerdict={noop} focusResults={null} navRequest={null} />,

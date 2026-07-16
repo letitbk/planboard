@@ -377,6 +377,52 @@ describe("results layer", () => {
   });
 });
 
+describe("Python/TypeScript payload file parity", () => {
+  it("matches the pinned payload_files vector", () => {
+    const file = (path: string) => ({ path, content: path });
+    const data = {
+      files: {
+        masterPlan: file("plans/master-plan.md"),
+        decisionLog: file("plans/decision-log.md"),
+        executionPlans: [{
+          versions: [file("plans/execution/01-x/v1.md")],
+          draftSnapshots: [file("plans/execution/01-x/v1-draft-1.md")],
+          draft: file("plans/execution/01-x/.draft-v2.md"),
+          results: [{
+            manifestRaw: file("plans/execution/01-x/results/r1/manifest.json"),
+            report: file("plans/execution/01-x/results/r1/report.md"),
+            verdictRaw: file("plans/execution/01-x/results/r1/verdict.json"),
+            scripts: [
+              file("plans/execution/01-x/results/r1/scripts/a.py"),
+              file("plans/execution/01-x/results/r1/scripts/b.R"),
+            ],
+            publishedReport: file("plans/reports/01-x-r1-report.md"),
+          }],
+        }],
+        reviews: [file("plans/reviews/r.md")],
+        history: file("plans/history.md"),
+        archives: [file("plans/archive/master-plan-2026-01-01.md")],
+      },
+    };
+    const expected = [
+      "plans/master-plan.md", "plans/decision-log.md",
+      "plans/execution/01-x/v1.md",
+      "plans/execution/01-x/v1-draft-1.md",
+      "plans/execution/01-x/.draft-v2.md",
+      "plans/execution/01-x/results/r1/manifest.json",
+      "plans/execution/01-x/results/r1/report.md",
+      "plans/execution/01-x/results/r1/verdict.json",
+      "plans/execution/01-x/results/r1/scripts/a.py",
+      "plans/execution/01-x/results/r1/scripts/b.R",
+      "plans/reports/01-x-r1-report.md",
+      "plans/reviews/r.md", "plans/history.md",
+      "plans/archive/master-plan-2026-01-01.md",
+    ].sort();
+
+    expect(allFiles(data as never).map((f) => f.path).sort()).toEqual(expected);
+  });
+});
+
 describe("history (v0.7): reconstructed pre-adoption record", () => {
   it("parses date-granularity entries with fields", () => {
     const entries = parseHistory(devData.files.history!.content);

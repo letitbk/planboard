@@ -41,6 +41,16 @@ describe("validateCommentBody", () => {
     };
     expect(validateCommentBody(oversized).ok).toBe(false);
   });
+  it("rejects a multibyte body over the byte cap even when its string length is under", () => {
+    const oversizedBytes = {
+      ...good,
+      annotation: { ...good.annotation, junk: "😀".repeat(20_000) },
+    };
+    const serialized = JSON.stringify(oversizedBytes);
+    expect(serialized.length).toBeLessThan(MAX_TOTAL_BYTES);
+    expect(Buffer.byteLength(serialized, "utf8")).toBeGreaterThan(MAX_TOTAL_BYTES);
+    expect(validateCommentBody(oversizedBytes).ok).toBe(false);
+  });
   it("accepts a near-maximal legitimate comment (not false-rejected by the size cap)", () => {
     const maximal = {
       id: "11111111-1111-4111-8111-111111111111",

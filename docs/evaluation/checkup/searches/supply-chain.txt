@@ -1,0 +1,7 @@
+4:Compares the installed plugin version against GitHub `main` and, at most once
+146:    "https://raw.githubusercontent.com/letitbk/research-plans/main/.claude-plugin/plugin.json"
+149:    "https://raw.githubusercontent.com/letitbk/research-plans/main/CHANGELOG.md"
+155:        with urllib.request.urlopen(url, timeout=timeout) as resp:
+170:def main():
+225:if __name__ == "__main__":
+227:        rc = main()

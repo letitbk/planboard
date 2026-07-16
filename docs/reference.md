@@ -47,7 +47,7 @@ The board follows your OS light/dark preference, with a header toggle to overrid
 
 ### Two modes
 
-**Live** — `/research-plans:board` starts a small local server (`python3` only, nothing to install) on a stable per-project port. Bookmark the URL; it stays valid for the whole session. The live board is a control surface: your feedback panel docks side by side with the content, and approve / request-changes / review buttons are always on hand in the Tracker, Plan, and Results views. Select text to attach a comment, act on a plan, or press "Send to Claude" — your session applies each action and the board refreshes itself with the updated state. After an idle hour it goes to sleep; `/research-plans:board` wakes it at the same URL.
+**Live** — `/research-plans:board` starts a small local server (`python3` only, nothing to install) on a stable per-project port. Bookmark the URL; it stays valid for the whole session. The live board is a control surface: your feedback panel docks side by side with the content, and approve / request-changes / review buttons are always on hand in the Tracker, Plan, and Results views. Select text to attach a comment, act on a plan, or press "Send to Claude." The board has no idle timeout. It closes when you submit an action so your session can route it; `/research-plans:board` reopens it at the same URL whenever you want to continue.
 
 Or let an agent do the reviewing: the **Review with** button on any plan version, the master plan, or a results bundle runs Codex, Gemini, a Claude subagent, or a three-lens subagent panel and seeds its section-anchored comments onto the board — attributed to the reviewer — for you to curate before they route the same way.
 
@@ -90,7 +90,7 @@ Projects without a profile behave exactly as before. Model profiles need a curre
 
 Signing a plan is enforced, not offered. The plugin ships a PreToolUse hook: whenever Claude tries to write a signed version file (`plans/execution/<component>/vN.md`) in an initialized project, the write is blocked while the proposed plan opens in your browser — rendered, with the diff against the previous version. You either approve (the version is written exactly as shown) or request changes with comments (the write is denied, your feedback goes back to Claude, and the gate reopens on the next attempt). The same hook mechanically enforces immutability: edits to or overwrites of an existing signed version are always denied.
 
-**Scope and honesty:** the gate covers Claude's file tools (Write and Edit). Shell redirection is not interceptable; the immutability convention and the review's revisability check cover after-the-fact edits. The gate only ever activates in projects that opted in (both markers present). For headless or CI work, set `RESEARCH_PLANS_NO_GATE=1` — the bypass leaves a visible trace in the transcript. The wait ceiling is 25 minutes (`RESEARCH_PLANS_GATE_TIMEOUT`, clamped); an unanswered gate denies safely.
+**Scope and honesty:** the gate covers Claude's Write and Edit tools. Bash-mediated file writes, including shell redirection and scripts, are outside the matcher; the plugin workflow always uses Write for signed plans. The immutability convention and the review's revisability check cover after-the-fact edits. The gate only ever activates in projects that opted in (both markers present). For headless or CI work, set `RESEARCH_PLANS_NO_GATE=1` — the bypass leaves a visible trace in the transcript. The wait ceiling is 25 minutes (`RESEARCH_PLANS_GATE_TIMEOUT`, clamped); an unanswered gate denies safely.
 
 The same hook also enforces **results-bundle immutability**: writes inside an existing `results/rN/` are denied (the one exception is one-time creation of `verdict.json`). This branch is pure file policy — it never opens a browser, so results capture can't deadlock on it. There is deliberately no verdict gate.
 
@@ -100,6 +100,7 @@ The same hook also enforces **results-bundle immutability**: writes inside an ex
 plans/
 ├── master-plan.md              roadmap + components tracker
 ├── decision-log.md             append-only, timestamped
+├── model-profile.md            per-stage model and effort preferences
 ├── board.html                  optional shareable snapshot (regenerate, never edit)
 ├── archive/
 │   └── master-plan-<date>.md   archived by /renew; immutable renewal record

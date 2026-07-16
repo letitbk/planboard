@@ -65,7 +65,7 @@ describe("Results nav sync across components", () => {
   it("honors a cross-component navRequest even when the target index equals the previous component's stale idx", () => {
     const data = navSyncData();
     const { rerender } = render(
-      <Results data={data} canAnnotate={false} canPost={false}
+      <Results data={data} canAnnotate={false}
         selectedComponent="01-a" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
         onVerdict={noop} focusResults={null} navRequest={null} />,
@@ -76,7 +76,7 @@ describe("Results nav sync across components", () => {
 
     // Switch component AND request 02-b's r11 in the same navRequest.
     rerender(
-      <Results data={data} canAnnotate={false} canPost={false}
+      <Results data={data} canAnnotate={false}
         selectedComponent="02-b" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
         onVerdict={noop} focusResults={null}

@@ -27,6 +27,7 @@ Object.defineProperty(window, "matchMedia", {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 const ALPHA_V1 = [
@@ -98,18 +99,33 @@ function fixture(): BoardData {
 }
 
 describe("App (static mode render/route)", () => {
+  it("lets the header and tab navigation wrap at narrow widths", () => {
+    const { container } = render(<App data={fixture()} />);
+    expect(container.querySelector("header > div")?.className).toContain("flex-wrap");
+    expect(screen.getByRole("navigation", { name: /board views/i }).className).toContain(
+      "flex-wrap",
+    );
+  });
+
+  it("stacks the global sidebar above content below the desktop breakpoint", () => {
+    render(<App data={fixture()} />);
+    const layout = screen.getByTestId("board-content-layout");
+    expect(layout.className).toContain("flex-col");
+    expect(layout.className).toContain("lg:flex-row");
+  });
+
   it("routes Files -> component -> Plans -> vN, then collapses the sidebar", () => {
     render(<App data={fixture()} />);
 
     // Sidebar sub-tabs exist (panel open by default in static mode).
-    expect(screen.getByRole("button", { name: /outline/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /files/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /outline/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /files/i })).toBeTruthy();
 
     // Switch to Files.
-    fireEvent.click(screen.getByRole("button", { name: /files/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
 
     // Expand 01-alpha's Plans group (depth-1 groups start collapsed) and open v1.
-    const compLi = screen.getByRole("button", { name: "01-alpha" }).closest("li")!;
+    const compLi = screen.getByRole("treeitem", { name: "01-alpha" }).closest("li")!;
     fireEvent.click(within(compLi).getByText("Plans"));
     fireEvent.click(within(compLi).getByText("v1"));
 
@@ -121,8 +137,71 @@ describe("App (static mode render/route)", () => {
 
     // Collapse the sidebar; its panel body (the sub-tab buttons) is hidden.
     fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
-    expect(screen.queryByRole("button", { name: /files/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /outline/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /files/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /outline/i })).toBeNull();
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeTruthy();
+  });
+
+  it("renders copy fallback text in-DOM without native dialogs", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    const promptSpy = vi.spyOn(window, "prompt").mockImplementation(() => null);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<App data={{ ...fixture(), mode: "remote", shareHash: "abc" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^feedback/i }));
+    fireEvent.click(screen.getByRole("button", { name: /copy feedback to clipboard/i }));
+
+    const textarea = await screen.findByRole("textbox", { name: /feedback markdown/i });
+    expect((textarea as HTMLTextAreaElement).value).toContain("board-feedback");
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(promptSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+    promptSpy.mockRestore();
+  });
+
+  it("shows pending-order recovery without entering the applying state", async () => {
+    const recovery =
+      "Route the existing plans/.board-feedback.md order, then run --ack.";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "pending-order", message: recovery }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <App
+        data={{
+          ...fixture(),
+          mode: "live",
+          projectId: "project-1",
+          boardToken: "token-1",
+          seededAnnotations: [
+            {
+              scope: "master",
+              sectionHeading: "Components",
+              quote: "MP",
+              comment: "Check this.",
+              author: "reviewer",
+            },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send to Claude" }));
+
+    expect(await screen.findByText(recovery)).not.toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Send to Claude" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(screen.queryByText(/applying your action/i)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

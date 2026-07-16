@@ -37,7 +37,7 @@ it("publishes an outline built from the plan's sections", () => {
     <PlanReader
       data={data()} canAnnotate={false} selectedComponent="01-x"
       annotations={[]} onAddPlanComment={vi.fn()} onPaintResult={vi.fn()} onOpenResults={vi.fn()}
-      canPost={false} navRequest={null} onOutline={(e) => (published = e)}
+      navRequest={null} onOutline={(e) => (published = e)}
     />,
   );
   expect(published.map((e) => e.label)).toEqual(["Goal and success criteria", "Approach", "Build steps"]);
@@ -56,7 +56,7 @@ it("publishes no outline while a draft is diffed against its predecessor", () =>
     <PlanReader
       data={d} canAnnotate={false} selectedComponent="01-x"
       annotations={[]} onAddPlanComment={vi.fn()} onPaintResult={vi.fn()} onOpenResults={vi.fn()}
-      canPost={false} navRequest={null} onOutline={(e) => (published = e)}
+      navRequest={null} onOutline={(e) => (published = e)}
     />,
   );
   expect(published).toEqual([]);

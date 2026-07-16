@@ -216,6 +216,10 @@ export default function App({ data }: { data: BoardData }) {
     gate !== null || (data.seededAnnotations?.length ?? 0) > 0,
   );
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
+  const [copyFallbackState, setCopyFallbackState] = useState<{
+    text: string;
+    copied: boolean | null;
+  } | null>(null);
   // Reviewer name: remote persists it under the payload-hashed storageKey
   // (fine — a remote reviewer downloads one board once); hosted persists it
   // under webKey so a republish doesn't blank the name field.
@@ -250,7 +254,7 @@ export default function App({ data }: { data: BoardData }) {
   // whenever the annotation id isn't UUID-shaped (board annotation ids are
   // `ann-…`, never UUID), so without this a retry after a lost response would
   // post a second blob with a different id. Reusing the same uuid makes the
-  // API's allowOverwrite upsert dedup a retry against the first attempt.
+  // API classify an identical create-only retry as a successful replay.
   const commentUuids = useRef<Map<string, string>>(new Map());
   const clientId = useMemo(() => (hosted ? getClientId(localStorage) : ""), [hosted]);
 
@@ -272,8 +276,8 @@ export default function App({ data }: { data: BoardData }) {
     setSaveError(null);
     setSavingIds((prev) => new Set(prev).add(a.id));
     // Resolve (and remember) a stable uuid for this annotation, so a double-click
-    // or a retry after a lost response posts the SAME blob id — the upsert dedups
-    // it — instead of a fresh newUuid() minting a permanent duplicate comment.
+    // or a retry after a lost response posts the SAME blob id — the API accepts
+    // it as a replay — instead of minting a permanent duplicate comment.
     let uuid = commentUuids.current.get(a.id);
     if (!uuid) {
       uuid = newUuid();
@@ -750,11 +754,12 @@ export default function App({ data }: { data: BoardData }) {
   };
 
   const copyFallback = async () => {
+    setCopyFallbackState({ text: feedbackDocument, copied: null });
     try {
       await navigator.clipboard.writeText(feedbackDocument);
-      alert("Feedback copied — paste it into your Claude Code session.");
+      setCopyFallbackState({ text: feedbackDocument, copied: true });
     } catch {
-      window.prompt("Copy the feedback below:", feedbackDocument);
+      setCopyFallbackState({ text: feedbackDocument, copied: false });
     }
   };
 
@@ -873,8 +878,16 @@ export default function App({ data }: { data: BoardData }) {
     }
     if (res.status === 409) {
       const eb = (await res.json().catch(() => null)) as
-        | { error?: string; actionId?: string }
+        | { error?: string; actionId?: string; message?: string }
         | null;
+      if (eb?.error === "pending-order") {
+        showSyncNotice(
+          eb.message ??
+            "Route and acknowledge the existing board order before submitting another.",
+        );
+        dispatchConn({ type: "post-failed" });
+        return false;
+      }
       showSyncNotice(
         eb?.error === "stale-draft"
           ? "The plan changed on disk — the board is refreshing."
@@ -1004,13 +1017,47 @@ export default function App({ data }: { data: BoardData }) {
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-stone-950">
+      {copyFallbackState && (
+        <div
+          role="dialog"
+          aria-label="Copy feedback"
+          className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-2xl rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 p-4 shadow-2xl"
+        >
+          <div className="mb-2 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                Copy feedback
+              </h2>
+              <p className="text-xs text-stone-600 dark:text-stone-400">
+                {copyFallbackState.copied
+                  ? "Copied. Paste this into your Claude Code session."
+                  : "Select the feedback below and copy it into your Claude Code session."}
+              </p>
+            </div>
+            <button
+              className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+              onClick={() => setCopyFallbackState(null)}
+            >
+              Close
+            </button>
+          </div>
+          <textarea
+            aria-label="Feedback markdown"
+            className="h-40 w-full resize-y rounded border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-950 p-2 font-mono text-xs text-stone-800 dark:text-stone-200"
+            readOnly
+            value={copyFallbackState.text}
+            autoFocus
+            onFocus={(event) => event.currentTarget.select()}
+          />
+        </div>
+      )}
       {syncNotice && (
         <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-3 py-1.5 text-xs text-stone-700 dark:text-stone-200 shadow-lg">
           {syncNotice}
         </div>
       )}
       <header ref={headerRef} className="sticky top-0 z-30 border-b border-stone-200 dark:border-stone-800 bg-white/90 dark:bg-stone-900/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1440px] items-center gap-4 px-5 py-3">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-4 px-5 py-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-bold text-stone-900 dark:text-stone-100">
               {data.project.name}
@@ -1020,7 +1067,10 @@ export default function App({ data }: { data: BoardData }) {
               {data.git.available && data.git.head ? ` · ${data.git.head}` : ""}
             </div>
           </div>
-          <nav className="ml-4 flex gap-1">
+          <nav
+            aria-label="Board views"
+            className="order-3 flex w-full flex-wrap gap-1 lg:order-none lg:ml-4 lg:w-auto"
+          >
             {(data.files.archives?.length
               ? [...TABS, { id: "archive" as Tab, label: "Archive" }]
               : TABS
@@ -1126,7 +1176,7 @@ export default function App({ data }: { data: BoardData }) {
       <div className="mx-auto flex w-full max-w-[1440px]">
         <main className="min-w-0 flex-1 px-5 py-6">
           <div className="mx-auto max-w-5xl">
-        <div className="flex gap-5">
+        <div data-testid="board-content-layout" className="flex flex-col gap-5 lg:flex-row">
           <Sidebar
             outline={outline}
             tree={filesTree}
@@ -1155,7 +1205,6 @@ export default function App({ data }: { data: BoardData }) {
               setSelectedComponent(slug);
               setTab("results");
             }}
-            canPost={canPost}
             onRequestReview={guardConn(requestReview)}
             onOpenArchive={
               data.files.archives?.length ? () => setTab("archive") : undefined
@@ -1178,7 +1227,6 @@ export default function App({ data }: { data: BoardData }) {
               setSelectedComponent(slug);
               setTab("results");
             }}
-            canPost={canPost}
             onRequestReview={guardConn(requestReview)}
             onOpenReport={openReport}
             onOutline={setOutline}
@@ -1190,7 +1238,6 @@ export default function App({ data }: { data: BoardData }) {
             onReopen={guardConn(submitReopen)}
             navRequest={navRequest?.tab === "results" ? { token: navRequest.token, resultsVersion: navRequest.resultsVersion, scriptPath: navRequest.scriptPath } : null}
             canAnnotate={canAnnotate}
-            canPost={canPost}
             selectedComponent={selectedComponent}
             annotations={annotations}
             onAddResultComment={addResultComment}
@@ -1287,4 +1334,3 @@ export default function App({ data }: { data: BoardData }) {
     </div>
   );
 }
-

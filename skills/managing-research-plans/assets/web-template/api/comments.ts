@@ -19,7 +19,10 @@ export async function run(method: string, headers: HeaderBag, body: unknown, env
     const v = validateCommentBody(parsed);
     if (!v.ok) return { status: 400, json: { error: "invalid", detail: v.error } };
     const stored: StoredComment = { id: v.value.id, clientId: v.value.clientId, author: v.value.author, shareHash: v.value.shareHash, docHash: v.value.docHash ?? null, annotation: v.value.annotation, receivedAt: new Date().toISOString() };
-    await putComment(token, stored);
+    const outcome = await putComment(token, stored);
+    if (outcome === "conflict") {
+      return { status: 409, json: { error: "comment id already exists with different content" } };
+    }
     return { status: 200, json: { ok: true, id: stored.id } };
   }
   return { status: 405, json: { error: "method not allowed" } };

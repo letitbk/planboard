@@ -13,7 +13,7 @@ export function run(body: unknown, env: Record<string, string | undefined>, now:
   if (expected && timingSafeEqualStr(pw, expected)) {
     return { status: 303, location: "/", setCookie: cookieHeader(signCookie(env.BOARD_SESSION_SECRET as string, now)) };
   }
-  return { status: 401, html: loginPageHtml() };
+  return { status: 401, html: loginPageHtml(true) };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {

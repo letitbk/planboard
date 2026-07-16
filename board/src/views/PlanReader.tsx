@@ -61,7 +61,6 @@ export default function PlanReader({
   onAddPlanComment,
   onPaintResult,
   onOpenResults,
-  canPost,
   onRequestReview,
   onSignoff,
   navRequest,
@@ -81,7 +80,6 @@ export default function PlanReader({
     scopeAbsent: Set<string>,
   ) => void;
   onOpenResults: (slug: string) => void;
-  canPost?: boolean;
   onRequestReview?: (req: ReviewRequest) => void;
   onSignoff?: (req: SignoffRequest) => void;
   // Click-sync (control surface): one-shot navigation request from a feedback
@@ -410,7 +408,7 @@ export default function PlanReader({
               Unsigned draft
             </span>
             {stale && (
-              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:text-red-300">
+              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:bg-red-950 dark:text-red-300">
                 Stale — a signed version already supersedes this draft
               </span>
             )}

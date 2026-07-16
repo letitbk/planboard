@@ -30,6 +30,7 @@ RESULTS_RE = re.compile(r"/plans/execution/([^/]+)/results/(r\d+)/")
 MASTER_MARKER = "<!-- research-plans:master-plan -->"
 CLAUDE_MARKER = "<!-- research-plans:start -->"
 TICKET_PREFIX = ".import-approved-"
+ORDER_FENCE_RE = re.compile(r"```json board-feedback\n(.*?)\n```", re.DOTALL)
 DEFAULT_TIMEOUT = 1500
 MAX_REASON = 2000
 
@@ -78,6 +79,20 @@ def check_ticket(ticket, slug, version, content):
         return "deny", (
             "Approval for %s v%d has expired. Have the researcher re-approve "
             "the current draft on the board." % (slug, version))
+    action_id = doc.get("orderActionId")
+    if isinstance(action_id, str):
+        pending = ticket.parent.parent / ".board-feedback.md"
+        try:
+            matches = ORDER_FENCE_RE.findall(pending.read_text(encoding="utf-8"))
+            meta = json.loads(matches[-1]) if matches else None
+        except (OSError, ValueError):
+            meta = None
+        if not isinstance(meta, dict) or meta.get("actionId") != action_id:
+            return "deny", (
+                "Approval ticket %s is not bound to the current pending board "
+                "order. Collect and acknowledge any existing order, then have "
+                "the researcher approve %s v%d again on the board."
+                % (ticket.name, slug, version))
     got = hashlib.sha256(normalize_plan(content).encode("utf-8")).hexdigest()
     if doc.get("contentHash") != got:
         return "deny", (

@@ -47,6 +47,8 @@ After installing, close and reopen your terminal window (or restart Claude Code)
 
 Once Node is installed, tell Claude Code to run `/research-plans:board --publish-web`. Claude handles most of the setup itself, and pauses at a couple of points to ask you to do something only you can do: log into Vercel in your own terminal window (not inside Claude Code), and choose when to send collaborators the password, separately from the link. See Time and cost below for what to expect.
 
+Before the first deploy, enable firewall rate limiting for the login route in your project's Vercel Firewall settings. This setup is required. It is the primary defense against repeated password guesses. Do not publish the board until the rule is enabled.
+
 ## Time and cost
 
 The first setup takes about 20 minutes, mostly spent installing Node and logging into Vercel once. After that, publishing an update is one click and takes a few seconds.

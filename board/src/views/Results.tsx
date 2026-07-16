@@ -217,7 +217,6 @@ function SummaryOnlyNotice() {
 export default function Results({
   data,
   canAnnotate,
-  canPost,
   selectedComponent,
   annotations,
   onAddResultComment,
@@ -233,7 +232,6 @@ export default function Results({
 }: {
   data: BoardData;
   canAnnotate: boolean;
-  canPost: boolean;
   selectedComponent: string | null;
   annotations: Annotation[];
   onAddResultComment: (a: Omit<ResultCommentAnnotation, "id" | "type">) => void;

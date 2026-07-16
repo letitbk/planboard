@@ -1,4 +1,6 @@
-export function loginPageHtml(): string {
+// Keep the neutral form and error affordance in sync with middleware.ts's
+// self-contained copy. Middleware cannot import this module in production.
+export function loginPageHtml(showInvalidPassword = false): string {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
@@ -15,6 +17,7 @@ export function loginPageHtml(): string {
   <h1>This board is private</h1>
   <label for="pw">Password</label>
   <input id="pw" name="password" type="password" autocomplete="current-password" autofocus>
+  ${showInvalidPassword ? '<p class="err" role="alert">Incorrect password. Try again.</p>' : ""}
   <button type="submit">Open board</button>
 </form></body></html>`;
 }

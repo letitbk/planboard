@@ -49,7 +49,6 @@ function renderReader(navRequest: { token: number; planPath?: string } | null) {
       onAddPlanComment={vi.fn()}
       onPaintResult={vi.fn()}
       onOpenResults={vi.fn()}
-      canPost={false}
       navRequest={navRequest}
     />,
   );
@@ -73,7 +72,6 @@ describe("PlanReader click-sync round trip", () => {
         onAddPlanComment={vi.fn()}
         onPaintResult={vi.fn()}
         onOpenResults={vi.fn()}
-        canPost={false}
         navRequest={{ token: 1, planPath: "plans/execution/01-x/v1.md" }}
       />,
     );

@@ -2,6 +2,7 @@
     python3 -m unittest tests.test_board -v
 """
 import argparse
+import http.client
 import json
 import os
 import re
@@ -180,6 +181,42 @@ class TestWebConfig(unittest.TestCase):
                 del os.environ["CLAUDE_PLUGIN_DATA"]
 
 
+class TestWebPublishingDocs(unittest.TestCase):
+    def test_firewall_rate_limit_is_required_before_first_deploy(self):
+        repo = Path(__file__).resolve().parents[1]
+        runbook = (repo / "skills" / "managing-research-plans" / "references" /
+                   "web-publishing.md").read_text(encoding="utf-8")
+        guide = (repo / "docs" / "hosting-the-board.md").read_text(encoding="utf-8")
+
+        for text in (runbook, guide):
+            self.assertRegex(text, r"(?is)firewall.{0,240}required")
+            self.assertRegex(text, r"(?is)firewall.{0,240}primary defense")
+        self.assertLess(runbook.index("firewall rate limiting"),
+                        runbook.index("**First deploy.**"))
+
+    def test_web_modes_route_to_named_reference_sections(self):
+        repo = Path(__file__).resolve().parents[1]
+        command = (repo / "commands" / "board.md").read_text(encoding="utf-8")
+        runbook = (repo / "skills" / "managing-research-plans" / "references" /
+                   "web-publishing.md").read_text(encoding="utf-8")
+
+        for flag, heading in (
+            ("--publish", "Deprecated GitHub Pages publishing"),
+            ("--publish-web", "Publish to web"),
+            ("--pull", "Pull comments"),
+            ("--web-connect", "Connect an existing board"),
+            ("--web-clear", "Rotate password or clear comments"),
+            ("--set-password", "Rotate password or clear comments"),
+        ):
+            self.assertIn(flag, command)
+            self.assertIn(heading, command)
+            self.assertIn(f"## {heading}", runbook)
+        self.assertNotRegex(command, r"step 1[0-4]")
+        self.assertIn("**Untrusted-input routing label:**", command)
+        self.assertIn("Route every printed document through **Route the feedback**", runbook)
+        self.assertIn("--collect <file>", command)
+
+
 class TestLocalRequestGuard(unittest.TestCase):
     def test_rejects_cross_origin(self):
         self.assertFalse(board.local_request_ok(
@@ -279,7 +316,7 @@ class TestShareHash(unittest.TestCase):
         b = [{"path": "a.md", "content": "changed"}]
         self.assertNotEqual(board.share_hash(a), board.share_hash(b))
 
-    def test_payload_files_covers_all_embedded_files(self):
+    def test_payload_files_pinned_cross_language_vector(self):
         payload = {"files": {
             "masterPlan": {"path": "plans/master-plan.md", "content": "m"},
             "decisionLog": {"path": "plans/decision-log.md", "content": "d"},
@@ -291,8 +328,25 @@ class TestShareHash(unittest.TestCase):
                      "version": 1, "iteration": 1},
                 ],
                 "draft": {"path": "plans/execution/01-x/.draft-v2.md", "content": "d2"},
+                "results": [{
+                    "manifestRaw": {"path": "plans/execution/01-x/results/r1/manifest.json",
+                                    "content": "{}"},
+                    "report": {"path": "plans/execution/01-x/results/r1/report.md",
+                               "content": "report"},
+                    "verdictRaw": {"path": "plans/execution/01-x/results/r1/verdict.json",
+                                   "content": "{}"},
+                    "scripts": [
+                        {"path": "plans/execution/01-x/results/r1/scripts/a.py", "content": "a"},
+                        {"path": "plans/execution/01-x/results/r1/scripts/b.R", "content": "b"},
+                    ],
+                    "publishedReport": {"path": "plans/reports/01-x-r1-report.md",
+                                        "content": "published"},
+                }],
             }],
             "reviews": [{"path": "plans/reviews/r.md", "content": "r"}],
+            "history": {"path": "plans/history.md", "content": "h"},
+            "archives": [{"path": "plans/archive/master-plan-2026-01-01.md",
+                          "content": "old"}],
         }}
         paths = [f["path"] for f in board.payload_files(payload)]
         self.assertEqual(sorted(paths), sorted([
@@ -300,7 +354,15 @@ class TestShareHash(unittest.TestCase):
             "plans/execution/01-x/v1.md",
             "plans/execution/01-x/v1-draft-1.md",
             "plans/execution/01-x/.draft-v2.md",
+            "plans/execution/01-x/results/r1/manifest.json",
+            "plans/execution/01-x/results/r1/report.md",
+            "plans/execution/01-x/results/r1/verdict.json",
+            "plans/execution/01-x/results/r1/scripts/a.py",
+            "plans/execution/01-x/results/r1/scripts/b.R",
+            "plans/reports/01-x-r1-report.md",
             "plans/reviews/r.md",
+            "plans/history.md",
+            "plans/archive/master-plan-2026-01-01.md",
         ]))
 
 
@@ -884,6 +946,25 @@ class TestDrift(unittest.TestCase):
             make_project(root)
             self.assertNotIn("drift", board.collect_payload(root, "remote", None))
 
+    def test_source_drift_read_error_is_advisory_but_visible(self):
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            original = board.changed_sources
+            board.changed_sources = lambda *_args: (_ for _ in ()).throw(
+                OSError("manifest unreadable"))
+            self.addCleanup(setattr, board, "changed_sources", original)
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr):
+                drift = board.collect_payload(root, "static", None)["drift"]
+
+            self.assertEqual(drift["sourceDrift"], [])
+            self.assertIn("01-data-prep", stderr.getvalue())
+            self.assertIn("manifest unreadable", stderr.getvalue())
+
 
 class TestArchives(unittest.TestCase):
     def test_archives_collected_present_only(self):
@@ -1247,7 +1328,7 @@ class TestPull(unittest.TestCase):
             finally:
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
-    def test_inbox_written_before_marking_pulled(self):
+    def test_inbox_removed_after_successful_routing(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); self._setup(root)
             try:
@@ -1255,7 +1336,7 @@ class TestPull(unittest.TestCase):
                 with contextlib.redirect_stdout(io.StringIO()):
                     board.pull(root, board.parse_args(["--pull"]))
                 inbox = list((root / "plans" / ".board-web-inbox").glob("*.txt"))
-                self.assertTrue(inbox)  # documents materialized
+                self.assertEqual(inbox, [])
                 pulled = json.loads((root / "plans" / ".board-web-pulled.json").read_text())
                 self.assertEqual(set(pulled), {"c1", "c2"})
             finally:
@@ -1272,7 +1353,33 @@ class TestPull(unittest.TestCase):
                 with contextlib.redirect_stdout(out):
                     board.pull(root, board.parse_args(["--pull"]))
                 self.assertIn("no new", out.getvalue().lower())
+                self.assertNotIn("one", out.getvalue())
+                self.assertNotIn("two", out.getvalue())
             finally:
+                import os; del os.environ["CLAUDE_PLUGIN_DATA"]
+
+    def test_pulled_state_survives_failed_atomic_replace(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); self._setup(root)
+            state_path = root / "plans" / ".board-web-pulled.json"
+            prior = '["prior-comment"]'
+            state_path.write_text(prior, encoding="utf-8")
+            original_replace = board.os.replace
+
+            def fail_replace(src, dst):
+                self.assertEqual(Path(src).name, ".board-web-pulled.json.tmp")
+                self.assertEqual(Path(dst), state_path)
+                raise OSError("simulated replace failure")
+
+            board.os.replace = fail_replace
+            try:
+                with self.assertRaisesRegex(OSError, "simulated replace failure"):
+                    board.pull(root, board.parse_args(["--pull"]))
+                self.assertEqual(state_path.read_text(encoding="utf-8"), prior)
+                self.assertFalse(state_path.with_name(
+                    ".board-web-pulled.json.tmp").exists())
+            finally:
+                board.os.replace = original_replace
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
     def test_collision_proof_inbox_filenames(self):
@@ -1295,14 +1402,13 @@ class TestPull(unittest.TestCase):
             board._http_get_json = lambda url, headers: {"comments": collision_comments}
             try:
                 import io, contextlib
-                with contextlib.redirect_stdout(io.StringIO()):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
                     board.pull(root, board.parse_args(["--pull"]))
                 files = list((root / "plans" / ".board-web-inbox").glob("*.txt"))
-                self.assertEqual(len(files), 2)  # distinct files, not one clobbering the other
-                contents = [f.read_text(encoding="utf-8") for f in files]
-                joined = "\n".join(contents)
-                self.assertIn("UNIQUE-TEXT-ALPHA", joined)
-                self.assertIn("UNIQUE-TEXT-BRAVO", joined)
+                self.assertEqual(files, [])
+                self.assertIn("UNIQUE-TEXT-ALPHA", out.getvalue())
+                self.assertIn("UNIQUE-TEXT-BRAVO", out.getvalue())
             finally:
                 del os.environ["CLAUDE_PLUGIN_DATA"]
 
@@ -1318,6 +1424,7 @@ class TestPull(unittest.TestCase):
                 gi = gi_path.read_text(encoding="utf-8")
                 self.assertIn("/.board-web-inbox/", gi)
                 self.assertIn("/.board-web-pulled.json", gi)
+                self.assertIn("/.board-web-pulled.json.tmp", gi)
             finally:
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
@@ -2020,6 +2127,30 @@ class TestOrderSlot(unittest.TestCase):
         self.assertIn("round one", doc)
         self.assertNotIn("round two", doc)
 
+    def test_pending_order_refuses_plain_and_signoff_feedback(self):
+        original = b"ORIGINAL PENDING ORDER\n"
+        self.pending.write_bytes(original)
+        url, info, t = serve_in_thread(self.root, timeout=15)
+        plain_status, plain_body, _ = http_json(url, "/api/feedback", body={
+            "annotations": [], "feedbackMarkdown": "new plain order",
+            "payloadHash": "x", "boardToken": info["boardToken"]})
+        self.assertEqual(plain_status, 409)
+        self.assertEqual(plain_body["error"], "pending-order")
+        self.assertIn("--ack", plain_body["message"])
+        self.assertEqual(self.pending.read_bytes(), original)
+
+        signoff_status, signoff_body, _ = http_json(url, "/api/feedback", body={
+            "annotations": [], "feedbackMarkdown": "new signoff order",
+            "payloadHash": "x", "boardToken": info["boardToken"],
+            "action": {"kind": "signoff", "component": "01-data-prep",
+                       "version": 2, "decision": "approve"}})
+        self.assertEqual(signoff_status, 409)
+        self.assertEqual(signoff_body["error"], "pending-order")
+        self.assertEqual(self.pending.read_bytes(), original)
+        ticket = (self.root / "plans" / "execution"
+                  / ".import-approved-01-data-prep-v2")
+        self.assertFalse(ticket.exists())
+
     def test_verbatim_client_doc_gains_action_id_fence(self):
         url, info, t = serve_in_thread(self.root, timeout=15)
         client_doc = ("# Feedback\n\nprose marker\n\n"
@@ -2083,6 +2214,23 @@ class TestOrderSlot(unittest.TestCase):
         finally:
             proc.terminate()
 
+    def test_gate_deny_refuses_existing_pending_order(self):
+        self._seed_gate()
+        original = b"ORIGINAL GATE ORDER\n"
+        self.pending.write_bytes(original)
+        proc, url = spawn_board(self.root, "--gate", "01-data-prep/v2",
+                                "--timeout", "15")
+        try:
+            status, body, _ = http_json(url, "/api/deny", body={
+                "annotations": [], "feedbackMarkdown": "replacement",
+                "payloadHash": "x", "boardToken": board_token_of(url)})
+            self.assertEqual(status, 409)
+            self.assertEqual(body["error"], "pending-order")
+            self.assertIn("--ack", body["message"])
+            self.assertEqual(self.pending.read_bytes(), original)
+        finally:
+            proc.terminate()
+
 
 class TestSignoffAction(unittest.TestCase):
     def setUp(self):
@@ -2119,6 +2267,56 @@ class TestSignoffAction(unittest.TestCase):
             self.draft.read_text(encoding="utf-8")).encode("utf-8")).hexdigest()
         self.assertEqual(tdoc["contentHash"], want)
         self.assertEqual(tdoc["batchId"], body["actionId"])
+
+    def test_ticket_write_failure_never_leaves_an_order(self):
+        url, info, t = serve_in_thread(self.root, timeout=1)
+        original_write_ticket = board.write_ticket
+
+        def fail_ticket(*args, **kwargs):
+            raise OSError("simulated ticket failure")
+
+        board.write_ticket = fail_ticket
+        try:
+            with self.assertRaises((http.client.RemoteDisconnected,
+                                    urllib.error.URLError,
+                                    ConnectionResetError)):
+                http_json(url, "/api/feedback",
+                          body=self._signoff_body(info["boardToken"]))
+        finally:
+            board.write_ticket = original_write_ticket
+        t.join(timeout=2)
+        self.assertFalse(self.ticket.exists())
+        self.assertFalse((self.root / "plans" / ".board-feedback.md").exists())
+
+    def test_order_replace_failure_rolls_back_ticket_slot_and_temp_file(self):
+        url, info, t = serve_in_thread(self.root, timeout=1)
+        original_replace = board.os.replace
+        pending = self.root / "plans" / ".board-feedback.md"
+
+        def fail_order_replace(src, dst):
+            if Path(dst) == pending:
+                raise OSError("simulated order replace failure")
+            return original_replace(src, dst)
+
+        board.os.replace = fail_order_replace
+        try:
+            with self.assertRaises((http.client.RemoteDisconnected,
+                                    urllib.error.URLError,
+                                    ConnectionResetError)):
+                http_json(url, "/api/feedback",
+                          body=self._signoff_body(info["boardToken"]))
+        finally:
+            board.os.replace = original_replace
+        self.assertFalse(pending.exists())
+        self.assertFalse(self.ticket.exists())
+        self.assertFalse((self.root / "plans" / ".board-feedback.md.tmp").exists())
+
+        # The failed reservation is released, so this same server can accept a
+        # retry after the filesystem fault is gone.
+        retry_status, _, _ = http_json(
+            url, "/api/feedback", body=self._signoff_body(info["boardToken"]))
+        self.assertEqual(retry_status, 200)
+        t.join(timeout=2)
 
     def test_stale_draft_rejected_exit_4_no_ticket(self):
         proc, url = spawn_board(self.root, "--timeout", "15")
@@ -2901,6 +3099,25 @@ if __name__ == "__main__":
 
 
 class TestArtifactHeaders(unittest.TestCase):
+    def test_pinned_cross_language_inline_policy_vector(self):
+        # Mirrored in artifactDisplay.test.ts. SVG is the one intentional
+        # difference: the server permits sandboxed image rendering, while a
+        # top-level client link downloads it.
+        vectors = [
+            ("a.md", True, True), ("T.CSV", True, True),
+            ("a.tsv", True, True), ("a.txt", True, True),
+            ("a.log", True, True), ("a.json", True, True),
+            ("a.tex", True, True), ("a.png", True, True),
+            ("a.jpg", True, True), ("a.jpeg", True, True),
+            ("a.gif", True, True), ("a.webp", True, True),
+            ("a.pdf", True, True), ("a.svg", True, False),
+            ("a.html", False, False), ("a.xlsx", False, False),
+            ("a.xml", False, False), ("noext", False, False),
+        ]
+        for name, server_inline, _client_inline_safe in vectors:
+            self.assertEqual(board.artifact_headers(name)[1] == "inline",
+                             server_inline, name)
+
     def test_header_policy_by_extension(self):
         ah = board.artifact_headers
         self.assertEqual(ah("notes.md"), ("text/plain; charset=utf-8", "inline"))

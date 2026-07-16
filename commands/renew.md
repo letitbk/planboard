@@ -1,5 +1,5 @@
 ---
-description: Renew the project's direction — archive the master plan, write a fresh one over the existing work (numbering continues, accomplishments carried), refresh conventions; works on initialized and never-initialized repos
+description: Archive the master plan and start a new direction while preserving component numbering and reusable work
 argument-hint: [optional: one-line description of the new direction]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(git:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*), Bash(mv:*), Bash(python3:*)
 ---

@@ -1,5 +1,5 @@
 ---
-description: Retrospectively decompose already-done work into components with full plans — evidence scan, proposed breakdown, bulk-drafted retrospective plans reviewed in one board batch, reconstructed pre-adoption history
+description: Convert completed work into retrospective components and plans, reviewed in one board batch with reconstructed history
 argument-hint: [(none = resume/continue) | component name/number to draft next]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*)
 ---

@@ -46,7 +46,6 @@ export default function Tracker({
   onOpenComponent,
   onOpenResults,
   onAddGeneral,
-  canPost,
   onRequestReview,
   onSignoff,
   onOpenArchive,
@@ -65,7 +64,6 @@ export default function Tracker({
   onOpenComponent: (slug: string | null, name: string) => void;
   onOpenResults: (slug: string) => void;
   onAddGeneral: (view: string, comment: string) => void;
-  canPost?: boolean;
   onRequestReview?: (req: ReviewRequest) => void;
   onSignoff?: (req: SignoffRequest) => void;
   onOpenArchive?: () => void;
@@ -385,6 +383,7 @@ export default function Tracker({
       )}
 
       <section className="rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-stone-200 dark:border-stone-800 text-left text-xs uppercase tracking-wide text-stone-500">
@@ -564,6 +563,7 @@ export default function Tracker({
             })}
           </tbody>
         </table>
+        </div>
       </section>
 
       {orphanGroups.length > 0 && (

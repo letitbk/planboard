@@ -219,6 +219,37 @@ describe("failed-post keeps pending", () => {
     expect(applyPostResult(pending, "n1", true).map((a) => a.id)).toEqual(["n2"]);
     expect(applyPostResult(pending, "n1", false).map((a) => a.id)).toEqual(["n1", "n2"]);
   });
+
+  it("clears one pending annotation after an identical lost-response retry", async () => {
+    const annotation = planComment();
+    const commentId = "11111111-1111-4111-8111-111111111111";
+    const body = {
+      ...buildCommentBody(annotation, boardWith("original"), "Ada", "cl1"),
+      id: commentId,
+    };
+    const stored = new Map<string, string>();
+    let pending: Annotation[] = [annotation];
+
+    async function post(loseResponse: boolean): Promise<boolean> {
+      const serialized = JSON.stringify(body);
+      const existing = stored.get(body.id);
+      if (existing === undefined) stored.set(body.id, serialized);
+      if (loseResponse) throw new Error("response lost after store");
+      return existing === undefined || existing === serialized;
+    }
+
+    try {
+      await post(true);
+    } catch {
+      pending = applyPostResult(pending, annotation.id, false);
+    }
+    expect(pending.map((a) => a.id)).toEqual([annotation.id]);
+
+    pending = applyPostResult(pending, annotation.id, await post(false));
+    expect(stored.size).toBe(1);
+    expect([...stored.keys()]).toEqual([commentId]);
+    expect(pending).toEqual([]);
+  });
 });
 
 describe("buildCommentBody", () => {
