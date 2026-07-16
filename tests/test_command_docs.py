@@ -20,5 +20,15 @@ class TestInitPortabilityDocs(unittest.TestCase):
             self.assertIn(field, command)
 
 
+class TestBoardReviewerPortabilityDocs(unittest.TestCase):
+    def test_external_reviewers_have_preflights_and_permission(self):
+        command = (REPO / "commands" / "board.md").read_text(encoding="utf-8")
+
+        self.assertIn("Bash(command:*)", command)
+        self.assertIn("command -v codex", command)
+        self.assertIn("command -v agy", command)
+        self.assertIn("not available — pick another reviewer", command)
+
+
 if __name__ == "__main__":
     unittest.main()
