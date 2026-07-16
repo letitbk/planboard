@@ -357,7 +357,9 @@ def cmd_finalize(root, args):
         row = stages.get("execute") if exists else None
         if row:
             prescribed = {"model": row["model"], "effort": row["effort"]}
-    except Exception:
+    except Exception as exc:
+        print("warning: could not load model profile for results provenance: %s" %
+              exc, file=sys.stderr)
         prescribed = None
     reported = None
     rm = getattr(args, "reported_model", None)

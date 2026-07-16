@@ -492,6 +492,32 @@ class TestFinalizeProvenance(unittest.TestCase):
             self.assertIsNone(m["modelUsage"]["prescribed"])
             self.assertEqual(m["modelUsage"]["reported"], {"model": "sonnet", "effort": None})
 
+    def test_profile_read_error_is_advisory_but_visible(self):
+        import contextlib
+        import io
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            p = run_cli(root, "stage", "--component", "02-analysis")
+            staging = Path(p.stdout.strip())
+            (staging / "manifest.json").write_text(
+                json.dumps(manifest_for(staging)), encoding="utf-8")
+            (staging / "report.md").write_text("# Report\n", encoding="utf-8")
+            original = results.models.load_profile
+            results.models.load_profile = lambda *_args: (_ for _ in ()).throw(
+                OSError("profile unreadable"))
+            self.addCleanup(setattr, results.models, "load_profile", original)
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+                results.cmd_finalize(
+                    root, SimpleNamespace(staging=str(staging), reported_model="sonnet"))
+
+            manifest = json.loads((root / "plans" / "execution" / "02-analysis" /
+                                   "results" / "r1" / "manifest.json").read_text())
+            self.assertIsNone(manifest["modelUsage"]["prescribed"])
+            self.assertIn("profile unreadable", stderr.getvalue())
+
 
 class TestSubstantiveFindings(unittest.TestCase):
     def test_is_substantive_rule(self):
