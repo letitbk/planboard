@@ -76,21 +76,23 @@ export default function AnnotationLayer({
     return () => window.clearTimeout(t);
   }, [annotations, docKey, onPaintResult]);
 
-  const handleMouseUp = useCallback(() => {
+  const captureSelection = useCallback(() => {
     if (composing) return;
     const el = containerRef.current;
     if (!el) return;
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) {
-      setPending(null);
-      return;
-    }
+    if (!sel || sel.isCollapsed) return;
     const anchor = anchorFromSelection(el);
     if (!anchor) {
       setPending(null);
       return;
     }
-    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect?.() ?? {
+      left: 0,
+      bottom: 0,
+      width: 0,
+    };
     const host = el.getBoundingClientRect();
     setPending({
       x: rect.left - host.left + rect.width / 2,
@@ -98,6 +100,20 @@ export default function AnnotationLayer({
       anchor,
     });
   }, [composing]);
+
+  const handleMouseUp = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      setPending(null);
+      return;
+    }
+    captureSelection();
+  }, [captureSelection]);
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", captureSelection);
+    return () => document.removeEventListener("selectionchange", captureSelection);
+  }, [captureSelection]);
 
   const save = () => {
     if (!pending?.anchor || !text.trim()) return;
@@ -126,6 +142,7 @@ export default function AnnotationLayer({
           className="absolute z-20 -translate-x-1/2 rounded-full bg-stone-900 dark:bg-stone-200 px-3 py-1 text-xs font-medium text-white dark:text-stone-900 shadow-lg hover:bg-stone-700 dark:hover:bg-stone-400"
           style={{ left: pending.x, top: pending.y }}
           onClick={() => setComposing(true)}
+          aria-label="Comment on selected text"
         >
           Comment
         </button>
