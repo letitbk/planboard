@@ -53,6 +53,16 @@ class TestState(unittest.TestCase):
             self.assertTrue(p.exists())
             self.assertEqual(cu.read_state(p)["lastNotifiedVersion"], "0.12.0")
 
+    def test_state_roundtrips_only_fields_used_by_decisions(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "update-check.json"
+            state = {"lastAttempt": 12.5, "lastNotifiedVersion": "0.12.0"}
+
+            cu.write_state(p, state)
+
+            self.assertEqual(cu.read_state(p), state)
+            self.assertEqual(json.loads(p.read_text()), state)
+
     def test_read_merges_over_defaults(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "update-check.json"
