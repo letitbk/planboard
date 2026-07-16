@@ -2043,6 +2043,30 @@ class TestOrderSlot(unittest.TestCase):
         self.assertIn("round one", doc)
         self.assertNotIn("round two", doc)
 
+    def test_pending_order_refuses_plain_and_signoff_feedback(self):
+        original = b"ORIGINAL PENDING ORDER\n"
+        self.pending.write_bytes(original)
+        url, info, t = serve_in_thread(self.root, timeout=15)
+        plain_status, plain_body, _ = http_json(url, "/api/feedback", body={
+            "annotations": [], "feedbackMarkdown": "new plain order",
+            "payloadHash": "x", "boardToken": info["boardToken"]})
+        self.assertEqual(plain_status, 409)
+        self.assertEqual(plain_body["error"], "pending-order")
+        self.assertIn("--ack", plain_body["message"])
+        self.assertEqual(self.pending.read_bytes(), original)
+
+        signoff_status, signoff_body, _ = http_json(url, "/api/feedback", body={
+            "annotations": [], "feedbackMarkdown": "new signoff order",
+            "payloadHash": "x", "boardToken": info["boardToken"],
+            "action": {"kind": "signoff", "component": "01-data-prep",
+                       "version": 2, "decision": "approve"}})
+        self.assertEqual(signoff_status, 409)
+        self.assertEqual(signoff_body["error"], "pending-order")
+        self.assertEqual(self.pending.read_bytes(), original)
+        ticket = (self.root / "plans" / "execution"
+                  / ".import-approved-01-data-prep-v2")
+        self.assertFalse(ticket.exists())
+
     def test_verbatim_client_doc_gains_action_id_fence(self):
         url, info, t = serve_in_thread(self.root, timeout=15)
         client_doc = ("# Feedback\n\nprose marker\n\n"
@@ -2103,6 +2127,23 @@ class TestOrderSlot(unittest.TestCase):
             out, err = proc.communicate(timeout=15)
             self.assertEqual(proc.returncode, 3)
             self.assertIn("needs work", self.pending.read_text(encoding="utf-8"))
+        finally:
+            proc.terminate()
+
+    def test_gate_deny_refuses_existing_pending_order(self):
+        self._seed_gate()
+        original = b"ORIGINAL GATE ORDER\n"
+        self.pending.write_bytes(original)
+        proc, url = spawn_board(self.root, "--gate", "01-data-prep/v2",
+                                "--timeout", "15")
+        try:
+            status, body, _ = http_json(url, "/api/deny", body={
+                "annotations": [], "feedbackMarkdown": "replacement",
+                "payloadHash": "x", "boardToken": board_token_of(url)})
+            self.assertEqual(status, 409)
+            self.assertEqual(body["error"], "pending-order")
+            self.assertIn("--ack", body["message"])
+            self.assertEqual(self.pending.read_bytes(), original)
         finally:
             proc.terminate()
 

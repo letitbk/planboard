@@ -1092,6 +1092,11 @@ def serve(root, payload, args):
     draft_map = draft_map_from_payload(payload)
     slot = {"actionId": None}
     slot_lock = threading.Lock()
+    pending_order = object()
+    pending_order_message = (
+        "Route the existing plans/.board-feedback.md order (use --collect to "
+        "recover it), then run --ack before submitting a new order."
+    )
     # Serializes the whole re-read → validate → write → regenerate sequence of a
     # model-profile save so two concurrent POSTs can't both read the old file
     # and lose an update (ThreadingHTTPServer).
@@ -1104,6 +1109,8 @@ def serve(root, payload, args):
         with slot_lock:
             if slot["actionId"] is not None:
                 return None
+            if write_file and (plans_dir / ".board-feedback.md").is_file():
+                return pending_order
             slot["actionId"] = uuid.uuid4().hex
         aid = slot["actionId"]
         doc = build_doc(aid)
@@ -1284,6 +1291,10 @@ def serve(root, payload, args):
                                                    action=validated,
                                                    action_id=aid),
                     0, True)
+                if aid is pending_order:
+                    self._json(409, {"error": "pending-order",
+                                     "message": pending_order_message})
+                    return
                 if aid is None:
                     self._json(409, {"error": "already-accepted",
                                      "actionId": slot["actionId"]})
@@ -1322,6 +1333,10 @@ def serve(root, payload, args):
                 aid = accept_order(
                     lambda aid: document_from_body(body, payload, action_id=aid),
                     3, True)
+                if aid is pending_order:
+                    self._json(409, {"error": "pending-order",
+                                     "message": pending_order_message})
+                    return
                 if aid is None:
                     self._json(409, {"error": "already-accepted",
                                      "actionId": slot["actionId"]})
