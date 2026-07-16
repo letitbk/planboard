@@ -1247,7 +1247,7 @@ class TestPull(unittest.TestCase):
             finally:
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
-    def test_inbox_written_before_marking_pulled(self):
+    def test_inbox_removed_after_successful_routing(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); self._setup(root)
             try:
@@ -1255,7 +1255,7 @@ class TestPull(unittest.TestCase):
                 with contextlib.redirect_stdout(io.StringIO()):
                     board.pull(root, board.parse_args(["--pull"]))
                 inbox = list((root / "plans" / ".board-web-inbox").glob("*.txt"))
-                self.assertTrue(inbox)  # documents materialized
+                self.assertEqual(inbox, [])
                 pulled = json.loads((root / "plans" / ".board-web-pulled.json").read_text())
                 self.assertEqual(set(pulled), {"c1", "c2"})
             finally:
@@ -1272,6 +1272,8 @@ class TestPull(unittest.TestCase):
                 with contextlib.redirect_stdout(out):
                     board.pull(root, board.parse_args(["--pull"]))
                 self.assertIn("no new", out.getvalue().lower())
+                self.assertNotIn("one", out.getvalue())
+                self.assertNotIn("two", out.getvalue())
             finally:
                 import os; del os.environ["CLAUDE_PLUGIN_DATA"]
 
@@ -1295,14 +1297,13 @@ class TestPull(unittest.TestCase):
             board._http_get_json = lambda url, headers: {"comments": collision_comments}
             try:
                 import io, contextlib
-                with contextlib.redirect_stdout(io.StringIO()):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
                     board.pull(root, board.parse_args(["--pull"]))
                 files = list((root / "plans" / ".board-web-inbox").glob("*.txt"))
-                self.assertEqual(len(files), 2)  # distinct files, not one clobbering the other
-                contents = [f.read_text(encoding="utf-8") for f in files]
-                joined = "\n".join(contents)
-                self.assertIn("UNIQUE-TEXT-ALPHA", joined)
-                self.assertIn("UNIQUE-TEXT-BRAVO", joined)
+                self.assertEqual(files, [])
+                self.assertIn("UNIQUE-TEXT-ALPHA", out.getvalue())
+                self.assertIn("UNIQUE-TEXT-BRAVO", out.getvalue())
             finally:
                 del os.environ["CLAUDE_PLUGIN_DATA"]
 

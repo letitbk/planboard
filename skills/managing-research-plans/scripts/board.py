@@ -1616,12 +1616,14 @@ def pull(root, args):
         prefix = re.sub(r"[^A-Za-z0-9._-]+", "-", "%s-%s" % (author, client))[:40] or "group"
         keyhash = hashlib.sha256(("%s\x00%s" % (author, client)).encode()).hexdigest()[:12]
         fname = "%s-%s.txt" % (prefix, keyhash)
-        (inbox / fname).write_text(doc, encoding="utf-8")   # inbox FIRST
-        docs.append(doc)
+        inbox_path = inbox / fname
+        inbox_path.write_text(doc, encoding="utf-8")   # inbox FIRST
+        docs.append((inbox_path, doc))
     # Only after every document is safely on disk do we mark ids pulled.
     _pulled_path(root).write_text(json.dumps(sorted(pulled | {c["id"] for c in new})))
-    for doc in docs:
+    for inbox_path, doc in docs:
         inspect_feedback_document(root, doc)   # route (prints)
+        inbox_path.unlink()
 
 
 # Small embedded wordlist for generate_passphrase() — diceware-style, not
