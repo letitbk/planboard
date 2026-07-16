@@ -27,6 +27,7 @@ Object.defineProperty(window, "matchMedia", {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 const ALPHA_V1 = [
@@ -161,5 +162,46 @@ describe("App (static mode render/route)", () => {
     expect(promptSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
     promptSpy.mockRestore();
+  });
+
+  it("shows pending-order recovery without entering the applying state", async () => {
+    const recovery =
+      "Route the existing plans/.board-feedback.md order, then run --ack.";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "pending-order", message: recovery }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <App
+        data={{
+          ...fixture(),
+          mode: "live",
+          projectId: "project-1",
+          boardToken: "token-1",
+          seededAnnotations: [
+            {
+              scope: "master",
+              sectionHeading: "Components",
+              quote: "MP",
+              comment: "Check this.",
+              author: "reviewer",
+            },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send to Claude" }));
+
+    expect(await screen.findByText(recovery)).not.toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Send to Claude" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(screen.queryByText(/applying your action/i)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

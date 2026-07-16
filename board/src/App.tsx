@@ -878,8 +878,16 @@ export default function App({ data }: { data: BoardData }) {
     }
     if (res.status === 409) {
       const eb = (await res.json().catch(() => null)) as
-        | { error?: string; actionId?: string }
+        | { error?: string; actionId?: string; message?: string }
         | null;
+      if (eb?.error === "pending-order") {
+        showSyncNotice(
+          eb.message ??
+            "Route and acknowledge the existing board order before submitting another.",
+        );
+        dispatchConn({ type: "post-failed" });
+        return false;
+      }
       showSyncNotice(
         eb?.error === "stale-draft"
           ? "The plan changed on disk — the board is refreshing."
