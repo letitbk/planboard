@@ -37,6 +37,7 @@ export default function Sidebar({
   topOffsetPx?: number; // App's measured sticky-header height (headerOffset)
 }) {
   const [state, setState] = useState<Persisted>(() => load(storageKey, defaultCollapsed));
+  const [treeTabStop, setTreeTabStop] = useState(tree[0]?.id ?? "");
   const expandRef = useRef<HTMLButtonElement>(null);
   const subTabRefs = useRef<Record<SubTab, HTMLButtonElement | null>>({
     outline: null,
@@ -49,6 +50,29 @@ export default function Sidebar({
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {
       /* ignore */
+    }
+  };
+
+  const selectSubTab = (sub: SubTab, focus = false) => {
+    persist({ ...state, sub });
+    if (focus) subTabRefs.current[sub]?.focus();
+  };
+
+  const handleSubTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    sub: SubTab,
+  ) => {
+    let next: SubTab | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      next = sub === "outline" ? "files" : "outline";
+    } else if (event.key === "Home") {
+      next = "outline";
+    } else if (event.key === "End") {
+      next = "files";
+    }
+    if (next) {
+      event.preventDefault();
+      selectSubTab(next, true);
     }
   };
 
@@ -98,12 +122,14 @@ export default function Sidebar({
             role="tab"
             aria-selected={state.sub === s}
             aria-controls={`sidebar-${s}-panel`}
+            tabIndex={state.sub === s ? 0 : -1}
             className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
               state.sub === s
                 ? "bg-stone-900 text-white dark:bg-stone-200 dark:text-stone-900"
                 : "text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
             }`}
-            onClick={() => persist({ ...state, sub: s })}
+            onClick={() => selectSubTab(s)}
+            onKeyDown={(event) => handleSubTabKeyDown(event, s)}
           >
             {s}
           </button>
@@ -122,38 +148,49 @@ export default function Sidebar({
       </div>
 
       {state.sub === "outline" ? (
-        <ul
+        <div
           id="sidebar-outline-panel"
           role="tabpanel"
           aria-labelledby="sidebar-outline-tab"
-          className="space-y-0.5"
         >
-          {outline.length === 0 && (
-            <li className="px-2 py-1 text-xs text-stone-400">No outline for this view.</li>
-          )}
-          {outline.map((e) => (
-            <li key={e.id}>
-              <button
-                className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
-                style={{ paddingLeft: `${0.5 + (e.level - 1) * 0.75}rem` }}
-                onClick={e.onSelect}
-              >
-                {e.label}
-              </button>
-            </li>
-          ))}
-        </ul>
+          <ul className="space-y-0.5">
+            {outline.length === 0 && (
+              <li className="px-2 py-1 text-xs text-stone-400">No outline for this view.</li>
+            )}
+            {outline.map((e) => (
+              <li key={e.id}>
+                <button
+                  className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
+                  style={{ paddingLeft: `${0.5 + (e.level - 1) * 0.75}rem` }}
+                  onClick={e.onSelect}
+                >
+                  {e.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : (
-        <ul
+        <div
           id="sidebar-files-panel"
-          role="tree"
-          aria-label="Project files"
-          className="space-y-0.5"
+          role="tabpanel"
+          aria-labelledby="sidebar-files-tab"
         >
-          {tree.map((n) => (
-            <TreeNode key={n.id} node={n} depth={0} onNavigate={onNavigate} activeTab={activeTab} activeComponent={activeComponent} />
-          ))}
-        </ul>
+          <ul role="tree" aria-label="Project files" className="space-y-0.5">
+            {tree.map((n) => (
+              <TreeNode
+                key={n.id}
+                node={n}
+                depth={0}
+                onNavigate={onNavigate}
+                activeTab={activeTab}
+                activeComponent={activeComponent}
+                treeTabStop={treeTabStop}
+                onTreeFocus={setTreeTabStop}
+              />
+            ))}
+          </ul>
+        </div>
       )}
     </aside>
   );
@@ -165,12 +202,16 @@ function TreeNode({
   onNavigate,
   activeTab,
   activeComponent,
+  treeTabStop,
+  onTreeFocus,
 }: {
   node: FileNode;
   depth: number;
   onNavigate: (t: NavTarget) => void;
   activeTab: string;
   activeComponent: string | null;
+  treeTabStop: string;
+  onTreeFocus: (id: string) => void;
 }) {
   const [open, setOpen] = useState(depth < 1);
   const hasChildren = !!node.children?.length;
@@ -186,22 +227,31 @@ function TreeNode({
       ? Array.from(tree.querySelectorAll<HTMLButtonElement>('[role="treeitem"]'))
       : [];
     const index = items.indexOf(item);
+    const focusItem = (next: HTMLButtonElement) => {
+      onTreeFocus(next.dataset.treeId ?? "");
+      next.focus();
+    };
     if (event.key === "ArrowDown" && index < items.length - 1) {
       event.preventDefault();
-      items[index + 1].focus();
+      focusItem(items[index + 1]);
     } else if (event.key === "ArrowUp" && index > 0) {
       event.preventDefault();
-      items[index - 1].focus();
+      focusItem(items[index - 1]);
     } else if (event.key === "Home" && items.length > 0) {
       event.preventDefault();
-      items[0].focus();
+      focusItem(items[0]);
     } else if (event.key === "End" && items.length > 0) {
       event.preventDefault();
-      items[items.length - 1].focus();
+      focusItem(items[items.length - 1]);
     } else if (event.key === "ArrowRight" && hasChildren) {
       event.preventDefault();
       if (!open) setOpen(true);
-      else item.parentElement?.querySelector<HTMLButtonElement>('[role="group"] [role="treeitem"]')?.focus();
+      else {
+        const child = item.parentElement?.querySelector<HTMLButtonElement>(
+          '[role="group"] [role="treeitem"]',
+        );
+        if (child) focusItem(child);
+      }
     } else if (event.key === "ArrowLeft") {
       if (hasChildren && open) {
         event.preventDefault();
@@ -213,7 +263,7 @@ function TreeNode({
         );
         if (parentItem) {
           event.preventDefault();
-          parentItem.focus();
+          focusItem(parentItem);
         }
       }
     } else if (event.key === "Enter" || event.key === " ") {
@@ -226,8 +276,10 @@ function TreeNode({
     <li role="none">
       <button
         role="treeitem"
+        data-tree-id={node.id}
         aria-expanded={hasChildren ? open : undefined}
         data-active={isActiveComponent ? "true" : undefined}
+        tabIndex={treeTabStop === node.id ? 0 : -1}
         className={`w-full rounded px-2 py-1 text-left text-xs hover:bg-stone-100 dark:hover:bg-stone-800 ${
           isActiveComponent
             ? "bg-stone-100 font-medium text-stone-900 dark:bg-stone-800 dark:text-stone-100"
@@ -235,6 +287,7 @@ function TreeNode({
         }`}
         style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
         onClick={activate}
+        onFocus={() => onTreeFocus(node.id)}
         onKeyDown={handleKeyDown}
       >
         {hasChildren && <span aria-hidden className="mr-1 text-stone-400">{open ? "▾" : "▸"}</span>}
@@ -248,7 +301,16 @@ function TreeNode({
       {hasChildren && open && (
         <ul role="group" className="space-y-0.5">
           {node.children!.map((c) => (
-            <TreeNode key={c.id} node={c} depth={depth + 1} onNavigate={onNavigate} activeTab={activeTab} activeComponent={activeComponent} />
+            <TreeNode
+              key={c.id}
+              node={c}
+              depth={depth + 1}
+              onNavigate={onNavigate}
+              activeTab={activeTab}
+              activeComponent={activeComponent}
+              treeTabStop={treeTabStop}
+              onTreeFocus={onTreeFocus}
+            />
           ))}
         </ul>
       )}

@@ -77,13 +77,36 @@ describe("Sidebar", () => {
     expect(screen.getByRole("treeitem", { name: "01-x" }).getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("uses roving focus and arrow keys for sidebar tabs", () => {
+    renderSidebar();
+    const outline = screen.getByRole("tab", { name: /outline/i });
+    const files = screen.getByRole("tab", { name: /files/i });
+    expect(outline.tabIndex).toBe(0);
+    expect(files.tabIndex).toBe(-1);
+
+    outline.focus();
+    fireEvent.keyDown(outline, { key: "ArrowRight" });
+
+    expect(document.activeElement).toBe(files);
+    expect(files.tabIndex).toBe(0);
+    expect(outline.tabIndex).toBe(-1);
+    expect(files.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("moves through and activates file-tree items from the keyboard", () => {
     const { onNavigate } = renderSidebar();
     fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     const masterPlan = screen.getByRole("treeitem", { name: "Master plan" });
+    const initialTabStops = screen
+      .getAllByRole("treeitem")
+      .filter((item) => item.tabIndex === 0);
+    expect(initialTabStops).toEqual([masterPlan]);
     masterPlan.focus();
     fireEvent.keyDown(masterPlan, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: "01-x" }));
+    const component = screen.getByRole("treeitem", { name: "01-x" });
+    expect(document.activeElement).toBe(component);
+    expect(component.tabIndex).toBe(0);
+    expect(masterPlan.tabIndex).toBe(-1);
 
     const plans = screen.getByRole("treeitem", { name: "Plans" });
     fireEvent.keyDown(plans, { key: "ArrowRight" });
