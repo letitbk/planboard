@@ -254,7 +254,7 @@ export default function App({ data }: { data: BoardData }) {
   // whenever the annotation id isn't UUID-shaped (board annotation ids are
   // `ann-…`, never UUID), so without this a retry after a lost response would
   // post a second blob with a different id. Reusing the same uuid makes the
-  // API's allowOverwrite upsert dedup a retry against the first attempt.
+  // API classify an identical create-only retry as a successful replay.
   const commentUuids = useRef<Map<string, string>>(new Map());
   const clientId = useMemo(() => (hosted ? getClientId(localStorage) : ""), [hosted]);
 
@@ -276,8 +276,8 @@ export default function App({ data }: { data: BoardData }) {
     setSaveError(null);
     setSavingIds((prev) => new Set(prev).add(a.id));
     // Resolve (and remember) a stable uuid for this annotation, so a double-click
-    // or a retry after a lost response posts the SAME blob id — the upsert dedups
-    // it — instead of a fresh newUuid() minting a permanent duplicate comment.
+    // or a retry after a lost response posts the SAME blob id — the API accepts
+    // it as a replay — instead of minting a permanent duplicate comment.
     let uuid = commentUuids.current.get(a.id);
     if (!uuid) {
       uuid = newUuid();
