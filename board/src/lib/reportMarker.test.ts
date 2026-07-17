@@ -15,6 +15,22 @@ describe("parseReport", () => {
     const r = parseReport('<!-- rp-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, "plan": null, "verdict": "pending", "generated": "t"} -->\nB\n');
     expect(r.marker?.plan).toBeNull();
   });
+  it("parses a v2 marker with a validation field", () => {
+    const line = '<!-- rp-report {"schemaVersion": 2, "component": "01-a", "bundle": 1, "plan": 1, "validation": "conforms", "generated": "2026-07-17T10:00"} -->';
+    const r = parseReport(`${line}\nbody`);
+    expect(r.marker?.schemaVersion).toBe(2);
+    expect(r.marker?.validation).toBe("conforms");
+  });
+  it("v2 marker without validation is malformed", () => {
+    const line = '<!-- rp-report {"schemaVersion": 2, "component": "01-a", "bundle": 1, "plan": 1, "generated": "2026-07-17T10:00"} -->';
+    const r = parseReport(`${line}\nbody`);
+    expect(r.marker).toBeNull();
+    expect(r.malformed).toBe(true);
+  });
+  it("unknown schemaVersion is malformed (deliberate narrowing)", () => {
+    const line = '<!-- rp-report {"schemaVersion": 3, "component": "01-a", "bundle": 1, "plan": 1, "validation": "conforms", "generated": "x"} -->';
+    expect(parseReport(`${line}\nbody`).malformed).toBe(true);
+  });
   it("no marker: body is the whole content, not malformed", () => {
     const r = parseReport("# Title\nBody.\n");
     expect(r.marker).toBeNull();

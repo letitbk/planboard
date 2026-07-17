@@ -7,6 +7,7 @@ import type { BoardData, ResultsBundle } from "../lib/types";
 afterEach(cleanup);
 
 const MARKER = '<!-- rp-report {"schemaVersion": 1, "component": "01-x", "bundle": 1, "plan": 1, "verdict": "pending", "generated": "2026-07-10T14:30"} -->';
+const V2_MARKER = '<!-- rp-report {"schemaVersion": 2, "component": "01-x", "bundle": 1, "plan": 1, "validation": "conforms", "generated": "2026-07-17T10:00"} -->';
 
 function bundle(over: Partial<ResultsBundle>): ResultsBundle {
   return {
@@ -66,6 +67,26 @@ describe("Reports view", () => {
     const b = bundle({ verdict: { status: "accepted", date: "t", planVersion: 1, reviewer: "BK" } as never });
     draw(data([b]));
     expect(screen.getByText(/generated before the current verdict/i)).toBeTruthy();
+  });
+  it("flags a v2 marker whose validation differs from the bundle", () => {
+    const b = bundle({
+      manifest: { schemaVersion: 1, component: "01-x", resultsVersion: 1, planVersion: 1,
+        provenance: "planned", trigger: "initial", capturedAt: "t", metrics: [], artifacts: [],
+        validation: { status: "skipped", validator: "test" } },
+      publishedReport: { path: "plans/reports/01-x-r1-report.md", content: `${V2_MARKER}\nB\n` },
+    });
+    draw(data([b]));
+    expect(screen.getByText(/it says “conforms”, the bundle is “skipped”/i)).toBeTruthy();
+  });
+  it("does not flag a v2 marker matching the bundle validation", () => {
+    const b = bundle({
+      manifest: { schemaVersion: 1, component: "01-x", resultsVersion: 1, planVersion: 1,
+        provenance: "planned", trigger: "initial", capturedAt: "t", metrics: [], artifacts: [],
+        validation: { status: "conforms", validator: "test" } },
+      publishedReport: { path: "plans/reports/01-x-r1-report.md", content: `${V2_MARKER}\nB\n` },
+    });
+    draw(data([b]));
+    expect(screen.queryByText(/current validation/i)).toBeNull();
   });
   it("flags a marker naming a different bundle as wrong file", () => {
     const wrong = MARKER.replace('"bundle": 1', '"bundle": 9');

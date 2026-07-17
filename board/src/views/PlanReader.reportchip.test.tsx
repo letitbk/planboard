@@ -141,4 +141,28 @@ describe("PlanReader per-bundle report chip keying", () => {
 
     spy.mockRestore();
   });
+
+  it("marks a conforming verdictless bundle as validated", () => {
+    const results = [
+      bundle({
+        manifest: manifest({
+          validation: { status: "conforms", steps: [], criteria: [] },
+        }),
+      }),
+    ];
+
+    render(
+      <PlanReader
+        data={data(results)}
+        canAnnotate={false}
+        selectedComponent="01-x"
+        annotations={[]}
+        onAddPlanComment={noop}
+        onPaintResult={noop}
+        onOpenResults={noop}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /r1.*✓/ })).toBeTruthy();
+  });
 });

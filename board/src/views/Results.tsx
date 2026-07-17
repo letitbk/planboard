@@ -14,6 +14,7 @@ import { parseExecutionPlan, preRenewalSlugs } from "../lib/parse";
 import type { ViewerRequest } from "../lib/artifactDisplay";
 import { actionsVisible } from "../lib/actions";
 import { hasSubstantiveFindings } from "../lib/findings";
+import { bundleStateBadge, bundleStateMark } from "../lib/bundleState";
 import type { OutlineEntry } from "../lib/outline";
 import type { ActiveFileRef } from "../lib/filesTree";
 import type {
@@ -26,23 +27,8 @@ import type {
   ScriptCommentAnnotation,
   ValidationBlock,
   IntegrityBlock,
-  VerdictRequest,
   ReopenRequest,
 } from "../lib/types";
-
-function verdictBadge(b: ResultsBundle): { label: string; cls: string } {
-  if (b.verdict?.status === "accepted")
-    return { label: "accepted", cls: "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900" };
-  if (b.verdict?.status === "changes-requested")
-    return { label: "changes requested", cls: "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900" };
-  return { label: "pending review", cls: "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900" };
-}
-
-function verdictMark(b: ResultsBundle): string {
-  if (b.verdict?.status === "accepted") return " ✓";
-  if (b.verdict?.status === "changes-requested") return " ✕";
-  return " ●";
-}
 
 const STATUS_CLS: Record<string, string> = {
   robust: "border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300",
@@ -223,7 +209,6 @@ export default function Results({
   onAddResultComment,
   onAddScriptComment,
   onPaintResult,
-  onVerdict,
   focusResults,
   onRequestReview,
   onRequestReport,
@@ -243,7 +228,6 @@ export default function Results({
     docKey: string,
     scopeAbsent: Set<string>,
   ) => void;
-  onVerdict: (v: VerdictRequest) => void;
   focusResults: number | null;
   onRequestReview?: (req: ReviewRequest) => void;
   onRequestReport?: (req: ReportRequest) => void;
@@ -284,7 +268,7 @@ export default function Results({
   const bundle = bundles[Math.min(idx, bundles.length - 1)] ?? null;
 
   const [openScript, setOpenScript] = useState<string | null>(null);
-  const [verdictComment, setVerdictComment] = useState("");
+  const [reopenReason, setReopenReason] = useState("");
   const [zoom, setZoom] = useState<{ url: string; title: string } | null>(null);
   const [viewer, setViewer] = useState<{
     request: ViewerRequest;
@@ -385,7 +369,7 @@ export default function Results({
   }
 
   const m = bundle.manifest;
-  const badge = verdictBadge(bundle);
+  const badge = bundleStateBadge(bundle);
 
   // Drag-select anywhere in the bundle body; the stamped scope routes the
   // comment to its structured target (metric / artifact / report).
@@ -456,7 +440,6 @@ export default function Results({
         {/* version strip */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {bundles.map((b, i) => {
-            const vb = verdictBadge(b);
             return (
               <button
                 key={b.dir}
@@ -466,13 +449,13 @@ export default function Results({
                     : "border-stone-300 dark:border-stone-600 bg-white text-stone-600 hover:border-stone-500 dark:hover:border-stone-400"
                 }`}
                 onClick={() => setIdx(i)}
-                title={vb.label}
+                title={bundleStateBadge(b).label}
               >
                 r{b.resultsVersion}
                 {b.manifest?.planVersion != null
                   ? ` · plan v${b.manifest.planVersion}`
                   : ""}
-                {verdictMark(b)}
+                {bundleStateMark(b)}
               </button>
             );
           })}
@@ -519,7 +502,7 @@ export default function Results({
           </span>
           {bundle.verdict && (
             <span className="text-xs">
-              {bundle.verdict.reviewer} · {bundle.verdict.date}
+              legacy verdict: {bundle.verdict.status} · {bundle.verdict.reviewer} · {bundle.verdict.date}
               {bundle.verdict.comment ? ` — “${bundle.verdict.comment}”` : ""}
             </span>
           )}
@@ -561,59 +544,23 @@ export default function Results({
               pre-renewal
             </span>
           )}
-          {actionsVisible(data) && !bundle.verdict && (
-            <span className="ml-auto flex items-center gap-2">
-              <input
-                className="w-56 rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1 text-xs"
-                placeholder="Optional verdict comment…"
-                value={verdictComment}
-                onChange={(e) => setVerdictComment(e.target.value)}
-              />
-              <button
-                className="rounded-md bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-600"
-                onClick={() =>
-                  onVerdict({
-                    component: group.component,
-                    resultsVersion: bundle.resultsVersion,
-                    status: "accepted",
-                    comment: verdictComment.trim(),
-                  })
-                }
-              >
-                Accept
-              </button>
-              <button
-                className="rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 px-3 py-1.5 text-xs font-semibold text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40"
-                onClick={() =>
-                  onVerdict({
-                    component: group.component,
-                    resultsVersion: bundle.resultsVersion,
-                    status: "changes-requested",
-                    comment: verdictComment.trim(),
-                  })
-                }
-              >
-                Request changes
-              </button>
-            </span>
-          )}
-          {actionsVisible(data) && bundle.verdict && onReopen && (
+          {actionsVisible(data) && onReopen && (
             <span className="ml-auto flex items-center gap-2">
               <input
                 className="w-56 rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1 text-xs"
                 placeholder="Reopen — why? (required)"
-                value={verdictComment}
-                onChange={(e) => setVerdictComment(e.target.value)}
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
               />
               <button
                 className="rounded-md border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 px-3 py-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-40"
-                disabled={!verdictComment.trim()}
-                title="Files a change request against this accepted bundle; the recorded verdict is never modified."
+                disabled={!reopenReason.trim()}
+                title="Files a change request against this finalized bundle; any recorded verdict or validation is never modified."
                 onClick={() =>
                   onReopen({
                     component: group.component,
                     resultsVersion: bundle.resultsVersion,
-                    reason: verdictComment.trim(),
+                    reason: reopenReason.trim(),
                   })
                 }
               >
@@ -782,6 +729,11 @@ export default function Results({
               {/* provenance flow diagram (v0.11) — now closes the review read */}
               {m && (
                 <div id="results-provenance">
+                  {m.curatedBy === "agent" && (
+                    <div className="mb-2 text-xs font-medium text-stone-500 dark:text-stone-400">
+                      curated by agent (autopilot)
+                    </div>
+                  )}
                   <ProvenanceFlow
                     bundle={bundle}
                     planGoal={planGoal}

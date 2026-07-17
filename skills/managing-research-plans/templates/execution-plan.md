@@ -5,6 +5,8 @@ Provenance: <omit for a prospective plan. For work already done when this plan i
 Supersedes: v<N-1> — <one line: what changed and why>
 <!-- Keep this metadata in the body, not YAML frontmatter (some renderers strip frontmatter).
      Omit the Supersedes line for v1. Never edit an earlier version; a revision is a new file.
+     Drafts (`.draft-vN.md`) omit the closing `Signed off:` trailer — it is appended by the
+     sign-off routing when the approved `vN.md` is written.
      Provenance absent = prospective (the default, and every plan written before its work).
      A retrospective plan is an honest label, not a lesser plan; cite each claim to its dated
      source or commit, and tag anything reconstructed with hindsight inline as (reconstructed).

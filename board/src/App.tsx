@@ -52,7 +52,6 @@ import type {
   ScriptCommentAnnotation,
   SeededAnnotation,
   StoredComment,
-  VerdictRequest,
 } from "./lib/types";
 
 type Tab = "tracker" | "plans" | "results" | "timeline" | "archive" | "reports" | "models";
@@ -434,14 +433,6 @@ export default function App({ data }: { data: BoardData }) {
     [],
   );
 
-  const [pendingVerdict, setPendingVerdict] = useState<VerdictRequest | null>(
-    null,
-  );
-  const onVerdict = useCallback((v: VerdictRequest) => {
-    setPendingVerdict(v);
-    setDrawerOpen(true);
-  }, []);
-
   const addGeneral = useCallback((view: string, comment: string) => {
     setAnnotations((prev) => [
       ...prev,
@@ -498,8 +489,8 @@ export default function App({ data }: { data: BoardData }) {
   );
 
   const feedbackMarkdown = useMemo(
-    () => buildFeedbackMarkdown(annotations, pendingVerdict),
-    [annotations, pendingVerdict],
+    () => buildFeedbackMarkdown(annotations),
+    [annotations],
   );
 
   const feedbackDocument = useMemo(
@@ -513,9 +504,8 @@ export default function App({ data }: { data: BoardData }) {
         payloadHash,
         shareHash: data.shareHash ?? null,
         annotations,
-        verdict: pendingVerdict,
       }),
-    [feedbackMarkdown, sessionId, data, remote, reviewer, payloadHash, annotations, pendingVerdict],
+    [feedbackMarkdown, sessionId, data, remote, reviewer, payloadHash, annotations],
   );
 
   // Clear exactly the annotations that rode a successful POST; on the stable
@@ -555,7 +545,6 @@ export default function App({ data }: { data: BoardData }) {
       }
       setSubmitState("sent");
       setCloseArmed(true);
-      setPendingVerdict(null);
       clearSentDrafts(annotations.map((a) => a.id));
     } catch {
       await recoverFailedPost();
@@ -566,7 +555,7 @@ export default function App({ data }: { data: BoardData }) {
   // channel. Any pending manual comments ride along and get routed first; the
   // session then runs the reviewer and reopens the board with its comments seeded.
   const requestReview = async (req: ReviewRequest) => {
-    const md = buildFeedbackMarkdown(annotations, pendingVerdict, req);
+    const md = buildFeedbackMarkdown(annotations, req);
     const doc = buildFeedbackDocument(md, {
       sessionId,
       generatedAt: data.generatedAt,
@@ -576,7 +565,6 @@ export default function App({ data }: { data: BoardData }) {
       payloadHash,
       shareHash: data.shareHash ?? null,
       annotations,
-      verdict: pendingVerdict,
       reviewRequest: req,
     });
     setSubmitState("sending");
@@ -600,7 +588,6 @@ export default function App({ data }: { data: BoardData }) {
         return;
       }
       setSubmitState("sent");
-      setPendingVerdict(null);
       clearSentDrafts(annotations.map((a) => a.id));
     } catch {
       await recoverFailedPost();
@@ -664,7 +651,7 @@ export default function App({ data }: { data: BoardData }) {
   // submit ends the board session; the session runs /research-plans:report
   // and offers to reopen. Pending manual comments ride along.
   const requestReport = async (req: ReportRequest) => {
-    const md = buildFeedbackMarkdown(annotations, pendingVerdict, undefined, req);
+    const md = buildFeedbackMarkdown(annotations, null, req);
     const doc = buildFeedbackDocument(md, {
       sessionId,
       generatedAt: data.generatedAt,
@@ -674,7 +661,6 @@ export default function App({ data }: { data: BoardData }) {
       payloadHash,
       shareHash: data.shareHash ?? null,
       annotations,
-      verdict: pendingVerdict,
       reportRequest: req,
     });
     setSubmitState("sending");
@@ -698,7 +684,6 @@ export default function App({ data }: { data: BoardData }) {
         return;
       }
       setSubmitState("sent");
-      setPendingVerdict(null);
       clearSentDrafts(annotations.map((a) => a.id));
     } catch {
       await recoverFailedPost();
@@ -712,7 +697,7 @@ export default function App({ data }: { data: BoardData }) {
     const scoped = annotations.filter(
       (a) => a.type === "plan-comment" && a.component === req.component && a.isDraft,
     );
-    const md = buildFeedbackMarkdown(scoped, null, null, null, req);
+    const md = buildFeedbackMarkdown(scoped, null, null, req);
     const doc = buildFeedbackDocument(md, {
       sessionId,
       generatedAt: data.generatedAt,
@@ -760,7 +745,7 @@ export default function App({ data }: { data: BoardData }) {
         a.component === req.component &&
         a.resultsVersion === req.resultsVersion,
     );
-    const md = buildFeedbackMarkdown(scoped, null, null, null, null, req);
+    const md = buildFeedbackMarkdown(scoped, null, null, null, req);
     const doc = buildFeedbackDocument(md, {
       sessionId,
       generatedAt: data.generatedAt,
@@ -1027,11 +1012,9 @@ export default function App({ data }: { data: BoardData }) {
     gate,
     canPost,
     submitState: connBlocked && submitState !== "failed" ? ("sending" as SubmitState) : submitState,
-    pendingVerdict,
     reviewer,
     savingIds,
     onReviewerChange: setReviewer,
-    onWithdrawVerdict: () => setPendingVerdict(null),
     onRemove: removeAnnotation,
     onSaveHosted: saveHosted,
     onClose: () => setDrawerOpen(false),
@@ -1342,7 +1325,6 @@ export default function App({ data }: { data: BoardData }) {
             onAddResultComment={addResultComment}
             onAddScriptComment={addScriptComment}
             onPaintResult={onPaintResult}
-            onVerdict={onVerdict}
             focusResults={data.focusResults ?? null}
             onRequestReview={guardConn(requestReview)}
             onRequestReport={guardConn(requestReport)}

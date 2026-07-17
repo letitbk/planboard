@@ -7,7 +7,6 @@ import type {
   Annotation,
   BoardData,
   StoredComment,
-  VerdictRequest,
 } from "../lib/types";
 import { VIEW_LABEL } from "../lib/feedback";
 
@@ -177,11 +176,9 @@ export interface FeedbackPanelProps {
   gate: BoardData["gate"] | null;
   canPost: boolean;
   submitState: SubmitState;
-  pendingVerdict: VerdictRequest | null;
   reviewer: string;
   savingIds: Set<string>;
   onReviewerChange: (v: string) => void;
-  onWithdrawVerdict: () => void;
   onRemove: (id: string) => void;
   onSaveHosted: (a: Annotation) => void;
   onCardClick?: (a: Annotation) => void;
@@ -312,25 +309,10 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
           </div>
         ) : p.canPost ? (
           <div className="space-y-2">
-            {p.pendingVerdict && (
-              <div className="rounded-md border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-800/50 p-2 text-xs">
-                <span className="font-semibold">
-                  Verdict: {p.pendingVerdict.status} — {p.pendingVerdict.component}{" "}
-                  r{p.pendingVerdict.resultsVersion}
-                </span>
-                <button
-                  className="ml-2 text-stone-400 dark:text-stone-500 hover:text-red-600"
-                  onClick={p.onWithdrawVerdict}
-                  title="Withdraw verdict"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
             <button
               className="w-full rounded-md bg-stone-900 dark:bg-stone-200 py-2 text-sm font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
               disabled={
-                (p.annotations.length === 0 && !p.pendingVerdict) ||
+                p.annotations.length === 0 ||
                 p.submitState === "sending"
               }
               onClick={p.onSubmit}

@@ -20,6 +20,9 @@ const CHIP: Record<TrackerStatus, string> = {
   "in progress": "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900",
   done: "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900",
   "done (verified)": "bg-green-100 dark:bg-green-900/60 text-green-900 dark:text-green-200 border-green-300 dark:border-green-800",
+  "done (validated)": "bg-green-100 dark:bg-green-900/60 text-green-900 dark:text-green-200 border-green-300 dark:border-green-800",
+  "done (unvalidated)": "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900 border-dashed",
+  "done (retrofit)": "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900 border-dashed",
   dropped: "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900 line-through",
   unknown: "bg-stone-100 dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-800",
 };

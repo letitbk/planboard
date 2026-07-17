@@ -38,7 +38,7 @@ function renderOutline(data: BoardData): OutlineEntry[] {
     <Results data={data} canAnnotate={false}
       selectedComponent="01-x" annotations={[]}
       onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
-      onVerdict={noop} focusResults={null} navRequest={null}
+      focusResults={null} navRequest={null}
       onOutline={(e) => (published = e)} />,
   );
   return published;
@@ -83,7 +83,7 @@ describe("Results outline", () => {
       <Results data={data} canAnnotate={false}
         selectedComponent="01-x" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
-        onVerdict={noop} focusResults={null} navRequest={null}
+        focusResults={null} navRequest={null}
         onOutline={(e) => (published = e)} />,
     );
     expect(published.map((e) => e.label)).not.toContain("Findings");

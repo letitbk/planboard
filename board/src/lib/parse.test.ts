@@ -9,6 +9,7 @@ import {
   CONTRACT_SECTIONS,
   METHOD_SECTIONS,
   allFiles,
+  isDoneStatus,
   parseDecisionLog,
   parseExecutionPlan,
   parseHistory,
@@ -118,6 +119,13 @@ describe("decision log parsing", () => {
     const entries = parseDecisionLog(devData.files.decisionLog.content);
     const labels = entries[1].fields.map((f) => f.label);
     expect(labels).toContain("Decision (Claude)");
+  });
+
+  it("flags auto-captured decision entries", () => {
+    const md = "# Decision log\n\n## 2026-07-17 14:05 (auto-captured)\nContext: x\n";
+    const entries = parseDecisionLog(md);
+    expect(entries[0].autoCaptured).toBe(true);
+    expect(entries[0].lateCaptured).toBe(false);
   });
 });
 
@@ -316,14 +324,34 @@ describe("author field does not affect payload hash", () => {
 });
 
 describe("results layer", () => {
+  const trackerFixtureWithStatus = (status: string) =>
+    "# T\n\n## Components\n\n" +
+    "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n" +
+    "|---|---|---|---|---|---|\n" +
+    `| 1 | X | ${status} | — | — | — |\n`;
+
   it("parses done (verified) tracker status", () => {
-    const mp = parseMasterPlan(
-      "# T\n\n## Components\n\n" +
-        "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n" +
-        "|---|---|---|---|---|---|\n" +
-        "| 1 | X | done (verified) | — | — | — |\n",
-    );
+    const mp = parseMasterPlan(trackerFixtureWithStatus("done (verified)"));
     expect(mp.components[0].status).toBe("done (verified)");
+  });
+
+  it("parses the v0.20 validation-keyed done statuses", () => {
+    for (const status of [
+      "done (validated)",
+      "done (unvalidated)",
+      "done (retrofit)",
+    ]) {
+      expect(
+        parseMasterPlan(trackerFixtureWithStatus(status)).components[0].status,
+      ).toBe(status);
+    }
+  });
+
+  it("isDoneStatus covers the done family and nothing else", () => {
+    expect(isDoneStatus("done")).toBe(true);
+    expect(isDoneStatus("done (verified)")).toBe(true);
+    expect(isDoneStatus("done (validated)")).toBe(true);
+    expect(isDoneStatus("planned")).toBe(false);
   });
 
   it("allFiles includes results bundle text files", () => {

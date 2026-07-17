@@ -9,7 +9,6 @@ import type {
   ReportRequest,
   ReviewRequest,
   SignoffRequest,
-  VerdictRequest,
 } from "./types";
 
 export interface FeedbackMeta {
@@ -21,13 +20,12 @@ export interface FeedbackMeta {
   payloadHash: string;
   shareHash: string | null;
   annotations: Annotation[];
-  verdict?: VerdictRequest | null;
   reviewRequest?: ReviewRequest | null; // agent plan review (v0.9)
   reportRequest?: ReportRequest | null; // per-bundle report generation (v0.10)
   // Control surface (v0.15). signoff is ADVISORY here: the server validates
   // the typed action body and authors the authoritative order document itself.
   signoff?: SignoffRequest | null;
-  // reopen is comment-tier on the wire — a change request against an accepted
+  // reopen is comment-tier on the wire — a change request against a finalized
   // bundle; it never authorizes anything and non-live ingress strips it.
   reopen?: ReopenRequest | null;
 }
@@ -65,15 +63,13 @@ export const VIEW_LABEL: Record<DocCommentAnnotation["view"], string> = {
 
 export function buildFeedbackMarkdown(
   annotations: Annotation[],
-  verdict: VerdictRequest | null,
-  reviewRequest?: ReviewRequest | null,
-  reportRequest?: ReportRequest | null,
-  signoff?: SignoffRequest | null,
-  reopen?: ReopenRequest | null,
+  reviewRequest: ReviewRequest | null = null,
+  reportRequest: ReportRequest | null = null,
+  signoff: SignoffRequest | null = null,
+  reopen: ReopenRequest | null = null,
 ): string {
   if (
     annotations.length === 0 &&
-    !verdict &&
     !reviewRequest &&
     !reportRequest &&
     !signoff &&
@@ -94,9 +90,8 @@ export function buildFeedbackMarkdown(
       `## REOPEN REQUEST: ${reopen.component} r${reopen.resultsVersion}`,
       ...reopen.reason.split("\n").map((l) => `> ${l}`),
       "",
-      "A change request against an ACCEPTED bundle: never touch verdict.json;",
-      "route the reason and comments as revision feedback — the next capture",
-      "becomes the following results version with its own verdict.",
+      "A change request against a finalized bundle: never touch verdict.json;",
+      "route the reason and comments as revision feedback for the next capture.",
       "",
     );
   }
@@ -119,18 +114,6 @@ export function buildFeedbackMarkdown(
       `## REVIEW REQUEST: ${reviewRequest.agent} on ${t}`,
       "",
       "Run this reviewer on the target, then reopen the board with its comments seeded.",
-      "",
-    );
-  }
-  if (verdict) {
-    lines.push(
-      `## VERDICT: ${verdict.status.toUpperCase()} — ${verdict.component} r${verdict.resultsVersion}`,
-    );
-    if (verdict.comment) lines.push(`> ${verdict.comment}`);
-    lines.push(
-      "",
-      "Apply via: results.py verdict --component " +
-        `${verdict.component} --version ${verdict.resultsVersion} --status ${verdict.status}`,
       "",
     );
   }

@@ -42,7 +42,7 @@ describe("summary-only notice", () => {
       <Results data={summaryOnlyFindingData()} canAnnotate={false}
         selectedComponent="01-x" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
-        onVerdict={noop} focusResults={null} navRequest={null} />,
+        focusResults={null} navRequest={null} />,
     );
     expect(screen.getByText("Summary only")).toBeTruthy();
   });

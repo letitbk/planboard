@@ -117,6 +117,8 @@ export interface GateBatchEntry {
   proposedVersion: number;
   path: string;
   content: string;
+  contentHash: string;
+  ticketed?: boolean;
 }
 
 export interface ExecutionPlanGroup {
@@ -151,6 +153,7 @@ export interface ResultsManifest {
   provenance: "planned" | "retrofit";
   trigger: "initial" | "redo-after-review" | "plan-revision";
   capturedAt: string;
+  curatedBy?: "agent";
   late?: boolean; // backfill: plan-governed work captured after the fact
   summary?: string;
   metrics: {
@@ -250,13 +253,6 @@ export interface ResultsVerdict {
   comment?: string;
 }
 
-export interface VerdictRequest {
-  component: string;
-  resultsVersion: number;
-  status: "accepted" | "changes-requested";
-  comment: string;
-}
-
 export interface PlanVersionFile extends BoardFile {
   version: number;
 }
@@ -299,6 +295,9 @@ export type TrackerStatus =
   | "in progress"
   | "done"
   | "done (verified)"
+  | "done (validated)"
+  | "done (unvalidated)"
+  | "done (retrofit)"
   | "dropped"
   | "unknown";
 
@@ -314,6 +313,7 @@ export interface TrackerRow {
 export interface ParsedLogEntry {
   timestamp: string;
   lateCaptured: boolean;
+  autoCaptured: boolean;
   fields: { label: string; text: string }[];
   raw: string;
 }

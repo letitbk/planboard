@@ -232,7 +232,11 @@ function buildEvents(data: BoardData): TimelineEvent[] {
       kind: "decision",
       sortKey: entry.timestamp,
       title: "",
-      badge: entry.lateCaptured ? "late-captured at sync" : undefined,
+      badge: entry.lateCaptured
+        ? "late-captured at sync"
+        : entry.autoCaptured
+          ? "auto-captured"
+          : undefined,
       body: entry.raw,
       searchText: entry.raw,
     });

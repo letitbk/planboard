@@ -113,6 +113,26 @@ class TestStageCopyFinalize(unittest.TestCase):
             r1 = root / "plans" / "execution" / "02-analysis" / "results" / "r1"
             self.assertTrue((r1 / "manifest.json").is_file())
             self.assertTrue((r1 / "artifacts" / "fig1.png").is_file())
+
+    def test_finalize_tolerates_agent_curated_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            staging = self._stage(root)
+            manifest = manifest_for(staging)
+            manifest["curatedBy"] = "agent"
+            (staging / "manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8")
+            (staging / "report.md").write_text("# Report\n", encoding="utf-8")
+
+            finalized = run_cli(root, "finalize", "--staging", str(staging))
+
+            self.assertEqual(finalized.returncode, 0, finalized.stderr)
+            saved = json.loads((
+                root / "plans" / "execution" / "02-analysis" /
+                "results" / "r1" / "manifest.json"
+            ).read_text(encoding="utf-8"))
+            self.assertEqual(saved["curatedBy"], "agent")
             self.assertFalse(staging.exists())
 
     def test_finalize_numbers_sequentially(self):

@@ -68,7 +68,7 @@ describe("Results nav sync across components", () => {
       <Results data={data} canAnnotate={false}
         selectedComponent="01-a" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
-        onVerdict={noop} focusResults={null} navRequest={null} />,
+        focusResults={null} navRequest={null} />,
     );
     // Sanity: 01-a mounts on its latest bundle, r2 (idx 1) — this is the
     // stale idx the nav effect's guard will read on the next render.
@@ -79,7 +79,7 @@ describe("Results nav sync across components", () => {
       <Results data={data} canAnnotate={false}
         selectedComponent="02-b" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
-        onVerdict={noop} focusResults={null}
+        focusResults={null}
         navRequest={{ token: 1, resultsVersion: 11 }} />,
     );
 

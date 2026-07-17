@@ -10,6 +10,7 @@ import { hasSubstantiveFindings } from "../lib/findings";
 import type { OutlineEntry } from "../lib/outline";
 import type { ActiveFileRef } from "../lib/filesTree";
 import RequestChangesButton from "../components/RequestChangesButton";
+import { bundleState, bundleStateMark } from "../lib/bundleState";
 import type {
   Annotation,
   BoardData,
@@ -26,6 +27,7 @@ import {
   parseServes,
   preRenewalSlugs,
   slugFromLink,
+  isDoneStatus,
 } from "../lib/parse";
 
 const CHIP: Record<TrackerStatus, string> = {
@@ -34,6 +36,9 @@ const CHIP: Record<TrackerStatus, string> = {
   "in progress": "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900",
   done: "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900",
   "done (verified)": "bg-green-100 dark:bg-green-900/60 text-green-900 dark:text-green-200 border-green-300 dark:border-green-800",
+  "done (validated)": "bg-green-100 dark:bg-green-900/60 text-green-900 dark:text-green-200 border-green-300 dark:border-green-800",
+  "done (unvalidated)": "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900 border-dashed",
+  "done (retrofit)": "bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 border-green-200 dark:border-green-900 border-dashed",
   dropped: "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900 line-through",
   unknown: "bg-stone-100 dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-800",
 };
@@ -211,9 +216,9 @@ export default function Tracker({
       });
     }
     if (
-      (r.status === "done" ||
-        r.status === "done (verified)" ||
-        r.status === "in progress") &&
+      (isDoneStatus(r.status) ||
+        r.status === "in progress" ||
+        r.status === "planned") &&
       !slug
     ) {
       drift.push({
@@ -225,15 +230,23 @@ export default function Tracker({
       : null;
     if (g) {
       const latestResult = g.results?.[g.results.length - 1];
-      if (
-        r.status === "done" &&
-        latestResult &&
-        latestResult.verdict?.status !== "accepted"
-      ) {
-        drift.push({
-          text: `${r.component} is done but results r${latestResult.resultsVersion} are unverified`,
-          slug: slug ?? undefined,
-        });
+      if (isDoneStatus(r.status) && latestResult) {
+        const state = bundleState(latestResult);
+        const bundleOk = state.kind === "validated" || state.legacyVerdict === "accepted";
+        if (r.status === "done (validated)" && !bundleOk) {
+          drift.push({
+            text: `${r.component} is marked done (validated) but r${latestResult.resultsVersion} is unvalidated`,
+            slug: slug ?? undefined,
+          });
+        } else if (
+          (r.status === "done" || r.status === "done (verified)") &&
+          !bundleOk
+        ) {
+          drift.push({
+            text: `${r.component} is done but results r${latestResult.resultsVersion} are unvalidated`,
+            slug: slug ?? undefined,
+          });
+        }
       }
       if (latestResult?.manifest?.validation?.status === "deviations-found") {
         drift.push({
@@ -527,12 +540,7 @@ export default function Tracker({
                     {(() => {
                       if (!latestResult)
                         return <span className="text-xs text-stone-400 dark:text-stone-500">—</span>;
-                      const mark =
-                        latestResult.verdict?.status === "accepted"
-                          ? "✓"
-                          : latestResult.verdict?.status === "changes-requested"
-                            ? "✕"
-                            : "●";
+                      const mark = bundleStateMark(latestResult).trim();
                       return (
                         <button
                           className="text-xs font-medium text-blue-700 dark:text-blue-400 underline hover:text-blue-900 dark:hover:text-blue-300"

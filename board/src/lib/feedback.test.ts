@@ -8,7 +8,7 @@ import {
   VIEW_LABEL,
   type FeedbackMeta,
 } from "./feedback";
-import type { Annotation, VerdictRequest } from "./types";
+import type { Annotation } from "./types";
 
 const meta: FeedbackMeta = {
   sessionId: "abcdef12-3456-7890-abcd-ef1234567890",
@@ -80,13 +80,13 @@ describe("buildFeedbackMarkdown", () => {
   };
 
   it("returns the no-feedback stub when empty", () => {
-    expect(buildFeedbackMarkdown([], null)).toBe(
+    expect(buildFeedbackMarkdown([])).toBe(
       "# Board Feedback\n\nNo feedback.",
     );
   });
 
   it("renders doc-comments with view label, section, and quote", () => {
-    const md = buildFeedbackMarkdown([docComment], null);
+    const md = buildFeedbackMarkdown([docComment]);
     expect(md).toContain("## 1. [Tracker — row 3: Platform reach]");
     expect(md).toContain('Feedback on: "Platform reach"');
     expect(md).toContain("> status is wrong");
@@ -95,20 +95,19 @@ describe("buildFeedbackMarkdown", () => {
   it("falls back to the bare view label when sectionHeading is empty", () => {
     const md = buildFeedbackMarkdown(
       [{ ...docComment, sectionHeading: "" } as Annotation],
-      null,
     );
     expect(md).toContain("## 1. [Tracker]");
   });
 
   it("keeps plan-comment and general formats unchanged", () => {
-    const md = buildFeedbackMarkdown([planComment, general], null);
+    const md = buildFeedbackMarkdown([planComment, general]);
     expect(md).toContain("## 1. [03-x v2 — Goal]");
     expect(md).toContain('Feedback on: "the goal"');
     expect(md).toContain("## 2. [Timeline — general]");
   });
 
   it("renders a review-request header (agent plan review)", () => {
-    const md = buildFeedbackMarkdown([], null, {
+    const md = buildFeedbackMarkdown([], {
       agent: "subagent",
       scope: "plan",
       component: "03-x",
@@ -121,7 +120,6 @@ describe("buildFeedbackMarkdown", () => {
   it("badges an agent-authored plan comment with (via …)", () => {
     const md = buildFeedbackMarkdown(
       [{ ...planComment, author: "Codex" } as Annotation],
-      null,
     );
     expect(md).toContain("## 1. [03-x v2 — Goal] (via Codex)");
   });
@@ -129,7 +127,6 @@ describe("buildFeedbackMarkdown", () => {
   it("badges agent-authored doc and result comments with (via …)", () => {
     const docMd = buildFeedbackMarkdown(
       [{ ...docComment, author: "Gemini" } as Annotation],
-      null,
     );
     expect(docMd).toContain("## 1. [Tracker — row 3: Platform reach] (via Gemini)");
     const resultComment: Annotation = {
@@ -137,30 +134,27 @@ describe("buildFeedbackMarkdown", () => {
       target: { kind: "report", quote: "n = 40", occurrenceIndex: 0 },
       comment: "underpowered", author: "Subagent panel · rigor",
     };
-    const resMd = buildFeedbackMarkdown([resultComment], null);
+    const resMd = buildFeedbackMarkdown([resultComment]);
     expect(resMd).toContain("## 1. [03-x r2 — report] (via Subagent panel · rigor)");
     expect(resMd).toContain('Feedback on: "n = 40"');
   });
 
   it("renders review-request headers for master and results scopes", () => {
     expect(
-      buildFeedbackMarkdown([], null, { agent: "codex", scope: "master" }),
+      buildFeedbackMarkdown([], { agent: "codex", scope: "master" }),
     ).toContain("## REVIEW REQUEST: codex on master plan");
     expect(
-      buildFeedbackMarkdown([], null, {
+      buildFeedbackMarkdown([], {
         agent: "gemini", scope: "results", component: "03-x", resultsVersion: 1,
       }),
     ).toContain("## REVIEW REQUEST: gemini on 03-x r1");
   });
 
-  it("renders the verdict block with the apply command", () => {
-    const verdict: VerdictRequest = {
-      component: "03-x", resultsVersion: 1,
-      status: "changes-requested", comment: "redo fig 2",
-    };
-    const md = buildFeedbackMarkdown([], verdict);
-    expect(md).toContain("## VERDICT: CHANGES-REQUESTED — 03-x r1");
-    expect(md).toContain("results.py verdict --component 03-x --version 1");
+  it("emits no VERDICT block and no verdict fence key", () => {
+    const md = buildFeedbackMarkdown([]);
+    expect(md).not.toContain("VERDICT");
+    const doc = buildFeedbackDocument("body", meta);
+    expect(doc).not.toContain('"verdict"');
   });
 
   it("exposes display labels for every doc-comment view", () => {
@@ -175,7 +169,7 @@ describe("buildFeedbackMarkdown", () => {
         docKey: "plans/reports/01-x-r1-report.md", scope: "", quote: "the finding",
         prefix: "", suffix: "", sectionHeading: "", occurrenceIndex: 0,
         anchored: true, comment: "check this" },
-    ], null);
+    ]);
     expect(md).toContain("[Reports]");
     expect(md).toContain('Feedback on: "the finding"');
   });
@@ -188,7 +182,7 @@ describe("buildFeedbackMarkdown", () => {
       { id: "g", type: "general", view: "timeline", comment: "c2",
         author: "Bo" } as unknown as Annotation,
     ];
-    const md = buildFeedbackMarkdown(anns, null);
+    const md = buildFeedbackMarkdown(anns);
     expect(md).toContain("(via Ada)");
     expect(md).toContain("(via Bo)");
   });
@@ -207,7 +201,7 @@ describe("control-surface emitters (v0.15)", () => {
   };
 
   it("signoff emits its section FIRST and round-trips the fence key", () => {
-    const md = buildFeedbackMarkdown([], null, null, null, {
+    const md = buildFeedbackMarkdown([], null, null, {
       component: "01-x", version: 2, decision: "approve",
     });
     const afterTitle = md.split("\n").slice(2).join("\n");
@@ -225,7 +219,7 @@ describe("control-surface emitters (v0.15)", () => {
   });
 
   it("request-changes reason rides as a blockquote", () => {
-    const md = buildFeedbackMarkdown([], null, null, null, {
+    const md = buildFeedbackMarkdown([], null, null, {
       component: "01-x", version: 2, decision: "request-changes",
       reason: "tighten H2\nand H3",
     });
@@ -234,12 +228,14 @@ describe("control-surface emitters (v0.15)", () => {
   });
 
   it("reopen emits a change-request order that never touches verdict.json", () => {
-    const md = buildFeedbackMarkdown([], null, null, null, null, {
+    const md = buildFeedbackMarkdown([], null, null, null, {
       component: "01-x", resultsVersion: 3, reason: "n changed",
     });
     expect(md).toContain("## REOPEN REQUEST: 01-x r3");
     expect(md).toContain("> n changed");
+    expect(md).toContain("against a finalized bundle");
     expect(md).toContain("never touch verdict.json");
+    expect(md).not.toContain("its own verdict");
     const doc = buildFeedbackDocument(md, {
       ...base,
       reopen: { component: "01-x", resultsVersion: 3, reason: "n changed" },

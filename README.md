@@ -30,27 +30,27 @@ The plugin adds a handful of commands to Claude Code. A normal project moves thr
 
 **1. Opt a project in** — `/research-plans:init`. A short interview seeds the master plan: the research questions, and the components (research activities) that serve them. Everything else is opt-in; the plugin does nothing in projects you haven't initialized.
 
-**2. Scope and sign a plan** — `/research-plans:plan`. You and the agent scope the next component and draft its plan. When the agent goes to sign it, your browser opens with the plan rendered and diffed against the prior version. You approve — and it's written exactly as shown — or you request changes with comments, and the agent revises. You are always the one who signs.
+**2. Scope and sign a plan** — `/research-plans:plan`. You and the agent scope the next component and draft its plan. The browser opens to a persistent review room with the scored draft, annotations, and its diff against the prior version. You approve — and it is written exactly as shown — or request changes with comments and the agent revises and rescores it. You are always the one who signs.
 
-**3. Do the work.** The agent cleans the data, runs the model, makes the figures — in your normal Claude Code session, at normal speed. The plan is the spine it works against, not a cage.
+**3. Execute the loop** — `/research-plans:execute`. One prompt asks whether to run now, which model to use, and whether to make a report. Then the agent commits the signed plan, executes it, captures and validates the bundle, reports when requested, updates the tracker and log, suggests one commit, opens the board, and proposes the next component. The plan is the spine it works against, not a cage; interpretive choices still come back to you before the agent acts.
 
-**4. Checkpoint** — `/research-plans:sync`. After a work session, this updates the tracker, catches any decisions that didn't get logged, and versions the plan if execution deviated from it. When the plan changes, it's a new version that says what changed and why — the old one is never edited. Deviation isn't failure; unrecorded deviation is.
+**4. Recover work outside the loop** — `/research-plans:sync`. This manual checkpoint handles work done outside `/execute`, crashed sessions, hosted comments, and decisions that did not get logged. It updates the tracker and versions the plan if execution deviated from it. When the plan changes, it is a new version that says what changed and why — the old one is never edited. Deviation is not failure; unrecorded deviation is.
 
 ![A plan's version 1 to version 2 diff on the board, with an amber banner stating the reason for the revision and the added and removed lines highlighted](docs/images/plan-diff.png)
 
 <sub>A revision is a new version, not an edit. The banner records *why* v2 replaced v1 — here, validation found the decomposition wasn't reported the way the plan promised.</sub>
 
-**5. Capture results** — `/research-plans:results`. This seals a versioned, immutable bundle for the component: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing your signed plan against what actually ran.
+**5. Capture results manually when needed** — `/research-plans:results`. The execution loop normally does this for you. The direct command seals a versioned, immutable bundle for out-of-loop work or a recapture: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing your signed plan against what actually ran.
 
 ![The Results view showing key-number tiles and a coefficient-plot figure, with a link reading "produced by code/02_wage_gaps.py"](docs/images/results-figure.png)
 
 <sub>Every figure carries its numbers and a link straight to the script that produced it. Nothing on the board is a claim you can't trace back to code.</sub>
 
-**6. Review, decide, share** — `/research-plans:board`. Open the dashboard. Read a plan and its revision history, or review a results bundle: its validation runs the signed plan against what executed, step by step, and you issue the verdict — accept, or request changes with comments that flow back to your session and drive a re-run. Share the whole thing with a collaborator who only has a browser.
+**6. Review, reopen, share** — `/research-plans:board`. Open the dashboard. Read a plan and its revision history, or review a results bundle: validation compares the signed plan with what executed, step by step, and defines the bundle's standing state. Reopen any finalized bundle with comments to drive a fix and a new capture. Share the whole thing with a collaborator who only has a browser.
 
-![The Results review surface: an Accept / Request-changes verdict bar, and a plan-vs-execution validation panel flagging a deviation, each step marked met, partial, or deviated](docs/images/results-review.png)
+![The Results review surface with a plan-vs-execution validation panel flagging a deviation, each step marked met, partial, or deviated](docs/images/results-review.png)
 
-<sub>The validation checks the work against the plan you signed and flags where they diverge — advisory, never a gate. You hold the verdict.</sub>
+<sub>The validation checks the work against the plan you signed and flags where they diverge — advisory, never a gate. Reopen requests a fix without changing the immutable bundle.</sub>
 
 The board runs on `python3` alone — nothing to install — as a small local server, or as a single self-contained HTML file you can email. Sharing to a private, password-protected link for browser-only collaborators is one more step (it uses Vercel and needs Node.js once, to set up). Full details are in the [reference](docs/reference.md#the-board).
 
@@ -84,7 +84,7 @@ In Claude Code:
 
 Then restart Claude Code, and run `/research-plans:init` in a project to opt it in. See [QUICKSTART.md](QUICKSTART.md) for a walkthrough.
 
-The core plan-execute-sync workflow needs only `python3` (no dependencies). The optional private web sharing additionally needs Node.js. Updating, pinning to a specific version, silencing update notices, and everything else is in the [reference](docs/reference.md).
+The core plan-review-execute-tail workflow needs only `python3` (no dependencies); `/sync` is the manual recovery checkpoint. The optional private web sharing additionally needs Node.js. Updating, pinning to a specific version, silencing update notices, and everything else is in the [reference](docs/reference.md).
 
 ## Reference
 

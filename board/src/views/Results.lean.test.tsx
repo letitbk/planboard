@@ -47,7 +47,7 @@ function renderLeanFixture() {
     <Results data={leanFindingData()} canAnnotate={false}
       selectedComponent="01-x" annotations={[]}
       onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
-      onVerdict={noop} focusResults={null} navRequest={null} />,
+      focusResults={null} navRequest={null} />,
   );
 }
 

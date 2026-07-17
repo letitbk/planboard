@@ -52,7 +52,7 @@ describe("Results viewer wiring", () => {
       <Results data={csvData()} canAnnotate={false}
         selectedComponent="01-x" annotations={[]}
         onAddResultComment={noop} onAddScriptComment={noop} onPaintResult={noop}
-        onVerdict={noop} focusResults={null} navRequest={null} />,
+        focusResults={null} navRequest={null} />,
     );
     fireEvent.click(screen.getByText("view table.csv"));
     expect(await screen.findByText("v2")).toBeTruthy();

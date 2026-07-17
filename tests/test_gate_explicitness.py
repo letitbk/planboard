@@ -69,7 +69,7 @@ class TestBatchGuard(unittest.TestCase):
             make_init_component(root)
             add_draft(root, "03-x")
             msg = self._die_message(root)
-            self.assertIn("/adopt bulk flow", msg)
+            self.assertIn("reviews several pending drafts", msg)
             self.assertIn("--allow-single", msg)
             self.assertIn("Approve the draft on the board", msg)
 
@@ -121,7 +121,7 @@ class TestBatchGuard(unittest.TestCase):
             msg = self._die_message(root)
             self.assertIn("1 pending draft", msg)
 
-    def test_order_bound_orphan_is_retired_before_batch_preflight(self):
+    def test_order_bound_orphan_counts_as_pending(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_init_component(root)
@@ -134,7 +134,8 @@ class TestBatchGuard(unittest.TestCase):
             payload = board.apply_gate_batch(root, {}, allow_single=True)
 
             self.assertEqual(len(payload["gateBatch"]), 1)
-            self.assertFalse(ticket.exists())
+            self.assertFalse(board.has_valid_ticket(root, "03-x", 1, DRAFT))
+            self.assertTrue(ticket.exists())
 
     def test_numeric_newest_draft_selected(self):
         # Pre-existing bug: lexicographic sort picked .draft-v9 over .draft-v10.

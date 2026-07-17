@@ -26,7 +26,7 @@ describe("hosted feedback golden fixture", () => {
       focus: null, reviewer: "Ada", payloadHash: "ph", shareHash: "abc123",
       annotations,
     };
-    const doc = buildFeedbackDocument(buildFeedbackMarkdown(annotations, null), meta);
+    const doc = buildFeedbackDocument(buildFeedbackMarkdown(annotations), meta);
     if (!existsSync(dirname(FIXTURE))) mkdirSync(dirname(FIXTURE), { recursive: true });
     writeFileSync(FIXTURE, JSON.stringify({ annotations, meta, doc }, null, 2) + "\n");
     // Sanity: the fixture we just wrote parses back.

@@ -1,6 +1,6 @@
 # Quickstart
 
-This is the short path from install to your first plan-execute-sync loop. It assumes Claude Code is installed and you have a research project (new or ongoing) in a folder, ideally a git repository. For what the plugin is and why you'd use it, see the [README](README.md); for the full reference on every command and the board, see [docs/reference.md](docs/reference.md).
+This is the short path from install to your first plan-review-execute-tail loop. It assumes Claude Code is installed and you have a research project (new or ongoing) in a folder, ideally a git repository. For what the plugin is and why you'd use it, see the [README](README.md); for the full reference on every command and the board, see [docs/reference.md](docs/reference.md).
 
 ## 1. Install the plugin
 
@@ -31,27 +31,29 @@ Claude will ask a few questions, starting with your research questions (they bec
 
 Claude proposes the next component (or name one: `/research-plans:plan data cleaning`). Expect a dialogue, not a generated document. It will walk through the substantive choices one dimension at a time and ask for your reason on each. That is deliberate: the reasons are what make the plan yours. If the data has not been explored yet, it will offer a short read-only look first, which makes for much better scope decisions.
 
-When the plan is ready to sign, your browser opens automatically: this is the sign-off gate. The proposed version is rendered with its diff, and you either approve it (one click; the file is written exactly as shown) or request changes with comments (Claude revises and the gate reopens). The result is `plans/execution/01-data-cleaning/v1.md` with your sign-off, and the tracker updated.
+When the plan is ready, your browser opens to the persistent review room. The draft arrives with its rubric score, annotations, and version diff. Approve it and the signed `plans/execution/01-data-cleaning/v1.md` is written exactly as shown; request changes and Claude revises, rescoring the draft before reopening the room. Finalization leaves the tracker at `planned`.
 
-## 4. Execute, then sync
+## 4. Execute the loop
 
-Work normally under the plan in the same or later sessions. Claude should surface interpretive choices before acting and add entries to the decision log as things happen. When a work session ends, or whenever you want a checkpoint:
+After approval, one prompt asks whether to execute now, which model to use, and whether to generate a report. Choosing now also authorizes the plan commit; Claude marks the tracker `in progress`, executes the signed plan, captures an agent-curated bundle, validates it, generates the report when requested, updates the tracker and decision log, suggests one commit, opens the finished bundle on the board, and proposes the next component. Interpretive choices still come back to you before Claude acts.
+
+Choose later and re-enter the same prompt any time:
 
 ```
-/research-plans:sync
+/research-plans:execute data cleaning
 ```
 
-This updates the tracker, asks you about any decisions that went unlogged (they get an explicit `late-captured` label), and, if the work genuinely deviated from the plan, drafts a `v2.md` for your approval. `v1.md` is never edited. Revising the plan is the process working, not a failure.
+The loop normally runs without another stop. If validation finds a deviation while the bundle is still staged, it pauses once: revise the plan, fix the work, or accept and log the deviation. The selected remedy finishes the same bundle exactly once.
 
 ## 5. Capture and verify results
 
-When a component's analysis has run, capture what it produced:
+The execution loop captures results automatically. For work done outside it—or when you want to recapture manually—run:
 
 ```
 /research-plans:results data cleaning
 ```
 
-Claude proposes the artifacts (figures, tables, key numbers) it can trace to the work, you confirm titles and captions, and it writes an immutable bundle at `plans/execution/<component>/results/r1/` — a brief report, snapshot copies of the files, the exact scripts that produced them, and two automatic advisory checks: a **validation** that compares your signed plan against what actually ran, and a mechanical **integrity** check (do the artifact checksums match, is every finding backed by an artifact). Then open the board on it: the Results view shows the validation and integrity results, the numbers as tiles, the figure/table gallery, and a click-through to each producing script; the narrative report lives on the Reports view with version chips (a bundle with nothing substantive to report gets no report). Press **Accept** and the verdict is recorded in the decision log and the tracker flips to `done (verified)`; press **Request changes** with comments and Claude fixes the scripts, re-runs, and captures `r2` — `r1` stays exactly as you reviewed it.
+Claude proposes the artifacts (figures, tables, key numbers) it can trace to the work, you confirm titles and captions, and it writes an immutable bundle at `plans/execution/<component>/results/r1/` — a brief report, snapshot copies of the files, the exact scripts that produced them, and two automatic advisory checks: a **validation** that compares your signed plan against what actually ran, and a mechanical **integrity** check (do the artifact checksums match, is every finding backed by an artifact). Then open the board on it: the Results view shows the validation and integrity results, the numbers as tiles, the figure/table gallery, and a click-through to each producing script; the narrative report lives on the Reports view with version chips (a bundle with nothing substantive to report gets no report). Validation is the bundle's standing state and sets the tracker's done-family status. To request a change after finalization, press **Reopen** with comments. Claude fixes the scripts, re-runs, and captures `r2`; `r1` stays exactly as you reviewed it.
 
 Started using the plugin mid-project? `/research-plans:results --adopt` scans your output folders and brings existing figures and tables under verification, marked `retrofit`.
 
