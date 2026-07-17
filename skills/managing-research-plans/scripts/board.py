@@ -875,7 +875,7 @@ def token_ok(body, expected):
 def payload_generation(payload):
     """Content identity of the served payload, excluding per-boot secrets."""
     trimmed = {k: v for k, v in payload.items()
-               if k not in ("publishToken", "boardToken")}
+               if k not in ("publishToken", "boardToken", "bootId")}
     return hashlib.sha256(
         json.dumps(trimmed, sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()
@@ -1086,6 +1086,7 @@ def serve(root, payload, args):
     proj_id = payload["projectId"]
     board_token = hashlib.sha256(os.urandom(32)).hexdigest()
     payload["boardToken"] = board_token
+    payload["bootId"] = boot_id  # client reconnect baseline; excluded from generation
     generation = payload_generation(payload)
     html = inject(template_path().read_text(encoding="utf-8"), payload)
     html_bytes = html.encode("utf-8")

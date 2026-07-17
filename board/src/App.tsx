@@ -785,7 +785,7 @@ export default function App({ data }: { data: BoardData }) {
   };
 
   // ---- Reconnect (control surface, spec §4): health poll + reload machine.
-  const [conn, setConn] = useState(() => initialConn(data.projectId ?? ""));
+  const [conn, setConn] = useState(() => initialConn(data.projectId ?? "", data.bootId ?? null));
   const connRef = useRef(conn);
   connRef.current = conn;
   const dispatchConn = (e: ConnEvent) => setConn((st) => reduceConn(st, e));

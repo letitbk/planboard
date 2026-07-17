@@ -1990,6 +1990,24 @@ class TestLockMeta(unittest.TestCase):
             self.assertEqual(len(info.get("bootId", "")), 32)
 
 
+class BootIdPayloadTest(unittest.TestCase):
+    def test_payload_generation_excludes_boot_id(self):
+        base = {"schemaVersion": 1, "project": {"name": "p"}}
+        with_boot = dict(base, bootId="a" * 32)
+        self.assertEqual(
+            board.payload_generation(base),
+            board.payload_generation(with_boot),
+        )
+
+    def test_payload_generation_still_varies_on_content(self):
+        base = {"schemaVersion": 1, "project": {"name": "p"}}
+        changed = {"schemaVersion": 1, "project": {"name": "q"}}
+        self.assertNotEqual(
+            board.payload_generation(base),
+            board.payload_generation(changed),
+        )
+
+
 class TestServeHTTP(unittest.TestCase):
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()

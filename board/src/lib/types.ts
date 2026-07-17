@@ -19,6 +19,7 @@ export interface BoardData {
   shareHash?: string; // remote mode: Python-computed, echoed back in feedback
   projectId?: string; // live: stable server identity (draft storage + reconnect)
   boardToken?: string; // live: per-boot token required on mutating routes
+  bootId?: string; // live: per-boot identity seeding the reconnect baseline (excluded from generation)
   gate?: { component: string; proposedVersion: number }; // sign-off gate mode
   gateBatch?: GateBatchEntry[]; // batch sign-off wizard (one plan at a time)
   modelProfile?: ModelProfile; // per-stage model profile (Models tab); present-only

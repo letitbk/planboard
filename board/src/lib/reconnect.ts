@@ -1,7 +1,7 @@
 // Reconnect state machine for the persistent live board (control surface).
 // Pure and framework-free: App wires it to a health poll + POST responses.
-// The baseline bootId for reload detection comes ONLY from an accepted POST
-// response or an observed same-project health — never from a pre-submit poll.
+// The baseline bootId for reload detection starts with the boot payload and is
+// refreshed by accepted POST responses or observed same-project health.
 
 export type ConnPhase =
   | { kind: "online"; lastBootId: string | null }
@@ -29,8 +29,8 @@ export interface ConnState {
   projectId: string;
 }
 
-export function initialConn(projectId: string): ConnState {
-  return { phase: { kind: "online", lastBootId: null }, misses: 0, projectId };
+export function initialConn(projectId: string, bootId: string | null = null): ConnState {
+  return { phase: { kind: "online", lastBootId: bootId }, misses: 0, projectId };
 }
 
 function lastBootOf(phase: ConnPhase): string | null {

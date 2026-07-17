@@ -118,3 +118,21 @@ describe("reconnect reducer", () => {
     expect(s).toEqual(initialConn(P));
   });
 });
+
+describe("initialConn bootId seeding", () => {
+  it("seeds the reload baseline from the payload bootId", () => {
+    const s = initialConn("p1", "boot-a");
+    expect(shouldReload(s, { bootId: "boot-b", projectId: "p1" })).toBe(true);
+    expect(shouldReload(s, { bootId: "boot-a", projectId: "p1" })).toBe(false);
+  });
+
+  it("keeps the null baseline when no bootId is provided", () => {
+    const s = initialConn("p1");
+    expect(shouldReload(s, { bootId: "boot-b", projectId: "p1" })).toBe(false);
+  });
+
+  it("never reloads for a foreign project even with a seeded baseline", () => {
+    const s = initialConn("p1", "boot-a");
+    expect(shouldReload(s, { bootId: "boot-b", projectId: "other" })).toBe(false);
+  });
+});
