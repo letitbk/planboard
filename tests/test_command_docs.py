@@ -7,6 +7,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 
+class TestCommandInventoryDocs(unittest.TestCase):
+    def test_expected_command_files_exist(self):
+        for name in ("adopt", "board", "execute", "init", "models", "plan",
+                     "renew", "report", "results", "review", "sync"):
+            self.assertTrue((REPO / "commands" / (name + ".md")).is_file(), name)
+
+
 class TestInitPortabilityDocs(unittest.TestCase):
     def test_headless_recovery_lists_every_required_answer(self):
         command = (REPO / "commands" / "init.md").read_text(encoding="utf-8")
