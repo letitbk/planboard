@@ -312,6 +312,7 @@ export interface TrackerRow {
 export interface ParsedLogEntry {
   timestamp: string;
   lateCaptured: boolean;
+  autoCaptured: boolean;
   fields: { label: string; text: string }[];
   raw: string;
 }

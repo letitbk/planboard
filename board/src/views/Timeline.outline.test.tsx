@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, it, expect } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import Timeline from "./Timeline";
 import type { BoardData, BoardFile } from "../lib/types";
 import type { OutlineEntry } from "../lib/outline";
@@ -78,5 +78,22 @@ describe("Timeline outline", () => {
     const ids = published.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(["timeline-evt-0", "timeline-evt-1"]);
+  });
+
+  it("badges auto-captured decision entries", () => {
+    const fixture = data();
+    fixture.files.decisionLog.content =
+      "# Decision log\n\n## 2026-07-17 14:05 (auto-captured)\n\n**Context:** x\n";
+    render(
+      <Timeline
+        data={fixture}
+        canAnnotate={false}
+        annotations={[]}
+        onAddDocComment={noop}
+        onPaintResult={noop}
+        onAddGeneral={noop}
+      />,
+    );
+    expect(screen.getByText("auto-captured")).toBeTruthy();
   });
 });

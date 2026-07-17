@@ -216,6 +216,7 @@ export function parseDecisionLog(raw: string): ParsedLogEntry[] {
     entries.push({
       timestamp: m[1],
       lateCaptured: /late-captured/i.test(m[2]),
+      autoCaptured: /auto-captured/i.test(m[2]),
       fields,
       raw: body,
     });

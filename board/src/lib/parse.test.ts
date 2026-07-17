@@ -120,6 +120,13 @@ describe("decision log parsing", () => {
     const labels = entries[1].fields.map((f) => f.label);
     expect(labels).toContain("Decision (Claude)");
   });
+
+  it("flags auto-captured decision entries", () => {
+    const md = "# Decision log\n\n## 2026-07-17 14:05 (auto-captured)\nContext: x\n";
+    const entries = parseDecisionLog(md);
+    expect(entries[0].autoCaptured).toBe(true);
+    expect(entries[0].lateCaptured).toBe(false);
+  });
 });
 
 describe("execution plan parsing (contract: current template)", () => {
