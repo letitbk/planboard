@@ -37,6 +37,11 @@ function data(): BoardData {
             { version: 1, path: "plans/execution/01-x/v1.md", content: "a" },
             { version: 2, path: "plans/execution/01-x/v2.md", content: "b" },
           ],
+          draft: {
+            path: "plans/execution/01-x/.draft-v3.md",
+            content: "draft",
+            proposedVersion: 3,
+          },
           results: [bundle(1, true), bundle(2, false)],
         },
         { component: "02-draft-only", versions: [], draft: { path: "plans/execution/02-draft-only/.draft-v1.md", content: "d", proposedVersion: 1 } },
@@ -67,7 +72,7 @@ describe("buildFilesTree", () => {
   it("groups a component's plans/results/reports; Plans is a group of versions", () => {
     const comp = buildFilesTree(data()).find((n) => n.id === "component:01-x")!;
     const plans = child(comp, "01-x:plans");
-    expect(plans.children!.map((c) => c.label)).toEqual(["v1", "v2"]);
+    expect(plans.children!.map((c) => c.label)).toEqual(["v1", "v2", "v3 (draft)"]);
     expect(plans.children!.find((c) => c.label === "v2")).toMatchObject({
       badge: "latest",
       route: { tab: "plans", component: "01-x", planPath: "plans/execution/01-x/v2.md" },
@@ -79,8 +84,34 @@ describe("buildFilesTree", () => {
 
   it("gives a draft-only component a Plans leaf that routes to its Plans view", () => {
     const comp = buildFilesTree(data()).find((n) => n.id === "component:02-draft-only")!;
-    const plans = child(comp, "02-draft-only:plans");
+    const plans = comp.children!.find((n) => n.label === "Plans")!;
     expect(plans.children).toBeUndefined();
     expect(plans.route).toMatchObject({ tab: "plans", component: "02-draft-only" });
+  });
+
+  it("adds a draft leaf after the signed versions when a working draft exists", () => {
+    const tree = buildFilesTree(data());
+    const plans = tree
+      .find((n) => n.id === "component:01-x")!
+      .children!.find((n) => n.id === "01-x:plans")!;
+    const draft = plans.children!.find(
+      (n) => n.id === "plans/execution/01-x/.draft-v3.md",
+    );
+    expect(draft).toBeTruthy();
+    expect(draft!.label).toBe("v3 (draft)");
+    expect(draft!.badge).toBe("draft");
+    expect(draft!.route).toMatchObject({
+      tab: "plans",
+      component: "01-x",
+      planPath: "plans/execution/01-x/.draft-v3.md",
+    });
+  });
+
+  it("uses the draft path as the Plans leaf id for draft-only components", () => {
+    const tree = buildFilesTree(data());
+    const plans = tree
+      .find((n) => n.id === "component:02-draft-only")!
+      .children!.find((n) => n.label === "Plans")!;
+    expect(plans.id).toBe("plans/execution/02-draft-only/.draft-v1.md");
   });
 });

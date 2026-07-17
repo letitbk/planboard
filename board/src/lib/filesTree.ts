@@ -37,27 +37,38 @@ export function buildFilesTree(data: BoardData): FileNode[] {
     const g = groups.find((x) => x.component === comp)!;
     const children: FileNode[] = [];
 
-    // Plans: with signed versions → a group of version leaves; a group with only
-    // a draft → a single Plans leaf (draft-only components stay reachable).
+    // Plans: with signed versions → a group of version leaves (plus the working
+    // draft, when present — the draft is what gets reviewed); a group with only
+    // a draft → a single Plans leaf whose id is the draft path so the active-
+    // file highlight can attach.
     const versions = g.versions ?? [];
     if (versions.length) {
       const latest = Math.max(...versions.map((v) => v.version));
+      const versionLeaves: FileNode[] = versions
+        .slice()
+        .sort((a, b) => a.version - b.version)
+        .map((v) => ({
+          id: v.path,
+          label: `v${v.version}`,
+          badge: v.version === latest ? "latest" : undefined,
+          route: route({ tab: "plans", component: comp, planPath: v.path }),
+        }));
+      if (g.draft) {
+        versionLeaves.push({
+          id: g.draft.path,
+          label: `v${g.draft.proposedVersion} (draft)`,
+          badge: "draft",
+          route: route({ tab: "plans", component: comp, planPath: g.draft.path }),
+        });
+      }
       children.push({
         id: `${comp}:plans`,
         label: "Plans",
-        children: versions
-          .slice()
-          .sort((a, b) => a.version - b.version)
-          .map((v) => ({
-            id: v.path,
-            label: `v${v.version}`,
-            badge: v.version === latest ? "latest" : undefined,
-            route: route({ tab: "plans", component: comp, planPath: v.path }),
-          })),
+        children: versionLeaves,
       });
     } else {
       children.push({
-        id: `${comp}:plans`,
+        id: g.draft?.path ?? `${comp}:plans`,
         label: "Plans",
         route: route({ tab: "plans", component: comp }),
       });
