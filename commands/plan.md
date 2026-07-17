@@ -1,5 +1,5 @@
 ---
-description: Scope one or more components and co-author their execution plans
+description: Scope components and co-author their execution plans
 argument-hint: [component name/number ...]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*)
 ---
