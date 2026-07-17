@@ -260,12 +260,13 @@ export default function PlanReader({
     [annotations, doc],
   );
 
-  // The five-channel score for THIS version, matched by the scorecard's
-  // authoritative planPath and only for a signed version (a draft/snapshot never
-  // carries a score). A duplicate match is treated as ambiguous — show nothing
-  // rather than a possibly-wrong score.
+  // The five-channel score for THIS document, matched by the scorecard's
+  // authoritative planPath. v0.20: the working draft is scorable too (the
+  // review room scores before sign-off; review.md's idempotence rule migrates
+  // the card's planPath to the signed file). Snapshots never carry a score.
+  // A duplicate match is ambiguous — show nothing rather than a wrong score.
   const scorecard = useMemo(() => {
-    if (!doc || doc.docKind !== "signed") return null;
+    if (!doc || (doc.docKind !== "signed" && doc.docKind !== "workingDraft")) return null;
     const matches = data.files.reviews
       .map((r) => parseScorecard(r.content))
       .filter((sc) => sc && sc.planPath === doc.path);
