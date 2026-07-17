@@ -1,6 +1,6 @@
 # Review — <Component> v<N>
 
-Plan: [v<N>.md](../execution/<NN-slug>/v<N>.md) · Rubric: plan-rubric.md (v0.4) · Date: <YYYY-MM-DD>
+Plan: [<v<N>.md or .draft-v<N>.md>](<the scored file's actual relative path: ../execution/<NN-slug>/v<N>.md or ../execution/<NN-slug>/.draft-v<N>.md>) · Rubric: plan-rubric.md (v0.4) · Date: <YYYY-MM-DD>
 Profile: **G<0-3> · D<0-3> · S<0-3> · V<0-3> · B<0-3> = <total>/15**
 Flags: **<none | uncommitted | unsupported-sources | unrecorded-deviation …>** <!-- non-scored workflow-integrity flags; omit or "none" when clean -->
 <!-- On an unreadable plan, replace the Profile/Flags lines with: Status: **unscorable — <what cannot be extracted>** and omit the channel table. -->
@@ -31,7 +31,7 @@ Flags: **<none | uncommitted | unsupported-sources | unrecorded-deviation …>**
 
 ```json board-scorecard
 {"schemaVersion": 3, "status": "scored", "component": "<NN-slug>", "planVersion": <N>,
- "planPath": "plans/execution/<NN-slug>/v<N>.md", "rubricVersion": "0.4", "date": "<YYYY-MM-DD>",
+ "planPath": "<the scored file's path exactly as resolved — plans/execution/<NN-slug>/v<N>.md, or plans/execution/<NN-slug>/.draft-v<N>.md for a pre-sign-off draft>", "rubricVersion": "0.4", "date": "<YYYY-MM-DD>",
  "channels": [
    {"id": "goal",       "name": "Goal & success",      "score": 3, "evidence": "<quote>", "justification": "<one line>"},
    {"id": "decisions",  "name": "Decisions & reasons",  "score": 2, "evidence": "<quote>", "justification": "<one line>"},
@@ -47,4 +47,4 @@ Flags: **<none | uncommitted | unsupported-sources | unrecorded-deviation …>**
  "split": {"verdict": "right-sized", "detail": "<one paragraph>"}}
 ```
 
-<An unreadable plan uses instead: {"schemaVersion": 3, "status": "unscorable", "component": "<NN-slug>", "planVersion": <N>, "planPath": "…", "rubricVersion": "0.4", "date": "<YYYY-MM-DD>", "reason": "<what cannot be extracted and how to fix it>"} — no channels, no total, no profile.>
+<An unreadable plan uses instead: {"schemaVersion": 3, "status": "unscorable", "component": "<NN-slug>", "planVersion": <N>, "planPath": "<the scored file's path exactly as resolved — v<N>.md, or .draft-v<N>.md for a pre-sign-off draft>", "rubricVersion": "0.4", "date": "<YYYY-MM-DD>", "reason": "<what cannot be extracted and how to fix it>"} — no channels, no total, no profile.>
