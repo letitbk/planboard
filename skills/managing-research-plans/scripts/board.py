@@ -1092,6 +1092,11 @@ def serve(root, payload, args):
     html_bytes = html.encode("utf-8")
     done = threading.Event()
     result = {"approved": [], "rejected": []}
+    if batch_mode:
+        result["approved"] = [
+            [e["component"], e["proposedVersion"]]
+            for e in payload.get("gateBatch", []) if e.get("ticketed")
+        ]
     draft_map = draft_map_from_payload(payload)
     slot = {"actionId": None}
     slot_lock = threading.Lock()
@@ -1104,6 +1109,7 @@ def serve(root, payload, args):
     # model-profile save so two concurrent POSTs can't both read the old file
     # and lose an update (ThreadingHTTPServer).
     profile_lock = threading.Lock()
+    batch_lock = threading.Lock()
 
     def accept_order(build_doc, exit_code, write_file, before_commit=None):
         """Single-slot order acceptance: reserve the id, build the document,
@@ -1390,19 +1396,70 @@ def serve(root, payload, args):
             # (incremental persistence); the session ends only on /api/batch/done. ----
             if self.path == "/api/batch/approve" and batch_mode:
                 comp, ver = body.get("component"), body.get("proposedVersion")
-                entry = next(
-                    (e for e in payload["gateBatch"]
-                     if e["component"] == comp and e["proposedVersion"] == ver),
-                    None,
-                )
-                if entry is None:
-                    self._json(404, {"ok": False, "error": "unknown plan"})
+                client_hash = body.get("contentHash")
+                with batch_lock:
+                    entry = next(
+                        (e for e in payload["gateBatch"]
+                         if e["component"] == comp and e["proposedVersion"] == ver),
+                        None,
+                    )
+                    if entry is None:
+                        self._json(404, {"ok": False, "error": "unknown plan"})
+                        return
+                    comp_dir = root / "plans" / "execution" / comp
+                    nd = newest_draft(comp_dir)
+                    if nd is None:
+                        self._json(410, {"ok": False, "error": "draft-missing"})
+                        return
+                    if nd[0] != ver:
+                        fresh_text = nd[1].read_text(encoding="utf-8")
+                        fresh = {
+                            "component": comp,
+                            "proposedVersion": nd[0],
+                            "path": str(nd[1].relative_to(root)),
+                            "content": fresh_text,
+                            "contentHash": hashlib.sha256(
+                                fresh_text.encode("utf-8")).hexdigest(),
+                            "ticketed": has_valid_ticket(
+                                root, comp, nd[0], fresh_text),
+                        }
+                        payload["gateBatch"][payload["gateBatch"].index(entry)] = fresh
+                        self._json(409, {"ok": False, "error": "newer-draft",
+                                         "entry": fresh})
+                        return
+                    try:
+                        dtext = (root / entry["path"]).read_text(encoding="utf-8")
+                    except OSError:
+                        self._json(410, {"ok": False, "error": "draft-missing"})
+                        return
+                    _tail = [ln.rstrip() for ln in
+                             dtext.replace("\r\n", "\n").split("\n")]
+                    while _tail and _tail[-1] == "":
+                        _tail.pop()
+                    if _tail and _tail[-1].startswith("Signed off:"):
+                        self._json(400, {"ok": False,
+                                         "error": "trailer-in-draft"})
+                        return
+                    disk_hash = hashlib.sha256(dtext.encode("utf-8")).hexdigest()
+                    if client_hash != disk_hash:
+                        if client_hash != entry.get("contentHash"):
+                            self._json(409, {"ok": False,
+                                             "error": "hash-mismatch"})
+                            return
+                        entry["content"] = dtext
+                        entry["contentHash"] = disk_hash
+                        entry["ticketed"] = has_valid_ticket(
+                            root, comp, int(ver), dtext)
+                        self._json(409, {"ok": False, "error": "stale-draft",
+                                         "entry": entry})
+                        return
+                    write_ticket(root, comp, int(ver), dtext, batch_id)
+                    entry["ticketed"] = True
+                    if [comp, ver] not in result["approved"]:
+                        result["approved"].append([comp, ver])
+                    self._json(200, {"ok": True,
+                                     "approved": len(result["approved"])})
                     return
-                write_ticket(root, comp, int(ver), entry["content"], batch_id)
-                if [comp, ver] not in result["approved"]:
-                    result["approved"].append([comp, ver])
-                self._json(200, {"ok": True, "approved": len(result["approved"])})
-                return
             if self.path == "/api/batch/reject" and batch_mode:
                 result["rejected"].append(
                     [body.get("component"), body.get("proposedVersion"),
@@ -2316,7 +2373,7 @@ def write_ticket(root, slug, version, content, batch_id, order_action_id=None):
     if order_action_id is not None:
         doc["orderActionId"] = order_action_id
     tp = root / "plans" / "execution" / (".import-approved-%s-v%d" % (slug, version))
-    tp.write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    models.atomic_write(tp, json.dumps(doc, indent=1))
     return tp
 
 
@@ -2368,11 +2425,10 @@ def apply_gate_batch(root, payload, allow_single=False):
     """Collect every pending draft (.draft-vN.md) into payload['gateBatch'] for the
     one-at-a-time batch sign-off wizard. Each approval writes that plan's ticket
     immediately (incremental persistence), so an interrupted session keeps prior
-    approvals. Batch is the /adopt bulk flow: with fewer than 2 drafts still
-    awaiting approval it refuses unless allow_single — a single plan's sign-off
-    belongs to the write-triggered gate or the researcher's Approve on the
-    persistent board (which mints the same ticket)."""
-    retire_orphan_order_tickets(root)
+    approvals. With fewer than 2 drafts still awaiting approval it refuses
+    unless allow_single — a single plan's sign-off belongs to the write-triggered
+    gate or the researcher's Approve on the persistent board (which mints the
+    same ticket)."""
     batch = []
     pending = 0
     exec_dir = root / "plans" / "execution"
@@ -2383,13 +2439,17 @@ def apply_gate_batch(root, payload, allow_single=False):
                 continue
             version, d = nd
             content = d.read_text(encoding="utf-8")
-            if not has_valid_ticket(root, comp_dir.name, version, content):
+            ch = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            ticketed = has_valid_ticket(root, comp_dir.name, version, content)
+            if not ticketed:
                 pending += 1
             batch.append({
                 "component": comp_dir.name,
                 "proposedVersion": version,
                 "path": str(d.relative_to(root)),
                 "content": content,
+                "contentHash": ch,
+                "ticketed": ticketed,
             })
     if not batch:
         die("no pending drafts (.draft-v*.md) to review — nothing to approve")
@@ -2397,12 +2457,13 @@ def apply_gate_batch(root, payload, allow_single=False):
         die("every pending draft is already approved (tickets present) — "
             "write the vN.md files; no batch session is needed.")
     if pending < 2 and not allow_single:
-        die("%d pending draft(s) — batch sign-off is the /adopt bulk flow. "
+        die("%d pending draft(s) — batch sign-off reviews several pending "
+            "drafts in one session. "
             "For a single plan, write vN.md (the sign-off gate opens "
             "automatically) or have the researcher Approve the draft on the "
-            "board (writes the same ticket). If this is a one-component "
-            "adoption or you are resuming an interrupted batch with one draft "
-            "left, re-run with --gate-batch --allow-single." % pending)
+            "board (writes the same ticket). To resume an interrupted batch "
+            "with one draft left, re-run with --gate-batch --allow-single."
+            % pending)
     payload["gateBatch"] = batch
     return payload
 
