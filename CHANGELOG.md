@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **Plans finalize in a review room, not a modal.** `/plan` (and `/sync` revisions) end on the persistent board: the draft arrives already scored, you review with annotations and Review-With available, and your Approve writes the signed version through the same durable-ticket machinery. The blocking gate browser remains as a fallback for direct writes. Finalize marks the component `planned`; execution start marks it `in progress`.
+- **The results Accept/Request-changes pass is gone.** A bundle's standing state is its validation result (validated / deviations flagged / unvalidated / retrofit) — on the Results banner, the Tracker, PlanReader chips, and report staleness. Reopen works on every finalized bundle. Legacy verdicts display read-only.
+- **Batch sign-off is no longer /adopt-only.** Multi-component `/plan` finalizes in one wizard session; approvals are bound to the exact text displayed (hash-checked against disk under a lock), the wizard resumes honestly after a restart, refreshes drafts that changed on disk, shows rubric score chips, and reconnects across relaunches.
+
+### Added
+- Draft plans are scorable: the rubric scorecard attaches to the working draft and migrates to the signed version at approval.
+
 ## [0.19.1] - 2026-07-17
 
 ### Fixed
