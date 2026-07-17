@@ -2424,6 +2424,20 @@ class TestSignoffAction(unittest.TestCase):
         decision = json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"]
         self.assertEqual(decision, "allow")
 
+        target = self.draft.parent / "v2.md"
+        target.write_text(signed, encoding="utf-8")
+        ack = run_board(self.root, "--ack")
+        self.assertEqual(ack.returncode, 0, ack.stderr)
+        self.assertFalse((self.root / "plans" / ".board-feedback.md").exists())
+
+        second = subprocess.run(
+            [sys.executable, str(SCRIPTS / "signoff_gate.py")],
+            input=json.dumps(event), capture_output=True, text=True, timeout=30)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        second_decision = json.loads(
+            second.stdout)["hookSpecificOutput"]["permissionDecision"]
+        self.assertEqual(second_decision, "deny")
+
 
 class TestServerAuthoredActionDocs(unittest.TestCase):
     def test_action_posts_ignore_client_document(self):
