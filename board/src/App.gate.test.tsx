@@ -106,4 +106,16 @@ describe("gate approve/deny render their confirmation cards", () => {
     expect(hookErr, `hook-order error: ${String(hookErr)}`).toBeUndefined();
     spy.mockRestore();
   });
+
+  it("approve card counts down and respects keep-open", async () => {
+    stubFetch();
+    const closeSpy = vi.spyOn(window, "close").mockImplementation(() => {});
+    render(<App data={gateFixture()} />);
+    fireEvent.click(screen.getByRole("button", { name: /approve/i }));
+    await waitFor(() => screen.getByText(/Approved — the version is being written/i));
+    expect(screen.getByText(/Closing this tab in 3s/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /keep open/i }));
+    expect(screen.getByText(/Auto-close is off/i)).toBeTruthy();
+    expect(closeSpy).not.toHaveBeenCalled();
+  });
 });

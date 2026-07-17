@@ -25,6 +25,7 @@ import {
   partitionComments,
 } from "./lib/hostedComments";
 import { liveDraftKey, loadDrafts, clearSubmitted } from "./lib/drafts";
+import { autoCloseKey, useAutoClose } from "./lib/autoClose";
 import FeedbackPanel, { type SubmitState } from "./components/FeedbackPanel";
 import { useHeaderOffset, useMediaQuery } from "./lib/layoutHooks";
 import ConnBanner from "./components/ConnBanner";
@@ -64,6 +65,45 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "timeline", label: "Timeline" },
   { id: "models", label: "Models" },
 ];
+
+function AutoCloseNotice({
+  state,
+  cancel,
+  enable,
+}: {
+  state: import("./lib/autoClose").AutoClosePhase;
+  cancel: () => void;
+  enable: () => void;
+}) {
+  if (state.phase === "counting") {
+    return (
+      <p className="mt-3 text-xs text-stone-500 dark:text-stone-400">
+        Closing this tab in {state.remaining}s…{" "}
+        <button className="underline" onClick={cancel}>
+          keep open
+        </button>
+      </p>
+    );
+  }
+  if (state.phase === "closeFailed") {
+    return (
+      <p className="mt-3 text-xs text-stone-500 dark:text-stone-400">
+        Couldn't close this tab automatically — you can close it now.
+      </p>
+    );
+  }
+  if (state.phase === "cancelled") {
+    return (
+      <p className="mt-3 text-xs text-stone-500 dark:text-stone-400">
+        Auto-close is off for this project.{" "}
+        <button className="underline" onClick={enable}>
+          Re-enable
+        </button>
+      </p>
+    );
+  }
+  return null;
+}
 
 let idCounter = 0;
 function nextId(): string {
@@ -218,6 +258,13 @@ export default function App({ data }: { data: BoardData }) {
   );
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [postFailure, setPostFailure] = useState<"server-gone" | "generic" | null>(null);
+  const [closeArmed, setCloseArmed] = useState(false);
+  const autoClose = useAutoClose(
+    submitState === "approved" ||
+      submitState === "denied" ||
+      (canPost && submitState === "sent" && closeArmed),
+    autoCloseKey(data.projectId ?? data.project.name),
+  );
   const [copyFallbackState, setCopyFallbackState] = useState<{
     text: string;
     copied: boolean | null;
@@ -507,6 +554,7 @@ export default function App({ data }: { data: BoardData }) {
         return;
       }
       setSubmitState("sent");
+      setCloseArmed(true);
       setPendingVerdict(null);
       clearSentDrafts(annotations.map((a) => a.id));
     } catch {
@@ -697,6 +745,7 @@ export default function App({ data }: { data: BoardData }) {
         return;
       }
       setSubmitState("sent");
+      setCloseArmed(true);
       clearSentDrafts(scoped.map((a) => a.id));
       setAnnotations((prev) => prev.filter((a) => !scoped.includes(a)));
     } catch {
@@ -788,7 +837,10 @@ export default function App({ data }: { data: BoardData }) {
   const dispatchConn = (e: ConnEvent) => setConn((st) => reduceConn(st, e));
   // Every new send starts clean: recovery notice and (Task 5) close-arming reset.
   useEffect(() => {
-    if (submitState === "sending") setPostFailure(null);
+    if (submitState === "sending") {
+      setPostFailure(null);
+      setCloseArmed(false);
+    }
   }, [submitState]);
   useEffect(() => {
     if (!canPost) return;
@@ -1010,6 +1062,7 @@ export default function App({ data }: { data: BoardData }) {
               ? `${gate?.component} v${gate?.proposedVersion} will land exactly as shown here, signed.`
               : "Claude received your feedback and will revise the draft; the gate reopens on the next sign-off attempt."}
           </p>
+          <AutoCloseNotice state={autoClose.state} cancel={autoClose.cancel} enable={autoClose.enable} />
         </div>
       </div>
     );
@@ -1075,6 +1128,21 @@ export default function App({ data }: { data: BoardData }) {
       {syncNotice && (
         <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-3 py-1.5 text-xs text-stone-700 dark:text-stone-200 shadow-lg">
           {syncNotice}
+        </div>
+      )}
+      {canPost && submitState === "sent" && closeArmed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-50/95 dark:bg-stone-900/95">
+          <div className="max-w-md rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-8 text-center shadow-sm">
+            <div className="text-3xl">✓</div>
+            <h1 className="mt-2 text-lg font-semibold text-stone-800 dark:text-stone-200">
+              Sent — your session is applying it
+            </h1>
+            <p className="mt-2 text-sm text-stone-600 dark:text-stone-400">
+              This action closes the board; run /research-plans:board to reopen
+              it later.
+            </p>
+            <AutoCloseNotice state={autoClose.state} cancel={autoClose.cancel} enable={autoClose.enable} />
+          </div>
         </div>
       )}
       <header ref={headerRef} className="sticky top-0 z-30 border-b border-stone-200 dark:border-stone-800 bg-white/90 dark:bg-stone-900/90 backdrop-blur">
