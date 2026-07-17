@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.20.0] - 2026-07-17
 
 ### Changed
 - **Plans finalize in a review room, not a modal.** `/plan` (and `/sync` revisions) end on the persistent board: the draft arrives already scored, you review with annotations and Review-With available, and your Approve writes the signed version through the same durable-ticket machinery. The blocking gate browser remains as a fallback for direct writes. Finalize marks the component `planned`; execution start marks it `in progress`.
