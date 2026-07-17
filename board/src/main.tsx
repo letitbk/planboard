@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import ErrorBoundary from "./components/ErrorBoundary";
 import type { BoardData } from "./lib/types";
 import "./index.css";
 
@@ -44,5 +45,7 @@ if (!data && import.meta.env.DEV) {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>{data ? <App data={data} /> : <NoData />}</StrictMode>,
+  <StrictMode>
+    <ErrorBoundary>{data ? <App data={data} /> : <NoData />}</ErrorBoundary>
+  </StrictMode>,
 );
