@@ -43,3 +43,4 @@ reading the newest CHANGELOG entry for highlights — so write that entry for a 
 | v0.17.0 | 3a6c204 | release commit (PR #16 Models tab + provenance combined with PR #17 result/report separation; both folded into PR #16, bump on the same branch) |
 | v0.18.0 | dab695b | release commit (PR #18 five-channel rubric + score-in-header + one-narrative plans; bump on main after merge) |
 | v0.19.0 | 402d44e | release commit (board sidebar PR #19 + CSRF PR #20 + checkup fixes PR #21, all post-0.18.0; bump on main after merges) |
+| v0.19.1 | 31601fd | release commit (PR #22 hotfix: approve crash + stale-tab + auto-close + active-file sidebar; bump on main after merge) |
