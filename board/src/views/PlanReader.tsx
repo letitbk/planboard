@@ -33,6 +33,7 @@ import type {
   SignoffRequest,
 } from "../lib/types";
 import type { OutlineEntry } from "../lib/outline";
+import type { ActiveFileRef } from "../lib/filesTree";
 
 type DocKind = "signed" | "workingDraft" | "draftSnapshot";
 
@@ -66,6 +67,7 @@ export default function PlanReader({
   navRequest,
   onOpenReport,
   onOutline,
+  onActiveFile,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -87,6 +89,7 @@ export default function PlanReader({
   navRequest?: { token: number; planPath?: string } | null;
   onOpenReport?: (slug: string, resultsVersion: number) => void;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onActiveFile?: (ref: ActiveFileRef | null) => void;
 }) {
   const groups = data.files.executionPlans;
   const group =
@@ -173,6 +176,17 @@ export default function PlanReader({
   }, [navRequest?.token]);
   const curIdx = Math.min(docIdx, docs.length - 1);
   const doc = docs[curIdx] ?? null;
+  useEffect(() => {
+    if (!doc) return;
+    const label =
+      doc.docKind === "workingDraft"
+        ? `proposed v${doc.version} (draft) — ${doc.group.component}`
+        : doc.docKind === "draftSnapshot"
+          ? `v${doc.version}·d${doc.iteration} — ${doc.group.component}`
+          : `v${doc.version} — ${doc.group.component}`;
+    onActiveFile?.({ id: doc.path, label });
+    return () => onActiveFile?.(null);
+  }, [onActiveFile, doc]);
 
   // Reader detail level (project default; the reader can still toggle any block).
   const level: DetailLevel = data.detailLevel ?? "standard";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFilesTree, type FileNode } from "./filesTree";
+import { buildFilesTree, subtreeHasId, type FileNode } from "./filesTree";
 import type { BoardData } from "./types";
 
 function bundle(v: number, withReport: boolean) {
@@ -51,6 +51,13 @@ function child(node: FileNode, id: string): FileNode {
 }
 
 describe("buildFilesTree", () => {
+  it("finds an id through nested file groups", () => {
+    const tree = buildFilesTree(data());
+    const comp = tree.find((n) => n.id === "component:01-x")!;
+    expect(subtreeHasId(comp, "plans/execution/01-x/v1.md")).toBe(true);
+    expect(subtreeHasId(comp, "plans/execution/other/v1.md")).toBe(false);
+  });
+
   it("puts master plan and decision log at the top with routes", () => {
     const tree = buildFilesTree(data());
     expect(tree[0]).toMatchObject({ id: "master-plan", route: { tab: "tracker", annotationId: "" } });

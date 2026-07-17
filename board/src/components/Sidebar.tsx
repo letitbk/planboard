@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { NavTarget } from "../lib/navTarget";
-import type { FileNode } from "../lib/filesTree";
+import { subtreeHasId, type FileNode } from "../lib/filesTree";
 import type { OutlineEntry } from "../lib/outline";
 
 type SubTab = "outline" | "files";
 interface Persisted { sub: SubTab; collapsed: boolean }
-const HIGHLIGHT_TABS = new Set(["plans", "results", "reports"]);
 
 function load(key: string, defaultCollapsed: boolean): Persisted {
   try {
@@ -21,8 +20,8 @@ export default function Sidebar({
   outline,
   tree,
   onNavigate,
-  activeTab,
-  activeComponent,
+  activeId,
+  activeLabel,
   storageKey,
   defaultCollapsed = false,
   topOffsetPx = 16,
@@ -30,14 +29,17 @@ export default function Sidebar({
   outline: OutlineEntry[];
   tree: FileNode[];
   onNavigate: (t: NavTarget) => void;
-  activeTab: string;
-  activeComponent: string | null;
+  activeId: string | null;
+  activeLabel: string | null;
   storageKey: string;
   defaultCollapsed?: boolean;
   topOffsetPx?: number; // App's measured sticky-header height (headerOffset)
 }) {
   const [state, setState] = useState<Persisted>(() => load(storageKey, defaultCollapsed));
   const [treeTabStop, setTreeTabStop] = useState(tree[0]?.id ?? "");
+  useEffect(() => {
+    if (activeId && tree.some((n) => subtreeHasId(n, activeId))) setTreeTabStop(activeId);
+  }, [activeId, tree]);
   const expandRef = useRef<HTMLButtonElement>(null);
   const subTabRefs = useRef<Record<SubTab, HTMLButtonElement | null>>({
     outline: null,
@@ -153,6 +155,11 @@ export default function Sidebar({
           role="tabpanel"
           aria-labelledby="sidebar-outline-tab"
         >
+          {activeLabel && (
+            <div className="mb-1 px-2 text-[11px] font-semibold text-stone-500 dark:text-stone-400">
+              {activeLabel}
+            </div>
+          )}
           <ul className="space-y-0.5">
             {outline.length === 0 && (
               <li className="px-2 py-1 text-xs text-stone-400">No outline for this view.</li>
@@ -183,8 +190,7 @@ export default function Sidebar({
                 node={n}
                 depth={0}
                 onNavigate={onNavigate}
-                activeTab={activeTab}
-                activeComponent={activeComponent}
+                activeId={activeId}
                 treeTabStop={treeTabStop}
                 onTreeFocus={setTreeTabStop}
               />
@@ -200,23 +206,24 @@ function TreeNode({
   node,
   depth,
   onNavigate,
-  activeTab,
-  activeComponent,
+  activeId,
   treeTabStop,
   onTreeFocus,
 }: {
   node: FileNode;
   depth: number;
   onNavigate: (t: NavTarget) => void;
-  activeTab: string;
-  activeComponent: string | null;
+  activeId: string | null;
   treeTabStop: string;
   onTreeFocus: (id: string) => void;
 }) {
   const [open, setOpen] = useState(depth < 1);
   const hasChildren = !!node.children?.length;
-  const isActiveComponent =
-    node.id === `component:${activeComponent}` && HIGHLIGHT_TABS.has(activeTab);
+  const isActive = activeId !== null && node.id === activeId;
+  const containsActive = activeId !== null && subtreeHasId(node, activeId);
+  useEffect(() => {
+    if (containsActive) setOpen(true);
+  }, [containsActive]);
   const activate = () =>
     hasChildren ? setOpen((o) => !o) : node.route && onNavigate(node.route);
 
@@ -278,10 +285,10 @@ function TreeNode({
         role="treeitem"
         data-tree-id={node.id}
         aria-expanded={hasChildren ? open : undefined}
-        data-active={isActiveComponent ? "true" : undefined}
+        data-active={isActive ? "true" : undefined}
         tabIndex={treeTabStop === node.id ? 0 : -1}
         className={`w-full rounded px-2 py-1 text-left text-xs hover:bg-stone-100 dark:hover:bg-stone-800 ${
-          isActiveComponent
+          isActive
             ? "bg-stone-100 font-medium text-stone-900 dark:bg-stone-800 dark:text-stone-100"
             : "text-stone-600 dark:text-stone-400"
         }`}
@@ -306,8 +313,7 @@ function TreeNode({
               node={c}
               depth={depth + 1}
               onNavigate={onNavigate}
-              activeTab={activeTab}
-              activeComponent={activeComponent}
+              activeId={activeId}
               treeTabStop={treeTabStop}
               onTreeFocus={onTreeFocus}
             />

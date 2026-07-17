@@ -8,6 +8,7 @@ import ReviewMenu from "../components/ReviewMenu";
 import { actionsVisible, planActionState } from "../lib/actions";
 import { hasSubstantiveFindings } from "../lib/findings";
 import type { OutlineEntry } from "../lib/outline";
+import type { ActiveFileRef } from "../lib/filesTree";
 import RequestChangesButton from "../components/RequestChangesButton";
 import type {
   Annotation,
@@ -51,6 +52,7 @@ export default function Tracker({
   onOpenArchive,
   onOpenReport,
   onOutline,
+  onActiveFile,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -69,6 +71,7 @@ export default function Tracker({
   onOpenArchive?: () => void;
   onOpenReport?: (slug: string, resultsVersion: number) => void;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onActiveFile?: (ref: ActiveFileRef | null) => void;
 }) {
   const mp = parseMasterPlan(data.files.masterPlan.content);
 
@@ -89,6 +92,10 @@ export default function Tracker({
     onOutline?.(outlineEntries);
     return () => onOutline?.([]);
   }, [onOutline, outlineEntries]);
+  useEffect(() => {
+    onActiveFile?.({ id: "master-plan", label: "Master plan" });
+    return () => onActiveFile?.(null);
+  }, [onActiveFile]);
 
   const docAnnotations = annotations.filter(
     (a): a is DocCommentAnnotation =>

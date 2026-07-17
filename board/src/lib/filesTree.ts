@@ -10,6 +10,16 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+export interface ActiveFileRef {
+  id: string; // must equal a FileNode id for the sidebar highlight to attach
+  label: string; // human name shown above the Outline ("v2 — 03-hetero-effects")
+}
+
+export function subtreeHasId(node: FileNode, id: string): boolean {
+  if (node.id === id) return true;
+  return (node.children ?? []).some((c) => subtreeHasId(c, id));
+}
+
 function route(partial: Partial<NavTarget> & { tab: NavTarget["tab"] }): NavTarget {
   return { annotationId: "", anchored: false, ...partial };
 }

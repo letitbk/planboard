@@ -20,7 +20,7 @@ const tree: FileNode[] = [
         id: "01-x:plans",
         label: "Plans",
         children: [
-          { id: "p1", label: "v1", route: { tab: "plans", component: "01-x", planPath: "p/v1.md", annotationId: "", anchored: false } },
+          { id: "plans/execution/01-x/v1.md", label: "v1", route: { tab: "plans", component: "01-x", planPath: "plans/execution/01-x/v1.md", annotationId: "", anchored: false } },
         ],
       },
     ],
@@ -36,8 +36,8 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
       outline={outline}
       tree={tree}
       onNavigate={onNavigate}
-      activeTab="plans"
-      activeComponent="01-x"
+      activeId="plans/execution/01-x/v1.md"
+      activeLabel="v1 — 01-x"
       storageKey="rp-sidebar:test"
       {...over}
     />,
@@ -61,11 +61,11 @@ describe("Sidebar", () => {
   });
 
   it("switches to Files and navigates a leaf via its route", () => {
-    const { onNavigate } = renderSidebar();
+    const { onNavigate } = renderSidebar({ activeId: null, activeLabel: null });
     fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     fireEvent.click(screen.getByText("Plans")); // expand depth-1 group
     fireEvent.click(screen.getByText("v1"));
-    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ tab: "plans", planPath: "p/v1.md" }));
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ tab: "plans", planPath: "plans/execution/01-x/v1.md" }));
   });
 
   it("labels its tabs and file tree with the expected semantics", () => {
@@ -94,7 +94,7 @@ describe("Sidebar", () => {
   });
 
   it("moves through and activates file-tree items from the keyboard", () => {
-    const { onNavigate } = renderSidebar();
+    const { onNavigate } = renderSidebar({ activeId: null, activeLabel: null });
     fireEvent.click(screen.getByRole("tab", { name: /files/i }));
     const masterPlan = screen.getByRole("treeitem", { name: "Master plan" });
     const initialTabStops = screen
@@ -113,17 +113,28 @@ describe("Sidebar", () => {
     const plan = screen.getByRole("treeitem", { name: "v1" });
     plan.focus();
     fireEvent.keyDown(plan, { key: "Enter" });
-    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ tab: "plans", planPath: "p/v1.md" }));
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ tab: "plans", planPath: "plans/execution/01-x/v1.md" }));
   });
 
-  it("marks the active component only on plans/results/reports tabs", () => {
-    const { onNavigate: _ } = renderSidebar({ activeTab: "reviews" });
+  it("marks exactly the active leaf and auto-expands its ancestors", () => {
+    renderSidebar();
     fireEvent.click(screen.getByRole("tab", { name: /files/i }));
-    expect(screen.getByText("01-x").closest("button")?.getAttribute("data-active")).toBeNull();
-    cleanup();
-    renderSidebar({ activeTab: "plans" });
+    const active = screen.getByRole("treeitem", { name: /v1/ });
+    expect(active.getAttribute("data-active")).toBe("true");
+    expect(screen.getByRole("treeitem", { name: "01-x" }).getAttribute("data-active")).toBeNull();
+    expect(screen.getByRole("treeitem", { name: "Plans" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("marks nothing when activeId is null", () => {
+    renderSidebar({ activeId: null, activeLabel: null });
     fireEvent.click(screen.getByRole("tab", { name: /files/i }));
-    expect(screen.getByText("01-x").closest("button")?.getAttribute("data-active")).toBe("true");
+    const marked = screen.queryAllByRole("treeitem").filter((el) => el.getAttribute("data-active"));
+    expect(marked).toHaveLength(0);
+  });
+
+  it("shows the active document label above the outline", () => {
+    renderSidebar({ activeId: "x", activeLabel: "v2 — 03-hetero" });
+    expect(screen.getByText("v2 — 03-hetero")).toBeTruthy();
   });
 
   it("collapses, persists, and starts collapsed when defaultCollapsed and nothing stored", () => {

@@ -142,6 +142,23 @@ describe("App (static mode render/route)", () => {
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeTruthy();
   });
 
+  it("highlights the file being read in the Files tree and clears on a fileless view", async () => {
+    render(<App data={fixture()} />);
+    fireEvent.click(screen.getByRole("tab", { name: /files/i }));
+    const compLi = screen.getByRole("treeitem", { name: "01-alpha" }).closest("li")!;
+    fireEvent.click(within(compLi).getByText("Plans"));
+    fireEvent.click(within(compLi).getByText("v1"));
+
+    const leaf = await screen.findByRole("treeitem", { name: /v1/ });
+    expect(leaf.getAttribute("data-active")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+    const marked = screen
+      .getAllByRole("treeitem")
+      .filter((item) => item.getAttribute("data-active"));
+    expect(marked).toHaveLength(0);
+  });
+
   it("renders copy fallback text in-DOM without native dialogs", async () => {
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
     const promptSpy = vi.spyOn(window, "prompt").mockImplementation(() => null);

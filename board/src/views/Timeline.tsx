@@ -11,6 +11,7 @@ import {
   parseScorecard,
 } from "../lib/parse";
 import type { OutlineEntry } from "../lib/outline";
+import type { ActiveFileRef } from "../lib/filesTree";
 import { isScoredScorecard } from "../lib/types";
 import type { Annotation, BoardData, DocCommentAnnotation } from "../lib/types";
 
@@ -44,6 +45,7 @@ export default function Timeline({
   onAddGeneral,
   navRequest,
   onOutline,
+  onActiveFile,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -57,6 +59,7 @@ export default function Timeline({
   onAddGeneral: (view: string, comment: string) => void;
   navRequest?: { token: number; clearFilter?: boolean } | null;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onActiveFile?: (ref: ActiveFileRef | null) => void;
 }) {
   const events = useMemo(() => buildEvents(data), [data]);
   const [filter, setFilter] = useState<EventKind | "all">("all");
@@ -95,6 +98,10 @@ export default function Timeline({
     onOutline?.(outlineEntries);
     return () => onOutline?.([]);
   }, [onOutline, outlineEntries]);
+  useEffect(() => {
+    onActiveFile?.({ id: "decision-log", label: "Decision log" });
+    return () => onActiveFile?.(null);
+  }, [onActiveFile]);
 
   const visible = events.filter((e) => {
     if (filter !== "all" && e.kind !== filter) return false;

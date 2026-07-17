@@ -15,6 +15,7 @@ import type { ViewerRequest } from "../lib/artifactDisplay";
 import { actionsVisible } from "../lib/actions";
 import { hasSubstantiveFindings } from "../lib/findings";
 import type { OutlineEntry } from "../lib/outline";
+import type { ActiveFileRef } from "../lib/filesTree";
 import type {
   Annotation,
   BoardData,
@@ -229,6 +230,7 @@ export default function Results({
   onReopen,
   navRequest,
   onOutline,
+  onActiveFile,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -253,6 +255,7 @@ export default function Results({
     scriptPath?: string;
   } | null;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onActiveFile?: (ref: ActiveFileRef | null) => void;
 }) {
   const groups = data.files.executionPlans.filter(
     (g) => (g.results ?? []).length > 0,
@@ -363,6 +366,14 @@ export default function Results({
     onOutline?.(outlineEntries);
     return () => onOutline?.([]);
   }, [onOutline, outlineEntries]);
+  useEffect(() => {
+    if (!bundle || !group) return;
+    onActiveFile?.({
+      id: `${group.component}:r${bundle.resultsVersion}`,
+      label: `r${bundle.resultsVersion} — ${group.component}`,
+    });
+    return () => onActiveFile?.(null);
+  }, [onActiveFile, bundle, group]);
 
   if (!group || !bundle) {
     return (

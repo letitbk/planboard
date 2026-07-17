@@ -10,6 +10,7 @@ import { hasSubstantiveFindings } from "../lib/findings";
 import { parseReport } from "../lib/reportMarker";
 import ModelChip from "../components/ModelChip";
 import { outlineFromContainer, type OutlineEntry } from "../lib/outline";
+import type { ActiveFileRef } from "../lib/filesTree";
 import type {
   Annotation,
   BoardData,
@@ -45,6 +46,7 @@ export default function Reports({
   focusResults,
   navRequest,
   onOutline,
+  onActiveFile,
 }: {
   data: BoardData;
   canAnnotate: boolean;
@@ -60,6 +62,7 @@ export default function Reports({
   focusResults: number | null;
   navRequest?: { token: number; resultsVersion?: number } | null;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onActiveFile?: (ref: ActiveFileRef | null) => void;
 }) {
   const groups = data.files.executionPlans.filter(
     (g) => (g.results ?? []).length > 0,
@@ -100,6 +103,14 @@ export default function Reports({
     onOutline?.(outlineFromContainer(reportBodyRef.current));
     return () => onOutline?.([]);
   }, [onOutline, reportContent]);
+  useEffect(() => {
+    if (!bundle || !group) return;
+    onActiveFile?.({
+      id: `${group.component}:report:r${bundle.resultsVersion}`,
+      label: `r${bundle.resultsVersion} report — ${group.component}`,
+    });
+    return () => onActiveFile?.(null);
+  }, [onActiveFile, bundle, group]);
 
   if (!group || !bundle) {
     return (

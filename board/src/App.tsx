@@ -38,7 +38,7 @@ import {
   type ConnEvent,
 } from "./lib/reconnect";
 import { navTargetFor, type NavTarget } from "./lib/navTarget";
-import { buildFilesTree } from "./lib/filesTree";
+import { buildFilesTree, type ActiveFileRef } from "./lib/filesTree";
 import type { OutlineEntry } from "./lib/outline";
 import type { ReopenRequest, SignoffRequest } from "./lib/types";
 import type {
@@ -940,6 +940,7 @@ export default function App({ data }: { data: BoardData }) {
   const navTokenRef = useRef(0);
   const [navRequest, setNavRequest] = useState<({ token: number } & NavTarget) | null>(null);
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
+  const [activeFile, setActiveFile] = useState<ActiveFileRef | null>(null);
   const filesTree = useMemo(() => buildFilesTree(data), [data]);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1277,8 +1278,8 @@ export default function App({ data }: { data: BoardData }) {
             outline={outline}
             tree={filesTree}
             onNavigate={applyRoute}
-            activeTab={tab}
-            activeComponent={selectedComponent}
+            activeId={activeFile?.id ?? null}
+            activeLabel={activeFile?.label ?? null}
             storageKey={`rp-sidebar:${data.projectId ?? data.project.name}`}
             defaultCollapsed={isCoarse}
             topOffsetPx={headerOffset}
@@ -1307,6 +1308,7 @@ export default function App({ data }: { data: BoardData }) {
             }
             onOpenReport={openReport}
             onOutline={setOutline}
+            onActiveFile={setActiveFile}
           />
         )}
         {tab === "plans" && (
@@ -1326,6 +1328,7 @@ export default function App({ data }: { data: BoardData }) {
             onRequestReview={guardConn(requestReview)}
             onOpenReport={openReport}
             onOutline={setOutline}
+            onActiveFile={setActiveFile}
           />
         )}
         {tab === "results" && (
@@ -1344,6 +1347,7 @@ export default function App({ data }: { data: BoardData }) {
             onRequestReview={guardConn(requestReview)}
             onRequestReport={guardConn(requestReport)}
             onOutline={setOutline}
+            onActiveFile={setActiveFile}
           />
         )}
         {tab === "archive" && (
@@ -1383,6 +1387,7 @@ export default function App({ data }: { data: BoardData }) {
                 : null
             }
             onOutline={setOutline}
+            onActiveFile={setActiveFile}
           />
         )}
         {tab === "models" && (
@@ -1403,6 +1408,7 @@ export default function App({ data }: { data: BoardData }) {
             onPaintResult={onPaintResult}
             onAddGeneral={addGeneral}
             onOutline={setOutline}
+            onActiveFile={setActiveFile}
           />
         )}
           </div>
