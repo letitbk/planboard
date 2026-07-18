@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import Tracker from "./Tracker";
 import type {
   BoardData,
+  OutputScore,
   ResultsBundle,
   TrackerStatus,
   ValidationBlock,
@@ -11,9 +12,23 @@ import type {
 
 afterEach(cleanup);
 
+const outputScore: OutputScore = {
+  schemaVersion: 1,
+  channels: [
+    { id: "fidelity", name: "Fidelity", score: 3, basis: "all followed" },
+    { id: "attainment", name: "Attainment", score: 2, basis: "one partial" },
+    { id: "integrity", name: "Integrity", score: 3, basis: "all pass" },
+  ],
+  profile: "F3·A2·I3",
+  total: 8,
+  max: 9,
+  computedAt: "t",
+};
+
 function bundle(
   validation: ValidationBlock["status"] | null,
   legacyAccepted = false,
+  score: unknown = outputScore,
 ): ResultsBundle {
   return {
     resultsVersion: 1,
@@ -28,6 +43,7 @@ function bundle(
       capturedAt: "t",
       metrics: [],
       artifacts: [],
+      score: score as OutputScore,
       ...(validation
         ? { validation: { status: validation, steps: [], criteria: [] } }
         : {}),
@@ -102,6 +118,22 @@ function renderTracker(status: TrackerStatus, result: ResultsBundle) {
 }
 
 describe("Tracker validation-keyed state", () => {
+  it("labels the results column Output", () => {
+    renderTracker("in progress", bundle("conforms"));
+    expect(screen.getByRole("columnheader", { name: "Output" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Results" })).toBeNull();
+  });
+
+  it("shows the latest bundle's valid output score profile", () => {
+    renderTracker("in progress", bundle("conforms"));
+    expect(screen.getByText("F3·A2·I3")).toBeTruthy();
+  });
+
+  it("hides a malformed output score", () => {
+    renderTracker("in progress", bundle("conforms", false, { max: 15 }));
+    expect(screen.queryByText("F3·A2·I3")).toBeNull();
+  });
+
   it("does not warn when a done row has a conforming latest bundle", () => {
     renderTracker("done", bundle("conforms"));
     expect(screen.queryByText(/X is done but results r1/)).toBeNull();

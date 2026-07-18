@@ -29,7 +29,7 @@ interface TimelineEvent {
 const KIND_STYLE: Record<EventKind, { dot: string; label: string }> = {
   decision: { dot: "bg-blue-500", label: "Decision" },
   plan: { dot: "bg-stone-800", label: "Plan version" },
-  result: { dot: "bg-emerald-500", label: "Results" },
+  result: { dot: "bg-emerald-500", label: "Output" },
   review: { dot: "bg-purple-500", label: "Review" },
   // Reconstructed pre-adoption history: hollow amber dot, dashed card — a record,
   // not a real-time log entry, and visibly so.

@@ -2,7 +2,9 @@
     python3 -m unittest tests.test_models -v
 """
 import contextlib
+import hashlib
 import io
+import re
 import sys
 import tempfile
 import unittest
@@ -608,6 +610,86 @@ class TestAtomicWrite(unittest.TestCase):
             p = Path(tmp) / "model-profile.md"
             models.atomic_write(p, DEFAULT_PROFILE)
             self.assertEqual(p.read_text(encoding="utf-8"), DEFAULT_PROFILE)
+
+
+class TestReviewDiscipline(unittest.TestCase):
+    def test_templates_carry_review_discipline(self):
+        tdir = SCRIPTS.parent / "templates" / "agents"
+        board = (tdir / "rp-board-reviewer.md").read_text(encoding="utf-8")
+        for marker in ("[blocker]", "[major]", "[minor]",
+                       "Ground every claim", "Verify before returning"):
+            self.assertIn(marker, board)
+        for name in ("rp-plan-reviewer.md", "rp-results-validator.md"):
+            text = (tdir / name).read_text(encoding="utf-8")
+            self.assertIn("Verify before returning", text)
+
+
+class TestCheckTemplateDrift(unittest.TestCase):
+    def _project(self, td):
+        root = Path(td)
+        (root / "plans").mkdir()
+        (root / "plans" / "master-plan.md").write_text(
+            "<!-- research-plans:master-plan -->\n", encoding="utf-8")
+        (root / "plans" / "model-profile.md").write_text(
+            DEFAULT_PROFILE, encoding="utf-8")
+        models.generate(root)
+        return root
+
+    def _check_stdout(self, root):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            models.cmd_check(root)
+        return out.getvalue()
+
+    def test_freshly_generated_agents_are_silent(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(self._check_stdout(self._project(td)), "")
+
+    def test_template_drift_prints_hint(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._project(td)
+            with tempfile.TemporaryDirectory() as tpl:
+                src = models._templates_dir()
+                for f in src.iterdir():
+                    (Path(tpl) / f.name).write_text(
+                        f.read_text(encoding="utf-8") + "\nNEW RULE.\n",
+                        encoding="utf-8")
+                orig = models._templates_dir
+                models._templates_dir = lambda: Path(tpl)
+                try:
+                    self.assertIn("out of date", self._check_stdout(root))
+                finally:
+                    models._templates_dir = orig
+
+    def test_profile_mismatch_still_hints(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._project(td)
+            prof = root / "plans" / "model-profile.md"
+            prof.write_text(prof.read_text(encoding="utf-8") + "\n",
+                            encoding="utf-8")
+            self.assertIn("out of date", self._check_stdout(root))
+
+    def test_row_removed_marked_agent_hints_without_crash(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._project(td)
+            prof = root / "plans" / "model-profile.md"
+            text = prof.read_text(encoding="utf-8").replace(
+                "plan review", "plan review DISABLED")
+            prof.write_text(text, encoding="utf-8")
+            new_sum = hashlib.sha256(prof.read_bytes()).hexdigest()
+            agent = root / ".claude" / "agents" / "rp-plan-reviewer.md"
+            agent.write_text(
+                re.sub(r"sha256:[0-9a-f]{64}", "sha256:" + new_sum,
+                       agent.read_text(encoding="utf-8")),
+                encoding="utf-8")
+            self.assertIn("out of date", self._check_stdout(root))
+
+    def test_user_owned_agent_stays_silent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._project(td)
+            agent = root / ".claude" / "agents" / "rp-plan-reviewer.md"
+            agent.write_text("my own reviewer, no marker\n", encoding="utf-8")
+            self.assertEqual(self._check_stdout(root), "")
 
 
 if __name__ == "__main__":

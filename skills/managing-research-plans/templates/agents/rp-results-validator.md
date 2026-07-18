@@ -13,6 +13,10 @@ For every Build step in the plan and every success criterion in its Goal section
 - steps: "followed" | "amended" | "deviated-unrecorded" | "not-executed" | "unverifiable" — "amended" means a recorded revision (a later plan version or a decision-log entry) covers the change; "deviated-unrecorded" means execution differs and nothing records it.
 - criteria: "met" | "not-met" | "partial" | "unverifiable"
 
+Rules:
+- **Ground every verdict.** Each evidence line must cite a file, output, log line, or commit you actually inspected with your tools, or that appears in the pasted git window — take that window as given and never speculate beyond it. When the evidence cannot support a verdict, use "unverifiable" rather than guessing.
+- **Verify before returning.** Re-check that every Build step and every success criterion got exactly one verdict and each verdict's evidence actually supports it. Then emit the JSON.
+
 Never pick an overall status — the dispatching session derives it mechanically from your verdicts.
 
 Your final message is consumed by the dispatching session, not read by a person. Return ONLY one JSON object, no prose around it:

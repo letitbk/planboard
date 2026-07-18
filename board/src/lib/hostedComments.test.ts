@@ -175,6 +175,44 @@ describe("per-document staleness", () => {
     const bundleChanged = boardWith("original", [resultsBundle(1, "manifest-v1-EDITED")]);
     expect(targetHash(bundleChanged, annotation)).not.toBe(docHash);
   });
+
+  it("result targetHash changes with manifest.score but not with publishedReport", () => {
+    const annotation = resultComment(1);
+    const base = resultsBundle(1, "manifest-v1");
+    const baseHash = targetHash(boardWith("original", [base]), annotation);
+    const withScore: ResultsBundle = {
+      ...base,
+      manifest: {
+        schemaVersion: 1,
+        component: "01-x",
+        resultsVersion: 1,
+        planVersion: 1,
+        provenance: "planned" as const,
+        trigger: "initial" as const,
+        capturedAt: "t",
+        metrics: [],
+        artifacts: [],
+        score: {
+          schemaVersion: 1,
+          channels: [
+            { id: "fidelity", name: "Fidelity", score: 3, basis: "all followed" },
+            { id: "attainment", name: "Attainment", score: 3, basis: "all met" },
+            { id: "integrity", name: "Integrity", score: 3, basis: "all pass" },
+          ],
+          profile: "F3·A3·I3",
+          total: 9,
+          max: 9,
+          computedAt: "t",
+        },
+      },
+    };
+    expect(targetHash(boardWith("original", [withScore]), annotation)).not.toBe(baseHash);
+    const withReport = {
+      ...base,
+      publishedReport: { path: "plans/reports/x.md", content: "# regenerated\n" },
+    };
+    expect(targetHash(boardWith("original", [withReport]), annotation)).toBe(baseHash);
+  });
 });
 
 describe("targetHash: reports branch + cross-language pin", () => {

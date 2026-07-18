@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Mechanical F·A·I output score (fidelity · attainment · integrity, 0–3 each) sealed into every finalized bundle's manifest, displayed as chips in the Output & Validation banner with a derivation popover, and as a compact profile in Tracker/Archive rows. Diagnostic, never a gate.
+- `references/planning-doctrine.md` — the authoring standard `/plan` now loads; `/plan` grounds in the repo by default before the dialogue.
+- CLAUDE.md rules 9 (evidence before claims — `logs/` capture) and 10 (assumptions and restraint); init ensures `logs/` is gitignored on both fresh and update paths.
+
+### Changed
+- The board's Results tab is now **Output & Validation** ("Output" in table columns, the timeline chip, and the sidebar); all internal ids, tokens, and deep links are unchanged.
+- The three rp-* reviewer agents carry codex-style discipline: grounding rules, per-scope dig-deeper nudges, a verify-before-returning pass, and `[blocker]`/`[major]`/`[minor]` severity ordering shared by all reviewer paths (subagent, panel, codex, gemini). Existing projects: run `/research-plans:models` and regenerate — `models.py check` now detects template drift and says so.
+
 ## [0.21.0] - 2026-07-18
 
 ### Changed

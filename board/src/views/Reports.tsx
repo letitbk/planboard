@@ -302,7 +302,7 @@ export default function Reports({
           <p>
             This bundle has no substantive findings to report — descriptive
             counts and unmarked metrics don't qualify. The evidence and
-            validation are on the Results tab; there is nothing to narrate
+            validation are on the Output &amp; Validation tab; there is nothing to narrate
             here.
           </p>
         </div>

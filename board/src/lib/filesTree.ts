@@ -77,7 +77,7 @@ export function buildFilesTree(data: BoardData): FileNode[] {
     if (g.results?.length) {
       children.push({
         id: `${comp}:results`,
-        label: "Results",
+        label: "Output",
         children: g.results
           .slice()
           .sort((a, b) => a.resultsVersion - b.resultsVersion)

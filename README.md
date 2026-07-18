@@ -42,7 +42,7 @@ The plugin adds a handful of commands to Claude Code. A normal project moves thr
 
 **5. Capture results manually when needed** — `/research-plans:results`. The execution loop normally does this for you. The direct command seals a versioned, immutable bundle for out-of-loop work or a recapture: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing your signed plan against what actually ran.
 
-![The Results view showing key-number tiles and a coefficient-plot figure, with a link reading "produced by code/02_wage_gaps.py"](docs/images/results-figure.png)
+![The Output & Validation view showing key-number tiles and a coefficient-plot figure, with a link reading "produced by code/02_wage_gaps.py"](docs/images/results-figure.png)
 
 <sub>Every figure carries its numbers and a link straight to the script that produced it. Nothing on the board is a claim you can't trace back to code.</sub>
 
@@ -89,6 +89,8 @@ The core plan-review-execute-tail workflow needs only `python3` (no dependencies
 ## Reference
 
 Everything technical lives in **[docs/reference.md](docs/reference.md)**: the full command table, the board in depth (live vs. snapshot, every view, sharing and private web publishing), results bundles, model profiles, the sign-off gate, what the plugin creates in your project, updating and version pinning, and how to develop the board itself.
+
+**Works well with.** The workflow is self-contained, but pairs well with general process plugins — e.g. superpowers (TDD and worktree discipline for code-heavy components) or plannotator (in-browser plan annotation). Optional: nothing here depends on them, and plan documents always follow this plugin's own template and review flow.
 
 ## License
 
