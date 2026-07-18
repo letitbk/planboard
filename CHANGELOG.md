@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.21.0] - 2026-07-18
 
 ### Changed
 - **Plans read like documents.** Real typographic hierarchy (larger headings, doubled section rhythm, an emphasis ladder in light and dark), a 52rem reading measure, task lists and tables that render properly, and the plan's metadata as a card (title kept, provenance no longer shown twice).
