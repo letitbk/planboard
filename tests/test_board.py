@@ -1985,6 +1985,62 @@ class TestHarness(unittest.TestCase):
                 proc.terminate()
 
 
+class TestShutdownHandoff(unittest.TestCase):
+    def test_shutdown_requires_board_token(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root, timeout=10)
+            status, body, _ = http_json(url, "/api/shutdown", body={})
+            self.assertEqual((status, body["error"]), (403, "bad-token"))
+            status, body, _ = http_json(
+                url, "/api/shutdown", body={"boardToken": "wrong"})
+            self.assertEqual((status, body["error"]), (403, "bad-token"))
+            status, body, _ = http_json(url, "/api/health")
+            self.assertEqual((status, body["ok"]), (200, True))
+            status, body, _ = http_json(
+                url, "/api/shutdown", body={"boardToken": info["boardToken"]})
+            self.assertEqual((status, body), (200, {"ok": True}))
+            t.join(timeout=5)
+
+    def test_shutdown_clean_exit_code_5(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            proc, url = spawn_board(root, "--timeout", "15")
+            try:
+                info = _read_lock_lenient(root / "plans")
+                status, body, _ = http_json(
+                    url, "/api/shutdown",
+                    body={"boardToken": info["boardToken"]})
+                self.assertEqual((status, body), (200, {"ok": True}))
+                out, err = proc.communicate(timeout=10)
+                self.assertEqual(proc.returncode, 5)
+                self.assertIn("sign-session handoff", err)
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+
+    def test_request_shutdown_roundtrip(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            proc, _url = spawn_board(root, "--timeout", "15")
+            try:
+                self.assertTrue(board.request_shutdown(root / "plans", wait=5.0))
+                self.assertEqual(proc.wait(timeout=10), 5)
+                self.assertFalse((root / "plans" / ".board.lock").exists())
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+
+    def test_request_shutdown_no_board(self):
+        with tempfile.TemporaryDirectory() as td:
+            plans = Path(td) / "plans"
+            plans.mkdir()
+            self.assertFalse(board.request_shutdown(plans))
+
+
 class TestPortDerivation(unittest.TestCase):
     def test_deterministic_and_in_range(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2044,11 +2100,14 @@ class TestLockMeta(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             plans = Path(td) / "plans"
             plans.mkdir()
-            board.acquire_lock(plans, False, meta={"port": 41234, "bootId": "abc"})
+            board.acquire_lock(
+                plans, False,
+                meta={"port": 41234, "bootId": "abc", "boardToken": "token"})
             info = board.read_lock(plans)
             self.assertEqual(info["pid"], os.getpid())
             self.assertEqual(info["port"], 41234)
             self.assertEqual(info["bootId"], "abc")
+            self.assertEqual(info["boardToken"], "token")
 
     def test_read_lock_legacy_plain_pid(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2056,7 +2115,8 @@ class TestLockMeta(unittest.TestCase):
             plans.mkdir()
             (plans / ".board.lock").write_text("4242")
             info = board.read_lock(plans)
-            self.assertEqual(info, {"pid": 4242, "port": 0, "bootId": ""})
+            self.assertEqual(
+                info, {"pid": 4242, "port": 0, "bootId": "", "boardToken": ""})
 
     def test_serve_lock_carries_port_and_boot_id(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2065,6 +2125,7 @@ class TestLockMeta(unittest.TestCase):
             url, info, t = serve_in_thread(root)
             self.assertEqual(info["port"], int(url.rsplit(":", 1)[1]))
             self.assertEqual(len(info.get("bootId", "")), 32)
+            self.assertEqual(len(info.get("boardToken", "")), 64)
 
 
 class BootIdPayloadTest(unittest.TestCase):

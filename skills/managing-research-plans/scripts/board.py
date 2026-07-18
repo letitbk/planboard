@@ -17,7 +17,7 @@ Stdlib only, Python 3.9+. Modes:
 Exit codes: 0 feedback delivered / export or share written / feedback collected;
 1 usage or environment error; 2 timeout with no feedback; 3 nothing to
 collect/acknowledge; 4 stale payload (an approve targeted a draft that changed
-on disk — relaunch to regenerate); 130 cancelled.
+on disk — relaunch to regenerate); 5 closed by sign-session handoff; 130 cancelled.
 """
 
 import argparse
@@ -905,8 +905,8 @@ def bind_server(root, requested, handler_cls):
 
 
 def read_lock(plans_dir):
-    """Lock metadata {pid, port, bootId}; legacy plain-PID locks read as
-    port 0 / empty bootId. None when absent or unreadable."""
+    """Lock metadata {pid, port, bootId, boardToken}; legacy plain-PID locks
+    read with empty metadata. None when absent or unreadable."""
     lock = plans_dir / ".board.lock"
     if not lock.is_file():
         return None
@@ -919,13 +919,39 @@ def read_lock(plans_dir):
         if isinstance(info, dict) and "pid" in info:
             return {"pid": int(info["pid"]),
                     "port": int(info.get("port", 0)),
-                    "bootId": str(info.get("bootId", ""))}
+                    "bootId": str(info.get("bootId", "")),
+                    "boardToken": str(info.get("boardToken", ""))}
     except (ValueError, TypeError):
         pass
     try:
-        return {"pid": int(raw), "port": 0, "bootId": ""}
+        return {"pid": int(raw), "port": 0, "bootId": "", "boardToken": ""}
     except ValueError:
         return None
+
+
+def request_shutdown(plans_dir, wait=10.0):
+    """Ask a live board to release its lock for a sign-session handoff."""
+    info = read_lock(plans_dir)
+    if not info or not info.get("port") or not info.get("boardToken"):
+        return False
+    data = json.dumps({"boardToken": info["boardToken"]}).encode("utf-8")
+    req = urllib.request.Request(
+        "http://127.0.0.1:%d/api/shutdown" % info["port"],
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status != 200:
+                return False
+        deadline = time.monotonic() + wait
+        lock = plans_dir / ".board.lock"
+        while lock.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return not lock.exists()
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
 
 
 def acquire_lock(plans_dir, force, meta=None):
@@ -1277,6 +1303,11 @@ def serve(root, payload, args):
                 except SystemExit as e:
                     self._json(500, {"error": str(e)})
                 return
+            if self.path == "/api/shutdown":
+                self._json(200, {"ok": True})
+                result["shutdown"] = True
+                done.set()
+                return
             if self.path == "/api/feedback" and not gate_mode:
                 action = body.get("action")
                 ticket_args = None
@@ -1485,7 +1516,8 @@ def serve(root, payload, args):
     server = bind_server(root, args.port, Handler)
     port = server.server_address[1]
     lock.write_text(json.dumps({"pid": os.getpid(), "port": port,
-                                "bootId": boot_id}), encoding="utf-8")
+                                "bootId": boot_id,
+                                "boardToken": board_token}), encoding="utf-8")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -1515,6 +1547,9 @@ def serve(root, payload, args):
     try:
         got = done.wait(timeout=wait_timeout)
         server.shutdown()
+        if result.get("shutdown"):
+            print("board: closed by sign-session handoff", file=sys.stderr)
+            sys.exit(5)
         if batch_mode:
             appr, rej = result["approved"], result["rejected"]
             print("Batch sign-off: %d approved, %d changes-requested%s."
