@@ -205,6 +205,27 @@ describe("execution plan parsing (contract: current template)", () => {
     expect(ep.signedOff).toBeNull();
     expect(ep.serves).toBe("RQ1");
   });
+
+  it("rejects an interior signature as malformed instead of signed", () => {
+    const ep = parseExecutionPlan(
+      "# X — Execution Plan v1\n\nSigned off: BK, 2026-07-18\n\n" +
+        "## Context\n\nContext.\n\n## Goal and success criteria\n\nGoal.\n",
+    );
+    expect(ep.ok).toBe(true);
+    expect(ep.signedOff).toBeNull();
+    expect(ep.trailerState).toBe("malformed");
+  });
+
+  it("recognizes an amendment without claiming a sign-off", () => {
+    const ep = parseExecutionPlan(
+      "# X — Execution Plan v2\n\n## Context\n\nContext.\n\n" +
+        "## Goal and success criteria\n\nGoal.\n\n" +
+        "Amendment recorded, 2026-07-18\n",
+    );
+    expect(ep.ok).toBe(true);
+    expect(ep.signedOff).toBeNull();
+    expect(ep.trailerState).toBe("amendment");
+  });
 });
 
 describe("execution plan parsing (tolerance: real v0.1 artifact)", () => {

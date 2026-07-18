@@ -276,12 +276,16 @@ export interface ResultsVerdict {
   comment?: string;
 }
 
+export type TrailerKind = "signed" | "amendment" | "none" | "malformed";
+
 export interface PlanVersionFile extends BoardFile {
   version: number;
+  trailerState?: TrailerKind;
 }
 
 export interface DraftFile extends BoardFile {
   proposedVersion: number;
+  trailerState?: TrailerKind;
 }
 
 // A committed within-version draft iteration (vN-draft-K.md). Immutable by
@@ -362,6 +366,7 @@ export interface ParsedExecutionPlan {
   serves: string | null; // "Serves:" line inside the goal section
   sections: { heading: string; content: string }[];
   signedOff: string | null;
+  trailerState: TrailerKind;
   raw: string;
 }
 

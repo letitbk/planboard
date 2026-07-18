@@ -640,13 +640,21 @@ export default function PlanReader({
             )}
             {parsed?.ok && (
               <div className="mt-4 border-t border-stone-100 dark:border-stone-800 pt-3 text-xs">
-                {parsed.signedOff ? (
+                {parsed.trailerState === "signed" ? (
                   <span className="rounded bg-green-50 dark:bg-green-950 px-2 py-1 font-medium text-green-800 dark:text-green-300">
-                    Signed off: {parsed.signedOff}
+                    signed ✓
+                  </span>
+                ) : parsed.trailerState === "amendment" ? (
+                  <span className="rounded bg-blue-50 dark:bg-blue-950 px-2 py-1 font-medium text-blue-800 dark:text-blue-300">
+                    amended △
+                  </span>
+                ) : parsed.trailerState === "malformed" ? (
+                  <span className="rounded bg-red-50 dark:bg-red-950 px-2 py-1 font-medium text-red-800 dark:text-red-300">
+                    malformed trailer ⚠
                   </span>
                 ) : (
                   <span className="rounded bg-amber-50 dark:bg-amber-950 px-2 py-1 font-medium text-amber-800 dark:text-amber-300">
-                    No sign-off line
+                    pending — signs at /execute or /sign
                   </span>
                 )}
               </div>

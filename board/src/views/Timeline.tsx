@@ -245,12 +245,21 @@ function buildEvents(data: BoardData): TimelineEvent[] {
   for (const group of data.files.executionPlans) {
     for (const v of group.versions) {
       const parsed = parseExecutionPlan(v.content);
+      const trailerState = v.trailerState ?? parsed.trailerState;
       const gitDate = data.git.fileDates?.[v.path]?.firstCommit;
       const date = parsed.date ?? (gitDate ? gitDate.slice(0, 10) : null);
       events.push({
         kind: "plan",
         sortKey: date ? `${date} 00:00` : "0000-00-00 00:00",
         title: `${group.component} v${v.version}`,
+        badge:
+          trailerState === "signed"
+            ? "signed ✓"
+            : trailerState === "amendment"
+              ? "amended △"
+              : trailerState === "malformed"
+                ? "malformed trailer ⚠"
+                : undefined,
         body: parsed.supersedes
           ? `**Supersedes:** ${parsed.supersedes}`
           : `Plan v${v.version} committed${parsed.signedOff ? ` — signed off: ${parsed.signedOff}` : ""}.`,

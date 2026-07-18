@@ -14,6 +14,7 @@ import type {
   TrackerStatus,
 } from "./types";
 import { SCORECARD_CHANNEL_IDS } from "./types";
+import { parseTrailer } from "./trailer";
 
 const STATUSES: TrackerStatus[] = [
   "not started",
@@ -300,6 +301,7 @@ export const AGENT_SECTIONS = [
 ];
 
 export function parseExecutionPlan(raw: string): ParsedExecutionPlan {
+  const trailer = parseTrailer(raw);
   const fail: ParsedExecutionPlan = {
     ok: false,
     title: "Execution Plan",
@@ -313,6 +315,7 @@ export function parseExecutionPlan(raw: string): ParsedExecutionPlan {
     serves: null,
     sections: [],
     signedOff: null,
+    trailerState: trailer.kind,
     raw,
   };
   try {
@@ -333,7 +336,9 @@ export function parseExecutionPlan(raw: string): ParsedExecutionPlan {
     const masterPlan =
       /^(?:Component:.*?·\s*)?Master plan:\s*([^·\n]+)/m.exec(raw)?.[1]?.trim() ?? null;
     const signedOff =
-      /^Signed off:\s*(.+)$/m.exec(raw)?.[1]?.trim() ?? null;
+      trailer.kind === "signed"
+        ? trailer.line!.replace(/^Signed off:\s*/, "")
+        : null;
 
     const sections: { heading: string; content: string }[] = [];
     for (const h of EXEC_SECTIONS) {
@@ -358,6 +363,7 @@ export function parseExecutionPlan(raw: string): ParsedExecutionPlan {
       serves,
       sections,
       signedOff,
+      trailerState: trailer.kind,
       raw,
     };
   } catch {

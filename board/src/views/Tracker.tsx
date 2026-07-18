@@ -186,7 +186,10 @@ export default function Tracker({
   const rqNums = new Set(mp.researchQuestions.map((q) => q.num));
   for (const g of data.files.executionPlans) {
     const latest = g.versions[g.versions.length - 1];
-    if (latest && parseExecutionPlan(latest.content).signedOff === null) {
+    const trailerState = latest
+      ? latest.trailerState ?? parseExecutionPlan(latest.content).trailerState
+      : null;
+    if (latest && (trailerState === "none" || trailerState === "malformed")) {
       drift.push({
         text: `${g.component} v${latest.version} has no sign-off line`,
         slug: g.component,
@@ -429,6 +432,10 @@ export default function Tracker({
                 ? data.files.executionPlans.find((x) => x.component === slug)
                 : null;
               const latestResult = g?.results?.[g.results.length - 1] ?? null;
+              const latestPlan = g?.versions[g.versions.length - 1] ?? null;
+              const trailerState = latestPlan
+                ? latestPlan.trailerState ?? parseExecutionPlan(latestPlan.content).trailerState
+                : null;
               const withReport = g
                 ? [...(g.results ?? [])].reverse().find((b) => b.publishedReport) ?? null
                 : null;
@@ -497,6 +504,21 @@ export default function Tracker({
                         >
                           open plan
                         </button>
+                        {trailerState === "signed" && (
+                          <div className="text-[11px] font-medium text-green-700 dark:text-green-400">
+                            signed ✓
+                          </div>
+                        )}
+                        {trailerState === "amendment" && (
+                          <div className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
+                            amended △
+                          </div>
+                        )}
+                        {trailerState === "malformed" && (
+                          <div className="text-[11px] font-medium text-red-700 dark:text-red-400">
+                            malformed trailer ⚠
+                          </div>
+                        )}
                         {actionsVisible(data) && onSignoff && (() => {
                           const st = planActionState(data, slug, annotations);
                           if (st.kind === "approve") {
