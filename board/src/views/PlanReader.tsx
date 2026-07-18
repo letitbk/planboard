@@ -37,6 +37,7 @@ import type {
 } from "../lib/types";
 import type { OutlineEntry } from "../lib/outline";
 import type { ActiveFileRef } from "../lib/filesTree";
+import { prefersReducedMotion, useScrollSpy } from "../lib/scrollSpy";
 
 type DocKind = "signed" | "workingDraft" | "draftSnapshot";
 
@@ -178,6 +179,7 @@ export default function PlanReader({
   navRequest,
   onOpenReport,
   onOutline,
+  onActiveOutline,
   onActiveFile,
 }: {
   data: BoardData;
@@ -200,6 +202,7 @@ export default function PlanReader({
   navRequest?: { token: number; planPath?: string } | null;
   onOpenReport?: (slug: string, resultsVersion: number) => void;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onActiveOutline?: (id: string | null) => void;
   onActiveFile?: (ref: ActiveFileRef | null) => void;
 }) {
   const groups = data.files.executionPlans;
@@ -329,6 +332,11 @@ export default function PlanReader({
   const cardRows = parsed?.ok ? metadataRows(parsed) : [];
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activeHeading = useScrollSpy(
+    scrollRef,
+    "[data-outline-id]",
+    [doc?.path, level, diffOn],
+  );
   const scrollToSection = useCallback((heading: string) => {
     // Every section heading renders even when its body is collapsed, so scrolling
     // to the h2 works at any detail level.
@@ -337,7 +345,10 @@ export default function PlanReader({
       if (!host) return;
       for (const h of host.querySelectorAll("h2")) {
         if ((h.textContent ?? "").trim() === heading) {
-          h.scrollIntoView({ behavior: "smooth", block: "start" });
+          h.scrollIntoView({
+            behavior: prefersReducedMotion() ? "auto" : "smooth",
+            block: "start",
+          });
           return;
         }
       }
@@ -361,6 +372,12 @@ export default function PlanReader({
     onOutline?.(outlineEntries);
     return () => onOutline?.([]);
   }, [onOutline, outlineEntries]);
+  useEffect(() => {
+    onActiveOutline?.(
+      activeHeading?.getAttribute("data-outline-id") ?? null,
+    );
+    return () => onActiveOutline?.(null);
+  }, [onActiveOutline, activeHeading]);
 
   const docAnnotations = useMemo(
     () =>
@@ -775,7 +792,9 @@ function SectionBlock({
   useEffect(() => setOpen(forceOpen), [forceOpen]);
   return (
     <div>
-      <Markdown source={`## ${heading}`} />
+      <div data-outline-id={heading}>
+        <Markdown source={`## ${heading}`} />
+      </div>
       {isMethod && (
         <button
           type="button"

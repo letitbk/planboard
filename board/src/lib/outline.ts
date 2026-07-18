@@ -1,3 +1,5 @@
+import { prefersReducedMotion } from "./scrollSpy";
+
 /** A single entry in the sidebar Outline; `onSelect` performs the in-view jump. */
 export interface OutlineEntry {
   id: string;
@@ -16,6 +18,9 @@ export function outlineFromContainer(root: HTMLElement | null): OutlineEntry[] {
     id: `h-${i}`,
     label: (h.textContent ?? "").trim(),
     level: Number(h.tagName[1]),
-    onSelect: () => h.scrollIntoView({ behavior: "smooth", block: "start" }),
+    onSelect: () => h.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    }),
   }));
 }

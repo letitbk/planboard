@@ -925,6 +925,7 @@ export default function App({ data }: { data: BoardData }) {
   const navTokenRef = useRef(0);
   const [navRequest, setNavRequest] = useState<({ token: number } & NavTarget) | null>(null);
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
+  const [activeOutlineId, setActiveOutlineId] = useState<string | null>(null);
   const [activeFile, setActiveFile] = useState<ActiveFileRef | null>(null);
   const filesTree = useMemo(() => buildFilesTree(data), [data]);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
@@ -1263,6 +1264,7 @@ export default function App({ data }: { data: BoardData }) {
             onNavigate={applyRoute}
             activeId={activeFile?.id ?? null}
             activeLabel={activeFile?.label ?? null}
+            activeOutlineId={activeOutlineId}
             storageKey={`rp-sidebar:${data.projectId ?? data.project.name}`}
             defaultCollapsed={isCoarse}
             topOffsetPx={headerOffset}
@@ -1311,6 +1313,7 @@ export default function App({ data }: { data: BoardData }) {
             onRequestReview={guardConn(requestReview)}
             onOpenReport={openReport}
             onOutline={setOutline}
+            onActiveOutline={setActiveOutlineId}
             onActiveFile={setActiveFile}
           />
         )}
@@ -1369,6 +1372,7 @@ export default function App({ data }: { data: BoardData }) {
                 : null
             }
             onOutline={setOutline}
+            onActiveOutline={setActiveOutlineId}
             onActiveFile={setActiveFile}
           />
         )}

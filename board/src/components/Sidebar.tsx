@@ -22,6 +22,7 @@ export default function Sidebar({
   onNavigate,
   activeId,
   activeLabel,
+  activeOutlineId,
   storageKey,
   defaultCollapsed = false,
   topOffsetPx = 16,
@@ -31,6 +32,7 @@ export default function Sidebar({
   onNavigate: (t: NavTarget) => void;
   activeId: string | null;
   activeLabel: string | null;
+  activeOutlineId: string | null;
   storageKey: string;
   defaultCollapsed?: boolean;
   topOffsetPx?: number; // App's measured sticky-header height (headerOffset)
@@ -164,17 +166,26 @@ export default function Sidebar({
             {outline.length === 0 && (
               <li className="px-2 py-1 text-xs text-stone-400">No outline for this view.</li>
             )}
-            {outline.map((e) => (
-              <li key={e.id}>
-                <button
-                  className="w-full rounded px-2 py-1 text-left text-xs text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
-                  style={{ paddingLeft: `${0.5 + (e.level - 1) * 0.75}rem` }}
-                  onClick={e.onSelect}
-                >
-                  {e.label}
-                </button>
-              </li>
-            ))}
+            {outline.map((e) => {
+              const isActive = e.id === activeOutlineId;
+              return (
+                <li key={e.id}>
+                  <button
+                    data-active={isActive ? "true" : undefined}
+                    aria-current={isActive ? "true" : undefined}
+                    className={`w-full rounded px-2 py-1 text-left text-xs hover:bg-stone-100 dark:hover:bg-stone-800 ${
+                      isActive
+                        ? "bg-stone-100 font-medium text-stone-900 dark:bg-stone-800 dark:text-stone-100"
+                        : "text-stone-600 dark:text-stone-400"
+                    }`}
+                    style={{ paddingLeft: `${0.5 + (e.level - 1) * 0.75}rem` }}
+                    onClick={e.onSelect}
+                  >
+                    {e.label}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : (

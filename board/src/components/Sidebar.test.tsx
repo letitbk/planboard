@@ -38,6 +38,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
       onNavigate={onNavigate}
       activeId="plans/execution/01-x/v1.md"
       activeLabel="v1 — 01-x"
+      activeOutlineId={null}
       storageKey="rp-sidebar:test"
       {...over}
     />,
@@ -135,6 +136,28 @@ describe("Sidebar", () => {
   it("shows the active document label above the outline", () => {
     renderSidebar({ activeId: "x", activeLabel: "v2 — 03-hetero" });
     expect(screen.getByText("v2 — 03-hetero")).toBeTruthy();
+  });
+
+  it("marks only the active outline entry as current", () => {
+    const outline: OutlineEntry[] = [
+      { id: "goal", label: "Goal", level: 1, onSelect: vi.fn() },
+      { id: "decisions", label: "Decisions", level: 1, onSelect: vi.fn() },
+    ];
+    renderSidebar({ outline, activeOutlineId: "decisions" });
+
+    const active = screen.getByRole("button", { name: "Decisions" });
+    const inactive = screen.getByRole("button", { name: "Goal" });
+    expect(active.getAttribute("data-active")).toBe("true");
+    expect(active.getAttribute("aria-current")).toBe("true");
+    expect(inactive.getAttribute("data-active")).toBeNull();
+    expect(inactive.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("marks no outline entry when the active outline id is null", () => {
+    renderSidebar({ activeOutlineId: null });
+
+    expect(screen.getByRole("button", { name: "Goal" }).getAttribute("data-active")).toBeNull();
+    expect(screen.getByRole("button", { name: "Goal" }).getAttribute("aria-current")).toBeNull();
   });
 
   it("collapses, persists, and starts collapsed when defaultCollapsed and nothing stored", () => {

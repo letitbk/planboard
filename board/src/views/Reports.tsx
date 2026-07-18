@@ -11,6 +11,7 @@ import { bundleState, bundleStateBadge } from "../lib/bundleState";
 import { parseReport } from "../lib/reportMarker";
 import ModelChip from "../components/ModelChip";
 import { outlineFromContainer, type OutlineEntry } from "../lib/outline";
+import { useScrollSpy } from "../lib/scrollSpy";
 import type { ActiveFileRef } from "../lib/filesTree";
 import type {
   Annotation,
@@ -47,6 +48,7 @@ export default function Reports({
   focusResults,
   navRequest,
   onOutline,
+  onActiveOutline,
   onActiveFile,
 }: {
   data: BoardData;
@@ -63,6 +65,7 @@ export default function Reports({
   focusResults: number | null;
   navRequest?: { token: number; resultsVersion?: number } | null;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onActiveOutline?: (id: string | null) => void;
   onActiveFile?: (ref: ActiveFileRef | null) => void;
 }) {
   const groups = data.files.executionPlans.filter(
@@ -98,12 +101,27 @@ export default function Reports({
 
   const reportBodyRef = useRef<HTMLElement>(null);
   const reportContent = bundle?.publishedReport?.content ?? "";
+  const activeReportHeading = useScrollSpy(
+    reportBodyRef,
+    "h1, h2, h3",
+    [reportContent],
+  );
   useEffect(() => {
     // Read the rendered headings (Markdown adds no ids). Rebuild only when the
     // report content changes — never every render, so no publish loop.
     onOutline?.(outlineFromContainer(reportBodyRef.current));
     return () => onOutline?.([]);
   }, [onOutline, reportContent]);
+  useEffect(() => {
+    const headings = reportBodyRef.current
+      ? Array.from(reportBodyRef.current.querySelectorAll("h1, h2, h3"))
+      : [];
+    const index = activeReportHeading
+      ? headings.indexOf(activeReportHeading)
+      : -1;
+    onActiveOutline?.(index >= 0 ? `h-${index}` : null);
+    return () => onActiveOutline?.(null);
+  }, [onActiveOutline, activeReportHeading, reportContent]);
   useEffect(() => {
     if (!bundle || !group) return;
     onActiveFile?.({
