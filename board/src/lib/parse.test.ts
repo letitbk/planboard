@@ -49,7 +49,7 @@ describe("master plan parsing (contract: current template)", () => {
       "done",
       "done",
       "in progress",
-      "not started",
+      "planned",
     ]);
     expect(mp.components.map((c) => c.serves)).toEqual([
       "—",
@@ -187,6 +187,12 @@ describe("execution plan parsing (contract: current template)", () => {
     }
   });
 
+  it("keeps canonical trailer lines out of the mutable draft template", () => {
+    const lines = read(join(TEMPLATES, "execution-plan.md")).split(/\r?\n/);
+    expect(lines.some((line) => /^Signed off: .+$/.test(line.trim()))).toBe(false);
+    expect(lines.some((line) => /^Amendment recorded, \d{4}-\d{2}-\d{2}$/.test(line.trim()))).toBe(false);
+  });
+
   it("parses goal, serves, version, supersedes, sign-off from dev-data v2", () => {
     const v2 = devData.files.executionPlans[0].versions[1];
     const ep = parseExecutionPlan(v2.content);
@@ -225,6 +231,20 @@ describe("execution plan parsing (contract: current template)", () => {
     expect(ep.ok).toBe(true);
     expect(ep.signedOff).toBeNull();
     expect(ep.trailerState).toBe("amendment");
+  });
+
+  it("includes amendment fixtures for executed and awaiting-recommitment components", () => {
+    const executed = devData.files.executionPlans.find(
+      (group) => group.component === "02-data-cleaning",
+    )!;
+    expect(parseExecutionPlan(executed.versions.at(-1)!.content).trailerState).toBe("amendment");
+    expect(executed.results?.length).toBeGreaterThan(0);
+
+    const awaiting = devData.files.executionPlans.find(
+      (group) => group.component === "04-regression",
+    )!;
+    expect(parseExecutionPlan(awaiting.versions.at(-1)!.content).trailerState).toBe("amendment");
+    expect(awaiting.draft).toBeUndefined();
   });
 });
 

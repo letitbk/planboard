@@ -30,7 +30,7 @@ The hard constraint is the deadline: end of July 2026.
 | 1 | Data acquisition | done | — | ISSP sample in repo | — |
 | 2 | Data cleaning | done | [v2](execution/02-data-cleaning/v2.md) | 66,864 rows after exclusions | RQ1, RQ2 |
 | 3 | Descriptive analysis | in progress | [v1](execution/03-descriptives/v1.md) | — | RQ1 |
-| 4 | Regression modeling | not started | — | — | RQ2 |
+| 4 | Regression modeling | planned | [v2](execution/04-regression/v2.md) | amendment awaits re-commitment | RQ2 |
 
 Statuses: \`not started\` / \`planned\` / \`in progress\` / \`done\` / \`dropped\`.
 
@@ -211,6 +211,101 @@ No imputation; no derived scales (descriptives component owns those). Do not mod
 
 ---
 Signed off: Jane Doe, 2026-07-01
+`;
+
+const cleaningV3 = `# Data Cleaning — Execution Plan v3
+
+Component: \`02-data-cleaning\` · Master plan: [master-plan.md](../../master-plan.md) · Date: 2026-07-03
+Supersedes: v2 — execution found two country files with a second missing-value code.
+
+## Context
+
+Record the additional missing-value recode used during execution.
+
+## Goal and success criteria
+
+Serves: RQ1, RQ2
+
+The cleaning log must include code 99 alongside 97 and 98 for the two affected countries.
+
+## Decisions
+
+| Dimension | Decision | Why |
+|-----------|----------|-----|
+| Missing codes | Recode 99 in the two documented country files | Their codebooks define it as item nonresponse |
+
+## Build steps
+
+1. Recode 99 only where the country codebook defines it as missing.
+
+## Verification
+
+Check the cleaning log against both country codebooks.
+
+## Out of scope
+
+Do not change missing-value rules for other countries.
+
+Amendment recorded, 2026-07-03
+`;
+
+const regressionV1 = `# Regression Modeling — Execution Plan v1
+
+Component: \`04-regression\` · Master plan: [master-plan.md](../../master-plan.md) · Date: 2026-07-04
+
+## Context
+
+Estimate individual and country predictors of immigration support.
+
+## Goal and success criteria
+
+Serves: RQ2
+
+Produce the prespecified multilevel model and a journal-ready coefficient figure.
+
+## Build steps
+
+1. Fit the multilevel model.
+
+## Verification
+
+Check convergence and reproduce the coefficient figure from the saved script.
+
+## Out of scope
+
+Do not add country-level interactions.
+
+Signed off: Jane Doe, 2026-07-04
+`;
+
+const regressionV2 = `# Regression Modeling — Execution Plan v2
+
+Component: \`04-regression\` · Master plan: [master-plan.md](../../master-plan.md) · Date: 2026-07-05
+Supersedes: v1 — record the agreed random-slope specification.
+
+## Context
+
+Record the random slope added after the first model review.
+
+## Goal and success criteria
+
+Serves: RQ2
+
+Estimate the support-item slope by country and report its variance.
+
+## Build steps
+
+1. Add the country-level random slope.
+
+## Verification
+
+Compare convergence and fit against v1.
+
+## Out of scope
+
+Do not add cross-level interactions.
+
+Amendment recorded, 2026-07-05
 `;
 
 const descriptivesV1 = `# Descriptive Analysis — Execution Plan v1
@@ -876,6 +971,10 @@ export const devData: BoardData = {
         firstCommit: "2026-07-01T16:00:00-04:00",
         lastCommit: "2026-07-01T16:00:00-04:00",
       },
+      "plans/execution/02-data-cleaning/v3.md": {
+        firstCommit: "2026-07-03T10:00:00-04:00",
+        lastCommit: "2026-07-03T10:00:00-04:00",
+      },
       "plans/execution/03-descriptives/v1.md": {
         firstCommit: "2026-06-01T09:00:00-04:00",
         lastCommit: "2026-06-01T09:00:00-04:00",
@@ -891,6 +990,7 @@ export const devData: BoardData = {
         versions: [
           { version: 1, path: "plans/execution/02-data-cleaning/v1.md", content: cleaningV1 },
           { version: 2, path: "plans/execution/02-data-cleaning/v2.md", content: cleaningV2 },
+          { version: 3, path: "plans/execution/02-data-cleaning/v3.md", content: cleaningV3 },
         ],
         results: cleaningResults,
       },
@@ -909,6 +1009,14 @@ export const devData: BoardData = {
           content: descriptivesDraft,
         },
         results: descriptivesResults,
+      },
+      {
+        component: "04-regression",
+        versions: [
+          { version: 1, path: "plans/execution/04-regression/v1.md", content: regressionV1 },
+          { version: 2, path: "plans/execution/04-regression/v2.md", content: regressionV2 },
+        ],
+        results: [],
       },
       {
         component: "09-attrition-pilot",
