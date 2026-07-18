@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.22.0] - 2026-07-18
+
+The Output & Validation train (PR #25): the Results tab renamed, a mechanical F·A·I output score on every new bundle, codex-style discipline in the reviewer agents, and a standalone planning doctrine.
 
 ### Added
 - Mechanical F·A·I output score (fidelity · attainment · integrity, 0–3 each) sealed into every finalized bundle's manifest, displayed as chips in the Output & Validation banner with a derivation popover, and as a compact profile in Tracker/Archive rows. Diagnostic, never a gate.

@@ -162,7 +162,7 @@ To silence the update notice (e.g. on an intentionally pinned install), set `RES
 
 ### Installing a specific version
 
-Every release is a git tag (`v0.1.0` … `v0.21.0`). To pin an older version, add a local marketplace file whose entry pins the tag, then install from it.
+Every release is a git tag (`v0.1.0` … `v0.22.0`). To pin an older version, add a local marketplace file whose entry pins the tag, then install from it.
 
 Create `rp-pinned/.claude-plugin/marketplace.json`:
 
