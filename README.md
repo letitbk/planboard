@@ -42,7 +42,7 @@ The plugin adds a handful of commands to Claude Code. A normal project moves thr
 
 **5. Capture results manually when needed** — `/research-plans:results`. The execution loop normally does this for you. The direct command seals a versioned, immutable bundle for out-of-loop work or a recapture: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing your signed plan against what actually ran.
 
-![The Results view showing key-number tiles and a coefficient-plot figure, with a link reading "produced by code/02_wage_gaps.py"](docs/images/results-figure.png)
+![The Output & Validation view showing key-number tiles and a coefficient-plot figure, with a link reading "produced by code/02_wage_gaps.py"](docs/images/results-figure.png)
 
 <sub>Every figure carries its numbers and a link straight to the script that produced it. Nothing on the board is a claim you can't trace back to code.</sub>
 

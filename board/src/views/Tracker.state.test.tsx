@@ -118,6 +118,12 @@ function renderTracker(status: TrackerStatus, result: ResultsBundle) {
 }
 
 describe("Tracker validation-keyed state", () => {
+  it("labels the results column Output", () => {
+    renderTracker("in progress", bundle("conforms"));
+    expect(screen.getByRole("columnheader", { name: "Output" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Results" })).toBeNull();
+  });
+
   it("shows the latest bundle's valid output score profile", () => {
     renderTracker("in progress", bundle("conforms"));
     expect(screen.getByText("F3·A2·I3")).toBeTruthy();

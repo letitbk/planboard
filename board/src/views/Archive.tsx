@@ -153,7 +153,7 @@ export default function Archive({
                   <th className="px-4 py-2">Serves</th>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">Plan</th>
-                  <th className="px-4 py-2">Results</th>
+                  <th className="px-4 py-2">Output</th>
                   <th className="px-4 py-2">Outcome / notes</th>
                 </tr>
               </thead>

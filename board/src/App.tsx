@@ -56,10 +56,10 @@ import type {
 
 type Tab = "tracker" | "plans" | "results" | "timeline" | "archive" | "reports" | "models";
 
-const TABS: { id: Tab; label: string }[] = [
+export const TABS: { id: Tab; label: string }[] = [
   { id: "tracker", label: "Tracker" },
   { id: "plans", label: "Plans" },
-  { id: "results", label: "Results" },
+  { id: "results", label: "Output & Validation" },
   { id: "reports", label: "Reports" },
   { id: "timeline", label: "Timeline" },
   { id: "models", label: "Models" },

@@ -65,6 +65,12 @@ function renderArchive(score: unknown) {
 }
 
 describe("Archive output score", () => {
+  it("labels the results column Output", () => {
+    renderArchive(good);
+    expect(screen.getByRole("columnheader", { name: "Output" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Results" })).toBeNull();
+  });
+
   it("shows a valid score profile beside the result link", () => {
     renderArchive(good);
     expect(screen.getByText("F3·A2·I3")).toBeTruthy();
