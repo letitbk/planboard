@@ -18,10 +18,10 @@ At capture time the bundle's validation audits the plan's success criteria again
 
 Plan the minimum that answers the research question — no analyses, robustness sweeps, or infrastructure beyond what the goal needs (add them when the data pushes back, by revision). Boundaries name both what is out of scope and what not to touch; execution stays inside them, and the tail's deviation stop catches drift.
 
-## The revision loop — the review room is the approval dialog
+## The revision loop
 
-Authoring ends in the review room: the draft is scored, the researcher annotates, and Approve or Request changes closes the pass. "Keep planning" is Request changes — revise the draft and return; several passes are normal. A signed plan changes only by a new version with a `Supersedes` line; the sign-off gate enforces it.
+Authoring produces a scored pending draft. The researcher can annotate it on the board, then revise it through as many passes as needed. `/research-plans:execute` signs the draft before work begins. `/research-plans:sign` signs it sooner when requested. A canonical plan changes only through a new version with a `Supersedes` line. `/sync` records a confirmed amendment, and re-execution recommits that amendment through a sign session.
 
 ## Compatibility with other skills
 
-General process skills active in a researcher's setup (brainstorming, test-driven development, worktree discipline) are welcome for the work itself. The plan documents, their locations, their versioning, and their approval flow always follow THIS plugin's template and rubric contract — external planning skills' artifacts (checkbox task plans, other save locations, separate approval flows) are not substitutes for `plans/execution/<NN-slug>/vN.md` and the review room.
+General process skills active in a researcher's setup (brainstorming, test-driven development, worktree discipline) are welcome for the work itself. The plan documents, their locations, their versioning, and their signing flow always follow THIS plugin's template and rubric contract. External planning artifacts such as checkbox task plans or other save locations are not substitutes for `plans/execution/<NN-slug>/vN.md` and the sign workflow.

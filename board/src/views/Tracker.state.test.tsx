@@ -118,6 +118,49 @@ function renderTracker(status: TrackerStatus, result: ResultsBundle) {
 }
 
 describe("Tracker validation-keyed state", () => {
+  it("does not flag an amendment as missing sign-off and badges it amended", () => {
+    const fixture = data("in progress", bundle("conforms"));
+    const latest = fixture.files.executionPlans[0].versions[0];
+    latest.content = "# v1\n\nAmendment recorded, 2026-07-18\n";
+    latest.trailerState = "amendment";
+    render(
+      <Tracker
+        data={fixture}
+        canAnnotate={false}
+        annotations={[]}
+        onAddDocComment={noop}
+        onPaintResult={noop}
+        onOpenComponent={noop}
+        onOpenResults={noop}
+        onAddGeneral={noop}
+      />,
+    );
+    expect(screen.queryByText(/01-x v1 has no sign-off line/)).toBeNull();
+    expect(screen.getByText("amended △")).toBeTruthy();
+  });
+
+  it("warns and badges a malformed trailer without calling it signed", () => {
+    const fixture = data("in progress", bundle("conforms"));
+    const latest = fixture.files.executionPlans[0].versions[0];
+    latest.content = "# v1\n\nSigned off: BK, 2026-07-18\n\nordinary line\n";
+    latest.trailerState = "malformed";
+    render(
+      <Tracker
+        data={fixture}
+        canAnnotate={false}
+        annotations={[]}
+        onAddDocComment={noop}
+        onPaintResult={noop}
+        onOpenComponent={noop}
+        onOpenResults={noop}
+        onAddGeneral={noop}
+      />,
+    );
+    expect(screen.getByText(/01-x v1 has no sign-off line/)).toBeTruthy();
+    expect(screen.getByText("malformed trailer ⚠")).toBeTruthy();
+    expect(screen.queryByText("signed ✓")).toBeNull();
+  });
+
   it("labels the results column Output", () => {
     renderTracker("in progress", bundle("conforms"));
     expect(screen.getByRole("columnheader", { name: "Output" })).toBeTruthy();

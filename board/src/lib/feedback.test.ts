@@ -188,7 +188,7 @@ describe("buildFeedbackMarkdown", () => {
   });
 });
 
-describe("control-surface emitters (v0.15)", () => {
+describe("feedback control-surface emitters", () => {
   const base = {
     sessionId: "s",
     generatedAt: "now",
@@ -200,35 +200,8 @@ describe("control-surface emitters (v0.15)", () => {
     annotations: [],
   };
 
-  it("signoff emits its section FIRST and round-trips the fence key", () => {
-    const md = buildFeedbackMarkdown([], null, null, {
-      component: "01-x", version: 2, decision: "approve",
-    });
-    const afterTitle = md.split("\n").slice(2).join("\n");
-    expect(afterTitle.startsWith("## SIGNOFF: 01-x v2 — approve")).toBe(true);
-    const doc = buildFeedbackDocument(md, {
-      ...base,
-      signoff: { component: "01-x", version: 2, decision: "approve" },
-    });
-    const fence = JSON.parse(
-      doc.split("```json board-feedback\n")[1].split("\n```")[0],
-    );
-    expect(fence.signoff).toEqual({
-      component: "01-x", version: 2, decision: "approve",
-    });
-  });
-
-  it("request-changes reason rides as a blockquote", () => {
-    const md = buildFeedbackMarkdown([], null, null, {
-      component: "01-x", version: 2, decision: "request-changes",
-      reason: "tighten H2\nand H3",
-    });
-    expect(md).toContain("## SIGNOFF: 01-x v2 — request-changes");
-    expect(md).toContain("> tighten H2\n> and H3");
-  });
-
   it("reopen emits a change-request order that never touches verdict.json", () => {
-    const md = buildFeedbackMarkdown([], null, null, null, {
+    const md = buildFeedbackMarkdown([], null, null, {
       component: "01-x", resultsVersion: 3, reason: "n changed",
     });
     expect(md).toContain("## REOPEN REQUEST: 01-x r3");

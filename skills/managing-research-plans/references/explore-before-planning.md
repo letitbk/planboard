@@ -15,4 +15,4 @@ Plans written after a bounded look at the data are better plans. Scope decisions
 
 ## The line to hold
 
-Exploration informs the plan; it must not quietly become the analysis. If exploration starts producing results the researcher wants to keep, stop — that work belongs under a signed plan.
+Exploration informs the plan; it must not quietly become the analysis. If exploration starts producing results the researcher wants to keep, stop. That work belongs under a signed or recorded plan. See `sign-off.md`.

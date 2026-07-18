@@ -45,9 +45,9 @@ function planComment(planPath: string): Annotation {
 }
 
 describe("actionsVisible", () => {
-  it("live without a gate only", () => {
+  it("live outside a sign session only", () => {
     expect(actionsVisible(boardData())).toBe(true);
-    expect(actionsVisible(boardData({ gate: { component: "01-x", proposedVersion: 2 } }))).toBe(false);
+    expect(actionsVisible(boardData({ sign: { batchId: "b", transport: "ticket", items: [] } }))).toBe(false);
     expect(actionsVisible(boardData({ mode: "hosted" }))).toBe(false);
     expect(actionsVisible(boardData({ mode: "remote" }))).toBe(false);
     expect(actionsVisible(boardData({ mode: "static" }))).toBe(false);
@@ -55,22 +55,22 @@ describe("actionsVisible", () => {
 });
 
 describe("planActionState", () => {
-  it("displayed draft is approvable", () => {
+  it("displayed draft is pending without an in-board approval affordance", () => {
     const d = boardData({ files: { masterPlan: { content: "# MP" }, executionPlans: [draftGroup], archives: [], reviews: [] } });
     expect(planActionState(d, "01-x", [])).toMatchObject({
-      kind: "approve",
+      kind: "pending",
       version: 2,
       draftPath: "plans/execution/01-x/.draft-v2.md",
       blockedByComments: false,
     });
   });
 
-  it("target-scoped pending comments block Approve; unrelated ones do not", () => {
+  it("pending comments do not turn the display-only draft state into a gate", () => {
     const d = boardData({ files: { masterPlan: { content: "# MP" }, executionPlans: [draftGroup], archives: [], reviews: [] } });
     expect(
       planActionState(d, "01-x", [planComment("plans/execution/01-x/.draft-v2.md")])
         .blockedByComments,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       planActionState(d, "01-x", [planComment("plans/execution/99-z/.draft-v9.md")])
         .blockedByComments,
@@ -83,6 +83,19 @@ describe("planActionState", () => {
     expect(s.kind).toBe("signedOff");
     expect(s.version).toBe(1);
     expect(s.signedOffLine).toContain("BK");
+  });
+
+  it("does not treat an interior Signed off line as a valid latest-version trailer", () => {
+    const interior = {
+      component: "04-w",
+      versions: [{
+        version: 1,
+        path: "plans/execution/04-w/v1.md",
+        content: "# v1\n\n## Goal and success criteria\n\nSigned off: BK, 2026-07-02\n\nMore plan text.\n",
+      }],
+    };
+    const d = boardData({ files: { masterPlan: { content: "# MP" }, executionPlans: [interior], archives: [], reviews: [] } });
+    expect(planActionState(d, "04-w", []).kind).toBe("none");
   });
 
   it("unknown component and unsigned no-draft groups offer nothing", () => {

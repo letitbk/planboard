@@ -4,10 +4,10 @@ import type { ConnPhase } from "../lib/reconnect";
 
 export default function ConnBanner({
   phase,
-  gateEnded = false,
+  signSessionEnded = false,
 }: {
   phase: ConnPhase;
-  gateEnded?: boolean;
+  signSessionEnded?: boolean;
 }) {
   if (phase.kind === "accepted" || phase.kind === "applying") {
     return (
@@ -30,8 +30,8 @@ export default function ConnBanner({
   if (phase.kind === "sleeping") {
     return (
       <div className="border-t border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 px-5 py-1.5 text-center text-xs text-stone-600 dark:text-stone-300">
-        {gateEnded
-          ? "This sign-off gate has ended — your draft is saved. Approve it from the board: run /research-plans:board in your session."
+        {signSessionEnded
+          ? "This sign session has ended — your draft is saved. Run /research-plans:sign in your session to resume."
           : "Board sleeping — run /research-plans:board in your session to wake it. Your drafts are safe."}
       </div>
     );

@@ -140,6 +140,20 @@ describe("PlanReader metadata card", () => {
       ),
     ).toBe(true);
   });
+
+  it("badges amendment and malformed trailer states honestly", () => {
+    const amendment = STANDARD_PLAN.replace(
+      "Signed off: BK, 2026-07-18",
+      "Amendment recorded, 2026-07-18",
+    );
+    const { unmount } = draw(amendment);
+    expect(screen.getByText("amended △")).toBeTruthy();
+    unmount();
+
+    draw(STANDARD_PLAN + "\n\nordinary final line");
+    expect(screen.getByText("malformed trailer ⚠")).toBeTruthy();
+    expect(screen.queryByText("signed ✓")).toBeNull();
+  });
 });
 
 describe("PlanReader metadata annotation contract", () => {

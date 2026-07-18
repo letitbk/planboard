@@ -1,0 +1,10 @@
+{
+  "signed-ok": {"kind": "signed", "violations": 0},
+  "amendment-ok": {"kind": "amendment", "violations": 0},
+  "draft-ok": {"kind": "none", "violations": 0},
+  "interior-signature-attack": {"kind": "malformed", "violations": 1},
+  "stacked-trailers": {"kind": "malformed", "violations": 1},
+  "interior-amendment": {"kind": "malformed", "violations": 1},
+  "legacy-placeholder-draft": {"kind": "signed", "violations": 0},
+  "indented-interior-signature": {"kind": "malformed", "violations": 1}
+}

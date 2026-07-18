@@ -201,6 +201,83 @@ class TestGateBatchTickets(unittest.TestCase):
                                       content=self._signed())
             self.assertEqual((code, decision), (0, "allow"))
 
+    def test_amendment_recommitment_round_trip(self):
+        """signed v1 -> recorded v2 -> trailerless v3 draft -> sign ticket -> signed v3"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comp = make_init_component(root)
+            sys.path.insert(0, str(GATE.parent))
+            import board  # noqa: E402
+            import signoff_gate as gate  # noqa: E402
+
+            marker = ('<!-- rp-model {"prescribed":null,"reported":'
+                      '{"model":"sonnet","effort":null}} -->')
+            v1 = (marker + "\n# X — Execution Plan v1\n\n"
+                  "## Goal and success criteria\n\nDo the thing.\n\n"
+                  "Signed off: BK, 2026-07-17\n")
+            (comp / "v1.md").write_text(v1, encoding="utf-8")
+            self.assertEqual(gate.parse_trailer(v1)["kind"], "signed")
+
+            amendment = (marker + "\n# X — Execution Plan v2\n\n"
+                         "Supersedes: v1 — record the executed change.\n\n"
+                         "## Goal and success criteria\n\nDo the revised thing.\n\n"
+                         "---\nAmendment recorded, 2026-07-18\n")
+            code, decision = run_gate(
+                root, "Write", comp / "v2.md", content=amendment)
+            self.assertEqual((code, decision), (0, "allow"))
+            (comp / "v2.md").write_text(amendment, encoding="utf-8")
+
+            candidate = gate.strip_trailer(amendment)
+            candidate = candidate.replace("Execution Plan v2", "Execution Plan v3", 1)
+            candidate = candidate.replace(
+                "Supersedes: v1 — record the executed change.",
+                "Supersedes: v2 — re-commitment for re-execution",
+                1,
+            )
+            candidate = candidate.replace('"model":"sonnet"', '"model":"opus"', 1)
+            self.assertEqual(gate.parse_trailer(candidate)["kind"], "none")
+            draft = comp / ".draft-v3.md"
+            draft.write_text(candidate, encoding="utf-8")
+
+            master = (
+                "<!-- research-plans:master-plan -->\n# MP\n\n"
+                "| # | Component | Status | Execution plan | Outcome / notes | Serves |\n"
+                "|---|-----------|--------|----------------|-----------------|--------|\n"
+                "| 3 | X | planned | [v2](execution/03-x/v2.md) | — | RQ1 |\n"
+            )
+            (root / "plans" / "master-plan.md").write_text(master, encoding="utf-8")
+            payload = {
+                "files": {
+                    "masterPlan": {"content": master},
+                    "executionPlans": [{
+                        "component": "03-x",
+                        "versions": [{"version": 1, "content": v1},
+                                     {"version": 2, "content": amendment}],
+                        "draft": {"proposedVersion": 3,
+                                  "path": "plans/execution/03-x/.draft-v3.md",
+                                  "content": candidate},
+                    }],
+                },
+            }
+            signed_payload = board.apply_sign(root, payload, "03-x")
+            self.assertIsNotNone(signed_payload)
+            item = signed_payload["sign"]["items"][0]
+            self.assertEqual(item["content"], candidate)
+            self.assertEqual(
+                item["contentHash"],
+                hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+            )
+            ticket = board.write_ticket(root, "03-x", 3, candidate, "round-trip")
+            ticket_doc = json.loads(ticket.read_text(encoding="utf-8"))
+            self.assertEqual(
+                ticket_doc["contentHash"],
+                hashlib.sha256(_norm(candidate).encode("utf-8")).hexdigest(),
+            )
+
+            v3 = candidate.rstrip("\n") + "\n\nSigned off: BK, 2026-07-18\n"
+            code, decision = run_gate(root, "Write", comp / "v3.md", content=v3)
+            self.assertEqual((code, decision), (0, "allow"))
+
 
 if __name__ == "__main__":
     unittest.main()

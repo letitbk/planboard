@@ -5,7 +5,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type {
   Annotation,
-  BoardData,
   StoredComment,
 } from "../lib/types";
 import { VIEW_LABEL } from "../lib/feedback";
@@ -14,8 +13,6 @@ export type SubmitState =
   | "idle"
   | "sending"
   | "sent"
-  | "approved"
-  | "denied"
   | "failed"
   | "downloaded";
 
@@ -173,7 +170,6 @@ export interface FeedbackPanelProps {
   serverLive: StoredComment[];
   serverStale: StoredComment[];
   hosted: boolean;
-  gate: BoardData["gate"] | null;
   canPost: boolean;
   submitState: SubmitState;
   reviewer: string;
@@ -184,8 +180,6 @@ export interface FeedbackPanelProps {
   onCardClick?: (a: Annotation) => void;
   onClose: () => void;
   onSubmit: () => void;
-  onGateApprove: () => void;
-  onGateDeny: () => void;
   onDownload: () => void;
   onCopyFallback: () => void;
 }
@@ -284,30 +278,7 @@ export default function FeedbackPanel(p: FeedbackPanelProps) {
             and paste it into your session instead.
           </div>
         )}
-        {p.gate ? (
-          <div className="space-y-2">
-            {p.annotations.length > 0 && (
-              <p className="text-[11px] text-stone-500">
-                You have unsent comments — send them as "Request changes", or
-                delete them to approve.
-              </p>
-            )}
-            <button
-              className="w-full rounded-md bg-green-700 py-2 text-sm font-semibold text-white hover:bg-green-600 disabled:opacity-40"
-              disabled={p.annotations.length > 0 || p.submitState === "sending"}
-              onClick={p.onGateApprove}
-            >
-              Approve — write v{p.gate.proposedVersion} exactly as shown
-            </button>
-            <button
-              className="w-full rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 py-2 text-sm font-semibold text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-40"
-              disabled={p.annotations.length === 0 || p.submitState === "sending"}
-              onClick={p.onGateDeny}
-            >
-              Request changes ({p.annotations.length})
-            </button>
-          </div>
-        ) : p.canPost ? (
+        {p.canPost ? (
           <div className="space-y-2">
             <button
               className="w-full rounded-md bg-stone-900 dark:bg-stone-200 py-2 text-sm font-semibold text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"

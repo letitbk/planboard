@@ -6,7 +6,7 @@ Load this reference for `/research-plans:results --adopt`, reconcile mode, or an
 
 For pre-existing figures and tables made before or outside any plan, run `python3 <script> discover`, present the candidates grouped by directory, and interview the researcher: which artifacts matter, and which component each belongs to. Offer to add a tracker row for work that has no component yet; derive its status from evidence and note `retrofit`.
 
-For each component, follow inline steps 4 through 7 in `commands/results.md` with `provenance` set to `"retrofit"` and `planVersion` set to the latest signed version or null. Validation records `not-applicable` as defined by inline step 6. Retrofit bundles use the same review and Reopen flow as other bundles; the provenance chip keeps the record honest.
+For each component, follow inline steps 4 through 7 in `commands/results.md` with `provenance` set to `"retrofit"` and `planVersion` set to the latest governing plan version or null. The governing version is the latest canonical plan with a valid signed or amendment trailer. Validation records `not-applicable` as defined by inline step 6. Retrofit bundles use the same review and Reopen flow as other bundles; the provenance chip keeps the record honest.
 
 ## Reconcile missing results (no argument)
 
@@ -18,7 +18,7 @@ Build the worklist from the tracker and disk for a project whose plans ran ahead
 
 Present the worklist and let the researcher choose whether to walk all, pick some, or skip. For each selected component, in tracker order, follow inline steps 2 through 7 in `commands/results.md`. Apply the provenance rule from inline step 5 to each bundle:
 
-- A prospective signed plan that predates the work gets `provenance: "planned"` and `late: true` because this is a backfill.
+- A prospective governing plan that predates the work gets `provenance: "planned"` and `late: true` because this is a backfill. Its canonical trailer may be signed or amendment.
 - A `Provenance: retrospective` plan, or no plan, gets `provenance: "retrofit"`. `planVersion` still cites the retrospective version when one exists.
 
 After `/research-plans:adopt`, every done component has a retrospective plan, so its backfilled bundles are retrofit, not planned. The plan links them through `planVersion` without claiming to have governed them. Report a component with no qualifying evidence as such and, if the researcher agrees, add a one-line tracker note. The only zero-artifact bundle that can be finalized is a retrospective report whose figures cannot be reproduced, and only after explicit confirmation under [Summary-only bundles](#summary-only-bundles).

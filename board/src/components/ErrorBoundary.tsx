@@ -1,5 +1,5 @@
 // Last-resort render-error backstop (spec H1). A crash inside App must never
-// leave a blank tab — especially around sign-off, where the action has already
+// leave a blank tab — especially around signing, where the action may already
 // reached the session and reloading is safe.
 import { Component, type ReactNode } from "react";
 
@@ -22,8 +22,8 @@ export default class ErrorBoundary extends Component<
               The board hit an error
             </h1>
             <p className="mt-3 text-sm text-stone-600 dark:text-stone-400">
-              Reload the page. If you just approved or requested changes, that
-              action already reached your session — reloading is safe.
+              Reload the page. If you just submitted a decision or feedback,
+              it may already have reached your session.
             </p>
             <button
               className="mt-4 rounded bg-stone-900 px-4 py-2 text-sm font-medium text-white dark:bg-stone-200 dark:text-stone-900"

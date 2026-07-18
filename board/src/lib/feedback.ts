@@ -8,7 +8,6 @@ import type {
   ReopenRequest,
   ReportRequest,
   ReviewRequest,
-  SignoffRequest,
 } from "./types";
 
 export interface FeedbackMeta {
@@ -22,9 +21,6 @@ export interface FeedbackMeta {
   annotations: Annotation[];
   reviewRequest?: ReviewRequest | null; // agent plan review (v0.9)
   reportRequest?: ReportRequest | null; // per-bundle report generation (v0.10)
-  // Control surface (v0.15). signoff is ADVISORY here: the server validates
-  // the typed action body and authors the authoritative order document itself.
-  signoff?: SignoffRequest | null;
   // reopen is comment-tier on the wire — a change request against a finalized
   // bundle; it never authorizes anything and non-live ingress strips it.
   reopen?: ReopenRequest | null;
@@ -65,26 +61,16 @@ export function buildFeedbackMarkdown(
   annotations: Annotation[],
   reviewRequest: ReviewRequest | null = null,
   reportRequest: ReportRequest | null = null,
-  signoff: SignoffRequest | null = null,
   reopen: ReopenRequest | null = null,
 ): string {
   if (
     annotations.length === 0 &&
     !reviewRequest &&
     !reportRequest &&
-    !signoff &&
     !reopen
   )
     return "# Board Feedback\n\nNo feedback.";
   const lines: string[] = ["# Board Feedback", ""];
-  if (signoff) {
-    lines.push(
-      `## SIGNOFF: ${signoff.component} v${signoff.version} — ${signoff.decision}`,
-    );
-    if (signoff.reason)
-      lines.push(...signoff.reason.split("\n").map((l) => `> ${l}`));
-    lines.push("");
-  }
   if (reopen) {
     lines.push(
       `## REOPEN REQUEST: ${reopen.component} r${reopen.resultsVersion}`,

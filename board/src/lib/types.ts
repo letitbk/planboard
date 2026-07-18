@@ -20,8 +20,7 @@ export interface BoardData {
   projectId?: string; // live: stable server identity (draft storage + reconnect)
   boardToken?: string; // live: per-boot token required on mutating routes
   bootId?: string; // live: per-boot identity seeding the reconnect baseline (excluded from generation)
-  gate?: { component: string; proposedVersion: number }; // sign-off gate mode
-  gateBatch?: GateBatchEntry[]; // batch sign-off wizard (one plan at a time)
+  sign?: SignPayload; // one-shot sign session; absent on the persistent board
   modelProfile?: ModelProfile; // per-stage model profile (Models tab); present-only
   detailLevel?: "compact" | "standard" | "full"; // master-plan "Detail level:"; default "standard"
   project: { name: string; root?: string };
@@ -112,13 +111,19 @@ export interface ArchiveFile extends BoardFile {
   archivedOn?: string; // YYYY-MM-DD from the filename
 }
 
-export interface GateBatchEntry {
+export interface SignItem {
   component: string;
   proposedVersion: number;
   path: string;
   content: string;
   contentHash: string;
-  ticketed?: boolean;
+  ticketed: boolean;
+}
+
+export interface SignPayload {
+  batchId: string;
+  transport: "ticket" | "hook";
+  items: SignItem[];
 }
 
 export interface ExecutionPlanGroup {
@@ -276,12 +281,16 @@ export interface ResultsVerdict {
   comment?: string;
 }
 
+export type TrailerKind = "signed" | "amendment" | "none" | "malformed";
+
 export interface PlanVersionFile extends BoardFile {
   version: number;
+  trailerState?: TrailerKind;
 }
 
 export interface DraftFile extends BoardFile {
   proposedVersion: number;
+  trailerState?: TrailerKind;
 }
 
 // A committed within-version draft iteration (vN-draft-K.md). Immutable by
@@ -362,6 +371,7 @@ export interface ParsedExecutionPlan {
   serves: string | null; // "Serves:" line inside the goal section
   sections: { heading: string; content: string }[];
   signedOff: string | null;
+  trailerState: TrailerKind;
   raw: string;
 }
 
@@ -535,16 +545,6 @@ export interface DocCommentAnnotation {
   anchored: boolean;
   comment: string;
   author?: string; // reviewer agent that produced it (v0.9); absent = the researcher
-}
-
-// Control surface (v0.15): typed researcher actions from the always-on
-// clusters. Signoff rides the POST body's `action` field and is validated +
-// re-authored server-side; reopen is a comment-tier change request.
-export interface SignoffRequest {
-  component: string;
-  version: number;
-  decision: "approve" | "request-changes";
-  reason?: string;
 }
 
 export interface ReopenRequest {

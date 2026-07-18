@@ -39,8 +39,9 @@ describe("ConnBanner", () => {
     expect(screen.getByText(/drafts are safe/)).toBeTruthy();
   });
 
-  it("shows gate recovery copy when sleeping with gateEnded", () => {
-    render(<ConnBanner phase={{ kind: "sleeping", lastBootId: null }} gateEnded />);
+  it("shows sign-session recovery copy when that one-shot server has ended", () => {
+    render(<ConnBanner phase={{ kind: "sleeping", lastBootId: null }} signSessionEnded />);
     expect(screen.getByText(/your draft is saved/i)).toBeTruthy();
+    expect(screen.getByText(/research-plans:sign/)).toBeTruthy();
   });
 });

@@ -23,7 +23,6 @@ function props(over: Partial<FeedbackPanelProps> = {}): FeedbackPanelProps {
     serverLive: [],
     serverStale: [],
     hosted: false,
-    gate: null,
     canPost: true,
     submitState: "idle",
     reviewer: "",
@@ -33,8 +32,6 @@ function props(over: Partial<FeedbackPanelProps> = {}): FeedbackPanelProps {
     onSaveHosted: vi.fn(),
     onClose: vi.fn(),
     onSubmit: vi.fn(),
-    onGateApprove: vi.fn(),
-    onGateDeny: vi.fn(),
     onDownload: vi.fn(),
     onCopyFallback: vi.fn(),
     ...over,
@@ -46,19 +43,6 @@ describe("FeedbackPanel", () => {
     render(<FeedbackPanel {...props()} />);
     expect(screen.getByText("comment-a1")).toBeTruthy();
     expect(screen.getByText("Send to Claude")).toBeTruthy();
-  });
-
-  it("gate footer replaces Send and disables Approve with pending comments", () => {
-    render(
-      <FeedbackPanel
-        {...props({ gate: { component: "01-x", proposedVersion: 3 } })}
-      />,
-    );
-    const approve = screen.getByText(
-      "Approve — write v3 exactly as shown",
-    ) as HTMLButtonElement;
-    expect(approve.disabled).toBe(true);
-    expect(screen.queryByText("Send to Claude")).toBeNull();
   });
 
   it("card click calls onCardClick; delete stays independent", () => {

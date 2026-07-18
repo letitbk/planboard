@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **`/research-plans:sign`.** Sign one or many pending plans without starting execution. Durable tickets and saved `.sign-feedback-vN.md` files let an interrupted session resume from disk.
+- **One slim sign view for both transports.** `SignOffView` handles ticket sessions from `/sign` and `/execute`, plus direct-write hook sessions. Each item has its plan, score, diff, annotations, note, and independent decision state.
+- **Recorded amendment versions.** `/sync` can write the next consecutive canonical version with an `Amendment recorded, YYYY-MM-DD` trailer. Re-execution materializes a fresh draft and signs a new commitment.
+- **Strict trailer grammar.** Python and TypeScript share fixture-backed rules for signed, amendment, missing, and malformed trailers. The board badges malformed trailers and exposes `trailerState` in its payload.
+- **Authenticated board handoff.** A sign session closes a live persistent board through `/api/shutdown`; exit 5 records the handoff without relaunching the old board.
+
+### Changed
+- `/research-plans:plan` leaves a scored pending draft and marks its tracker row `planned`. Plans sign at the `/execute` gate, or sooner through `/sign`.
+- `/research-plans:sync` records confirmed amendments directly. `/research-plans:adopt` signs any number of retrospective drafts in one sign session.
+- Tracker drift checks use trailer state, so a recorded amendment is not mislabeled as unsigned drift.
+
+### Removed
+- In-board plan Approve and Request changes actions from the persistent dashboard.
+- `board.py --gate-batch` and `--allow-single`.
+- The `Signed off:` placeholder trailer from the mutable execution-plan template.
+
 ## [0.22.0] - 2026-07-18
 
 The Output & Validation train (PR #25): the Results tab renamed, a mechanical F·A·I output score on every new bundle, codex-style discipline in the reviewer agents, and a standalone planning doctrine.

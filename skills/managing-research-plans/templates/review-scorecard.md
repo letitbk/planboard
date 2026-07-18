@@ -1,6 +1,6 @@
 # Review — <Component> v<N>
 
-Plan: [<v<N>.md or .draft-v<N>.md>](<the scored file's actual relative path: ../execution/<NN-slug>/v<N>.md or ../execution/<NN-slug>/.draft-v<N>.md>) · Rubric: plan-rubric.md (v0.4) · Date: <YYYY-MM-DD>
+Plan: [<v<N>.md or .draft-v<N>.md>](<the scored file's actual relative path: ../execution/<NN-slug>/v<N>.md or ../execution/<NN-slug>/.draft-v<N>.md; amendment re-commitment candidates use the draft path>) · Rubric: plan-rubric.md (v0.4) · Date: <YYYY-MM-DD>
 Profile: **G<0-3> · D<0-3> · S<0-3> · V<0-3> · B<0-3> = <total>/15**
 Flags: **<none | uncommitted | unsupported-sources | unrecorded-deviation …>** <!-- non-scored workflow-integrity flags; omit or "none" when clean -->
 <!-- On an unreadable plan, replace the Profile/Flags lines with: Status: **unscorable — <what cannot be extracted>** and omit the channel table. -->

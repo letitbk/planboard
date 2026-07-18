@@ -4,7 +4,7 @@
 
 Coding agents can produce plausible analyses faster than you can track why each one exists — five versions of a figure, three model specifications, and no record of which one made it into the draft, or why.
 
-research-plans keeps you in charge of that. It's a [Claude Code](https://claude.com/claude-code) plugin for social scientists: the agent works from a short plan you approve *before* it runs — what the work will do, why, and how you'll know it worked — then records every revision, decision, and result against that plan. You stay the author of the choices; the agent does the work and keeps the books.
+research-plans keeps you in charge of that. It's a [Claude Code](https://claude.com/claude-code) plugin for social scientists: the agent works from a short plan you sign at the execution gate *before* it runs — what the work will do, why, and how you'll know it worked — then records every revision, decision, and result against that plan. You stay the author of the choices; the agent does the work and keeps the books.
 
 It's the commit-before-you-look discipline you know from preregistration, made into a living plan rather than a frozen registry entry. It won't make an analysis correct — it makes the plan you approved, and every deviation from it, something you (and a coauthor, and a reviewer) can actually see.
 
@@ -18,9 +18,9 @@ If you already run Claude Code on real data work and have felt that record slip 
 
 Five artifacts, each one an answer to *"what did the AI actually do, and can I stand behind it?"*
 
-- **A plan you sign before the work.** For each piece of the project — a data-cleaning pass, one analysis, a simulation — you and the agent co-author a short execution plan: its goal, the scope decisions and why you made them, the steps, and how you'll judge success. Nothing is signed until you approve it, and signing is enforced, not suggested (see [the sign-off gate](docs/reference.md#the-sign-off-gate)).
+- **A plan you sign before the work.** For each piece of the project — a data-cleaning pass, one analysis, a simulation — you and the agent co-author a short execution plan: its goal, the scope decisions and why you made them, the steps, and how you'll judge success. The draft stays pending until `/execute` opens a slim sign session, or you run `/sign` sooner. Nothing is signed until you approve it, and signing is enforced, not suggested (see [the sign-off gate](docs/reference.md#the-sign-off-gate)).
 - **A decision log written as decisions happen.** Every choice you and the agent make lands in an append-only, timestamped log — not reconstructed afterward from memory, when the reasons have already blurred.
-- **Plan versions that are immutable.** When execution teaches you something and the plan changes, that's a new version that says what changed and why. The old version is never edited. A recorded revision is a legitimate amendment; only a silent deviation is a breach.
+- **Plan versions that are immutable.** When execution teaches you something and the plan changes, `/sync` records a new amendment version that says what changed and why. The old version is never edited. Re-execution signs a fresh commitment to that amendment. A recorded revision is legitimate; only a silent deviation is a breach.
 - **Results you can verify.** Each analysis is captured as an immutable results bundle: the figures and tables (checksum-verified against the scripts that made them), the exact code, the key numbers, and an automatic plan-vs-execution audit. Re-running an analysis can never quietly change what you already verified — a redo is the next bundle.
 - **A board that shows all of it.** A browser dashboard renders the whole project — the tracker, every plan and its diffs, the results, the decisions, the reviews — so you, a coauthor, or a reviewer can actually read what happened. Nobody has to trust a chat log they'll never see.
 
@@ -30,23 +30,23 @@ The plugin adds a handful of commands to Claude Code. A normal project moves thr
 
 **1. Opt a project in** — `/research-plans:init`. A short interview seeds the master plan: the research questions, and the components (research activities) that serve them. Everything else is opt-in; the plugin does nothing in projects you haven't initialized.
 
-**2. Scope and sign a plan** — `/research-plans:plan`. You and the agent scope the next component and draft its plan. The browser opens to a persistent review room with the scored draft, annotations, and its diff against the prior version. You approve — and it is written exactly as shown — or request changes with comments and the agent revises and rescores it. You are always the one who signs.
+**2. Scope a plan** — `/research-plans:plan`. You and the agent scope the next component and prepare a scored draft. The board is available for reading, annotations, extra reviews, and a diff against the prior version. The draft stays pending, and the tracker marks the component `planned`.
 
-**3. Execute the loop** — `/research-plans:execute`. One prompt asks whether to run now, which model to use, and whether to make a report. Then the agent commits the signed plan, executes it, captures and validates the bundle, reports when requested, updates the tracker and log, suggests one commit, opens the board, and proposes the next component. The plan is the spine it works against, not a cage; interpretive choices still come back to you before the agent acts.
+**3. Sign and execute the loop** — `/research-plans:execute`. A slim sign session shows the pending plan exactly as it will be committed. You approve it or request changes. Then one prompt asks whether to run now, which model to use, and whether to make a report. The agent commits the signed plan, executes it, captures and validates the bundle, reports when requested, updates the tracker and log, suggests one commit, opens the board, and proposes the next component. The plan is the spine it works against, not a cage; interpretive choices still come back to you before the agent acts. Run `/research-plans:sign` when you want to sign pending plans without starting execution.
 
-**4. Recover work outside the loop** — `/research-plans:sync`. This manual checkpoint handles work done outside `/execute`, crashed sessions, hosted comments, and decisions that did not get logged. It updates the tracker and versions the plan if execution deviated from it. When the plan changes, it is a new version that says what changed and why — the old one is never edited. Deviation is not failure; unrecorded deviation is.
+**4. Recover work outside the loop** — `/research-plans:sync`. This manual checkpoint handles work done outside `/execute`, crashed sessions, hosted comments, and decisions that did not get logged. It updates the tracker and records an amendment automatically when confirmed execution deviated from the plan. The amendment says what changed and why; the old version is never edited. Re-execution must sign a new commitment first. Deviation is not failure; unrecorded deviation is.
 
 ![A plan's version 1 to version 2 diff on the board, with an amber banner stating the reason for the revision and the added and removed lines highlighted](docs/images/plan-diff.png)
 
 <sub>A revision is a new version, not an edit. The banner records *why* v2 replaced v1 — here, validation found the decomposition wasn't reported the way the plan promised.</sub>
 
-**5. Capture results manually when needed** — `/research-plans:results`. The execution loop normally does this for you. The direct command seals a versioned, immutable bundle for out-of-loop work or a recapture: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing your signed plan against what actually ran.
+**5. Capture results manually when needed** — `/research-plans:results`. The execution loop normally does this for you. The direct command seals a versioned, immutable bundle for out-of-loop work or a recapture: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing the governing signed plan or recorded amendment against what actually ran.
 
 ![The Output & Validation view showing key-number tiles and a coefficient-plot figure, with a link reading "produced by code/02_wage_gaps.py"](docs/images/results-figure.png)
 
 <sub>Every figure carries its numbers and a link straight to the script that produced it. Nothing on the board is a claim you can't trace back to code.</sub>
 
-**6. Review, reopen, share** — `/research-plans:board`. Open the dashboard. Read a plan and its revision history, or review a results bundle: validation compares the signed plan with what executed, step by step, and defines the bundle's standing state. Reopen any finalized bundle with comments to drive a fix and a new capture. Share the whole thing with a collaborator who only has a browser.
+**6. Review, reopen, share** — `/research-plans:board`. Open the dashboard. Read a plan and its revision history, annotate a draft, or review a results bundle: validation compares the governing plan with what executed, step by step, and defines the bundle's standing state. Reopen any finalized bundle with comments to drive a fix and a new capture. Share the whole thing with a collaborator who only has a browser. Plan approval stays in the slim sign session.
 
 ![The Results review surface with a plan-vs-execution validation panel flagging a deviation, each step marked met, partial, or deviated](docs/images/results-review.png)
 

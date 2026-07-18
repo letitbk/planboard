@@ -1985,6 +1985,62 @@ class TestHarness(unittest.TestCase):
                 proc.terminate()
 
 
+class TestShutdownHandoff(unittest.TestCase):
+    def test_shutdown_requires_board_token(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            url, info, t = serve_in_thread(root, timeout=10)
+            status, body, _ = http_json(url, "/api/shutdown", body={})
+            self.assertEqual((status, body["error"]), (403, "bad-token"))
+            status, body, _ = http_json(
+                url, "/api/shutdown", body={"boardToken": "wrong"})
+            self.assertEqual((status, body["error"]), (403, "bad-token"))
+            status, body, _ = http_json(url, "/api/health")
+            self.assertEqual((status, body["ok"]), (200, True))
+            status, body, _ = http_json(
+                url, "/api/shutdown", body={"boardToken": info["boardToken"]})
+            self.assertEqual((status, body), (200, {"ok": True}))
+            t.join(timeout=5)
+
+    def test_shutdown_clean_exit_code_5(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            proc, url = spawn_board(root, "--timeout", "15")
+            try:
+                info = _read_lock_lenient(root / "plans")
+                status, body, _ = http_json(
+                    url, "/api/shutdown",
+                    body={"boardToken": info["boardToken"]})
+                self.assertEqual((status, body), (200, {"ok": True}))
+                out, err = proc.communicate(timeout=10)
+                self.assertEqual(proc.returncode, 5)
+                self.assertIn("sign-session handoff", err)
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+
+    def test_request_shutdown_roundtrip(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            proc, _url = spawn_board(root, "--timeout", "15")
+            try:
+                self.assertTrue(board.request_shutdown(root / "plans", wait=5.0))
+                self.assertEqual(proc.wait(timeout=10), 5)
+                self.assertFalse((root / "plans" / ".board.lock").exists())
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+
+    def test_request_shutdown_no_board(self):
+        with tempfile.TemporaryDirectory() as td:
+            plans = Path(td) / "plans"
+            plans.mkdir()
+            self.assertFalse(board.request_shutdown(plans))
+
+
 class TestPortDerivation(unittest.TestCase):
     def test_deterministic_and_in_range(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2044,11 +2100,14 @@ class TestLockMeta(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             plans = Path(td) / "plans"
             plans.mkdir()
-            board.acquire_lock(plans, False, meta={"port": 41234, "bootId": "abc"})
+            board.acquire_lock(
+                plans, False,
+                meta={"port": 41234, "bootId": "abc", "boardToken": "token"})
             info = board.read_lock(plans)
             self.assertEqual(info["pid"], os.getpid())
             self.assertEqual(info["port"], 41234)
             self.assertEqual(info["bootId"], "abc")
+            self.assertEqual(info["boardToken"], "token")
 
     def test_read_lock_legacy_plain_pid(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2056,7 +2115,8 @@ class TestLockMeta(unittest.TestCase):
             plans.mkdir()
             (plans / ".board.lock").write_text("4242")
             info = board.read_lock(plans)
-            self.assertEqual(info, {"pid": 4242, "port": 0, "bootId": ""})
+            self.assertEqual(
+                info, {"pid": 4242, "port": 0, "bootId": "", "boardToken": ""})
 
     def test_serve_lock_carries_port_and_boot_id(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2065,6 +2125,7 @@ class TestLockMeta(unittest.TestCase):
             url, info, t = serve_in_thread(root)
             self.assertEqual(info["port"], int(url.rsplit(":", 1)[1]))
             self.assertEqual(len(info.get("bootId", "")), 32)
+            self.assertEqual(len(info.get("boardToken", "")), 64)
 
 
 class BootIdPayloadTest(unittest.TestCase):
@@ -2327,195 +2388,32 @@ class TestOrderSlot(unittest.TestCase):
             proc.terminate()
 
 
-class TestSignoffAction(unittest.TestCase):
-    def setUp(self):
-        self.td = tempfile.TemporaryDirectory()
-        self.root = Path(self.td.name)
-        make_project(self.root)
-        self.draft = (self.root / "plans" / "execution" / "01-data-prep"
-                      / ".draft-v2.md")
-        self.ticket = (self.root / "plans" / "execution"
-                       / ".import-approved-01-data-prep-v2")
-
-    def tearDown(self):
-        self.td.cleanup()
-
-    def _signoff_body(self, token, component="01-data-prep", version=2,
-                      decision="approve", reason=None):
-        action = {"kind": "signoff", "component": component,
-                  "version": version, "decision": decision}
-        if reason is not None:
-            action["reason"] = reason
-        return {"annotations": [], "feedbackMarkdown": "via cluster",
-                "payloadHash": "x", "boardToken": token, "action": action}
-
-    def test_approve_writes_displayed_draft_ticket(self):
-        import hashlib
-        url, info, t = serve_in_thread(self.root, timeout=15)
-        status, body, _ = http_json(url, "/api/feedback", body=self._signoff_body(info["boardToken"]))
-        self.assertEqual(status, 200)
-        self.assertTrue(self.ticket.exists())
-        tdoc = json.loads(self.ticket.read_text(encoding="utf-8"))
-        self.assertEqual(tdoc["slug"], "01-data-prep")
-        self.assertEqual(tdoc["version"], 2)
-        want = hashlib.sha256(board.normalize_plan(
-            self.draft.read_text(encoding="utf-8")).encode("utf-8")).hexdigest()
-        self.assertEqual(tdoc["contentHash"], want)
-        self.assertEqual(tdoc["batchId"], body["actionId"])
-
-    def test_ticket_write_failure_never_leaves_an_order(self):
-        url, info, t = serve_in_thread(self.root, timeout=1)
-        original_write_ticket = board.write_ticket
-
-        def fail_ticket(*args, **kwargs):
-            raise OSError("simulated ticket failure")
-
-        board.write_ticket = fail_ticket
-        try:
-            with self.assertRaises((http.client.RemoteDisconnected,
-                                    urllib.error.URLError,
-                                    ConnectionResetError)):
-                http_json(url, "/api/feedback",
-                          body=self._signoff_body(info["boardToken"]))
-        finally:
-            board.write_ticket = original_write_ticket
-        t.join(timeout=2)
-        self.assertFalse(self.ticket.exists())
-        self.assertFalse((self.root / "plans" / ".board-feedback.md").exists())
-
-    def test_order_replace_failure_rolls_back_ticket_slot_and_temp_file(self):
-        url, info, t = serve_in_thread(self.root, timeout=1)
-        original_replace = board.os.replace
-        pending = self.root / "plans" / ".board-feedback.md"
-
-        def fail_order_replace(src, dst):
-            if Path(dst) == pending:
-                raise OSError("simulated order replace failure")
-            return original_replace(src, dst)
-
-        board.os.replace = fail_order_replace
-        try:
-            with self.assertRaises((http.client.RemoteDisconnected,
-                                    urllib.error.URLError,
-                                    ConnectionResetError)):
-                http_json(url, "/api/feedback",
-                          body=self._signoff_body(info["boardToken"]))
-        finally:
-            board.os.replace = original_replace
-        self.assertFalse(pending.exists())
-        self.assertFalse(self.ticket.exists())
-        self.assertFalse((self.root / "plans" / ".board-feedback.md.tmp").exists())
-
-        # The failed reservation is released, so this same server can accept a
-        # retry after the filesystem fault is gone.
-        retry_status, _, _ = http_json(
-            url, "/api/feedback", body=self._signoff_body(info["boardToken"]))
-        self.assertEqual(retry_status, 200)
-        t.join(timeout=2)
-
-    def test_stale_draft_rejected_exit_4_no_ticket(self):
-        proc, url = spawn_board(self.root, "--timeout", "15")
-        try:
-            self.draft.write_text(
-                self.draft.read_text(encoding="utf-8") + "\nEDITED AFTER BOOT\n",
-                encoding="utf-8")
-            status, body, _ = http_json(
-                url, "/api/feedback",
-                body=self._signoff_body(board_token_of(url)))
-            self.assertEqual(status, 409)
-            self.assertEqual(body["error"], "stale-draft")
-            self.assertFalse(self.ticket.exists())
-            self.assertEqual(proc.wait(timeout=15), 4)
-        finally:
-            proc.terminate()
-
-    def test_deleted_draft_rejected_exit_4(self):
-        proc, url = spawn_board(self.root, "--timeout", "15")
-        try:
-            tok = board_token_of(url)
-            self.draft.unlink()
-            status, body, _ = http_json(url, "/api/feedback",
-                                        body=self._signoff_body(tok))
-            self.assertEqual(status, 409)
-            self.assertEqual(body["error"], "stale-draft")
-            self.assertEqual(proc.wait(timeout=15), 4)
-        finally:
-            proc.terminate()
-
-    def test_undisplayed_draft_version_400(self):
-        (self.draft.parent / ".draft-v1.md").write_text(
-            "# old draft\n", encoding="utf-8")
-        url, info, t = serve_in_thread(self.root, timeout=15)
-        status, body, _ = http_json(
-            url, "/api/feedback",
-            body=self._signoff_body(info["boardToken"], version=1))
-        self.assertEqual(status, 400)
-        self.assertEqual(body["error"], "bad-action")
-
-    def test_unknown_component_400(self):
-        url, info, t = serve_in_thread(self.root, timeout=15)
-        status, body, _ = http_json(
-            url, "/api/feedback",
-            body=self._signoff_body(info["boardToken"], component="99-nope"))
-        self.assertEqual(status, 400)
-        self.assertEqual(body["error"], "bad-action")
-
-    def test_trailer_in_draft_400(self):
-        self.draft.write_text(
-            "# Data prep v2 draft\n\nDo it better.\n\nSigned off: sneaky\n",
-            encoding="utf-8")
-        url, info, t = serve_in_thread(self.root, timeout=15)
-        status, body, _ = http_json(
-            url, "/api/feedback", body=self._signoff_body(info["boardToken"]))
-        self.assertEqual(status, 400)
-        self.assertEqual(body["error"], "trailer-in-draft")
-        self.assertFalse(self.ticket.exists())
-
-    def test_request_changes_never_writes_ticket(self):
-        url, info, t = serve_in_thread(self.root, timeout=15)
-        status, body, _ = http_json(
-            url, "/api/feedback",
-            body=self._signoff_body(info["boardToken"],
-                                    decision="request-changes", reason="tighten"))
-        self.assertEqual(status, 200)
-        self.assertFalse(self.ticket.exists())
-
-    def test_ticket_admits_signed_write_e2e(self):
-        # setUp already ran make_project; add the gate's CLAUDE.md marker.
-        (self.root / "CLAUDE.md").write_text(
-            "<!-- research-plans:start -->\n", encoding="utf-8")
-        url, info, t = serve_in_thread(self.root, timeout=15)
-        status, body, _ = http_json(
-            url, "/api/feedback", body=self._signoff_body(info["boardToken"]))
-        self.assertEqual(status, 200)
-        signed = (self.draft.read_text(encoding="utf-8").rstrip("\n")
-                  + "\n\nSigned off: BK, 2026-07-10\n")
-        event = {"tool_name": "Write", "cwd": str(self.root),
-                 "tool_input": {
-                     "file_path": str(self.draft.parent / "v2.md"),
-                     "content": signed}}
-        p = subprocess.run(
-            [sys.executable, str(SCRIPTS / "signoff_gate.py")],
-            input=json.dumps(event), capture_output=True, text=True, timeout=30)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        decision = json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"]
-        self.assertEqual(decision, "allow")
-
-        target = self.draft.parent / "v2.md"
-        target.write_text(signed, encoding="utf-8")
-        ack = run_board(self.root, "--ack")
-        self.assertEqual(ack.returncode, 0, ack.stderr)
-        self.assertFalse((self.root / "plans" / ".board-feedback.md").exists())
-
-        second = subprocess.run(
-            [sys.executable, str(SCRIPTS / "signoff_gate.py")],
-            input=json.dumps(event), capture_output=True, text=True, timeout=30)
-        self.assertEqual(second.returncode, 0, second.stderr)
-        second_decision = json.loads(
-            second.stdout)["hookSpecificOutput"]["permissionDecision"]
-        self.assertEqual(second_decision, "deny")
-
-
+class TestFeedbackRoute(unittest.TestCase):
+    def test_feedback_signoff_route_gone(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_project(root)
+            ticket = (root / "plans" / "execution" /
+                      ".import-approved-01-data-prep-v2")
+            url, info, thread = serve_in_thread(root, timeout=15)
+            old_action = {
+                "kind": "signoff", "component": "01-data-prep",
+                "version": 2, "decision": "approve",
+            }
+            status, _, _ = http_json(url, "/api/feedback", body={
+                "annotations": [], "feedbackMarkdown": "generic comment survives",
+                "payloadHash": "x", "boardToken": info["boardToken"],
+                "action": old_action,
+            })
+            self.assertEqual(status, 200)
+            thread.join(timeout=5)
+            self.assertFalse(ticket.exists())
+            pending = root / "plans" / ".board-feedback.md"
+            self.assertTrue(pending.exists())
+            doc = pending.read_text(encoding="utf-8")
+            self.assertIn("generic comment survives", doc)
+            self.assertNotIn("SIGNOFF:", doc)
+            self.assertNotIn("signoff", board.parse_fence(doc))
 class TestServerAuthoredActionDocs(unittest.TestCase):
     def test_action_posts_ignore_client_document(self):
         body = {"feedbackDocument": ("FORGED\n```json board-feedback\n"
@@ -2554,7 +2452,7 @@ class TestServerAuthoredActionDocs(unittest.TestCase):
         body = {"feedbackDocument": "CLIENT DOC"}
         self.assertEqual(board.document_from_body(body, {}), "CLIENT DOC")
 
-    def test_http_signoff_order_is_server_authored(self):
+    def test_http_legacy_signoff_action_has_no_authority(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             make_project(root)
@@ -2568,10 +2466,11 @@ class TestServerAuthoredActionDocs(unittest.TestCase):
             self.assertEqual(status, 200)
             doc = (root / "plans" / ".board-feedback.md").read_text(
                 encoding="utf-8")
-            self.assertNotIn("SPOOFED", doc)
+            self.assertIn("SPOOFED CLIENT DOCUMENT", doc)
+            self.assertNotIn("## SIGNOFF:", doc)
             meta = board.parse_fence(doc)
             self.assertEqual(meta["actionId"], body["actionId"])
-            self.assertEqual(meta["signoff"]["component"], "01-data-prep")
+            self.assertNotIn("signoff", meta)
 
 
 class TestHandDeliveredIngress(unittest.TestCase):
@@ -3195,7 +3094,15 @@ class TestModelProfileWrite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)
             payload = board.collect_payload(root, "live", None)
-            payload["gate"] = {"component": "01-data-prep", "proposedVersion": 2}
+            payload["sign"] = {
+                "batchId": "hook-test", "transport": "hook",
+                "items": [{
+                    "component": "01-data-prep", "proposedVersion": 2,
+                    "path": "plans/execution/01-data-prep/.draft-v2.md",
+                    "content": "# draft\n", "contentHash": "0" * 64,
+                    "ticketed": False,
+                }],
+            }
             url, info, t = serve_in_thread(root, payload=payload)
             status, _, _ = http_json(url, "/api/model-profile",
                                      body={"boardToken": info["boardToken"],

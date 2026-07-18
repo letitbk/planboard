@@ -1,73 +1,56 @@
 // @vitest-environment jsdom
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import type { BoardData } from "./lib/types";
 
-Element.prototype.scrollIntoView = vi.fn();
-Object.defineProperty(window, "matchMedia", {
-  configurable: true,
-  value: vi.fn().mockImplementation((query: string) => ({
-    matches: false, media: query, onchange: null,
-    addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
-  })),
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+beforeEach(() => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  });
 });
 
-afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
-
-const V1 = [
-  "# Execution Plan v1",
-  "Component: `01-alpha`",
-  "## Goal and success criteria",
-  "goal text",
-  "## Build steps",
-  "step one",
-].join("\n");
-
-function gateFixture(): BoardData {
+function signFixture(): BoardData {
+  const item = {
+    component: "01-alpha", proposedVersion: 1,
+    path: "plans/execution/01-alpha/.gate-v1.md",
+    content: "# Alpha — Execution Plan v1\n\n## Goal and success criteria\n\ngoal text\n",
+    contentHash: "a".repeat(64), ticketed: false,
+  };
   return {
-    schemaVersion: 1,
-    generatedAt: "2026-07-16T00:00",
-    mode: "live",
-    focus: null,
-    projectId: "proj-1",
-    bootId: "boot-a",
-    boardToken: "tok-abc",
-    gate: { component: "01-alpha", proposedVersion: 1 },
-    project: { name: "p" },
-    git: { available: false },
+    schemaVersion: 2, generatedAt: "2026-07-18T00:00", mode: "live",
+    focus: "01-alpha", projectId: "p1", bootId: "b1", boardToken: "token",
+    project: { name: "p" }, git: { available: false },
+    sign: { batchId: "h1", transport: "hook", items: [item] },
     files: {
       masterPlan: { path: "plans/master-plan.md", content: "# MP" },
       decisionLog: { path: "plans/decision-log.md", content: "# DL" },
-      executionPlans: [
-        {
-          component: "01-alpha",
-          versions: [],
-          draft: {
-            path: "plans/execution/01-alpha/.gate-v1.md",
-            content: V1,
-            proposedVersion: 1,
-          },
-        },
-      ],
+      executionPlans: [{ component: "01-alpha", versions: [], draft: item }],
       reviews: [],
     },
-  } as unknown as BoardData;
+  } as BoardData;
 }
 
-describe("failed gate POST recovery", () => {
-  it("shows the gate-expired copy when the server is gone", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (String(url).includes("/api/approve")) {
+describe("failed sign-session POST recovery", () => {
+  it("routes server-gone recovery through the new ConnBanner copy", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      if (String(input).includes("/api/approve")) {
         return { ok: false, status: 403, json: async () => ({ error: "bad-token" }) };
       }
       throw new TypeError("fetch failed");
     }));
-    render(<App data={gateFixture()} />);
-    fireEvent.click(screen.getByRole("button", { name: /approve/i }));
+    render(<App data={signFixture()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Approve$/ }));
     await waitFor(() => {
-      expect(screen.getByText(/This sign-off gate has ended/i)).toBeTruthy();
+      expect(screen.getByText(/This sign session has ended/i)).toBeTruthy();
     });
+    expect(screen.getByText(/research-plans:sign/)).toBeTruthy();
   });
 });

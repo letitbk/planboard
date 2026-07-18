@@ -1,7 +1,6 @@
 # tests/test_gate_explicitness.py
-"""Gate harmonization (post-v0.15): the --gate-batch pending guard +
---allow-single, numeric draft selection, timeout draft persistence, and the
-message policy (agents are never taught --gate-batch outside /adopt).
+"""Sign-session selection, numeric draft selection, timeout draft persistence,
+and recovery-message policy.
 Spec: docs/specs/2026-07-13-gate-explicitness-design.md. Run:
     python3 -m unittest tests.test_gate_explicitness -v
 """
@@ -49,117 +48,75 @@ def run_gate_reason(root, path, content):
     return doc["permissionDecision"], doc["permissionDecisionReason"]
 
 
-class TestBatchGuard(unittest.TestCase):
-    def _die_message(self, root, allow_single=False):
-        err = io.StringIO()
-        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
-            board.apply_gate_batch(root, {}, allow_single=allow_single)
-        return err.getvalue()
+def link_tracker(root, slug):
+    master = root / "plans" / "master-plan.md"
+    master.write_text(
+        master.read_text(encoding="utf-8")
+        + "\n[draft](execution/%s/.draft-v1.md)\n" % slug,
+        encoding="utf-8",
+    )
 
-    def test_zero_drafts_dies_unchanged(self):
+
+class TestSignSelection(unittest.TestCase):
+    def payload(self, root):
+        return board.collect_payload(root, "live", None)
+
+    def test_zero_drafts_returns_without_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_init_component(root)
-            msg = self._die_message(root)
-            self.assertIn("no pending drafts", msg)
+            link_tracker(root, "03-x")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                payload = board.apply_sign(root, self.payload(root))
+            self.assertIsNone(payload)
+            self.assertIn("no eligible", err.getvalue())
 
-    def test_single_pending_refused_with_redirect(self):
+    def test_single_pending_proceeds(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_init_component(root)
+            link_tracker(root, "03-x")
             add_draft(root, "03-x")
-            msg = self._die_message(root)
-            self.assertIn("reviews several pending drafts", msg)
-            self.assertIn("--allow-single", msg)
-            self.assertIn("Approve the draft on the board", msg)
+            payload = board.apply_sign(root, self.payload(root))
+            self.assertEqual(len(payload["sign"]["items"]), 1)
 
-    def test_single_with_allow_single_proceeds(self):
+    def test_ticketed_draft_is_enumerated_for_recovery(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_init_component(root)
-            add_draft(root, "03-x")
-            payload = board.apply_gate_batch(root, {}, allow_single=True)
-            self.assertEqual(len(payload["gateBatch"]), 1)
-
-    def test_two_pending_proceeds_without_flag(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            make_init_component(root)
-            add_draft(root, "03-x")
-            add_draft(root, "04-y")
-            payload = board.apply_gate_batch(root, {}, allow_single=False)
-            self.assertEqual(len(payload["gateBatch"]), 2)
-
-    def test_validly_ticketed_draft_is_not_pending(self):
-        # 2 drafts, one already approved (valid ticket) -> 1 pending -> refused,
-        # and the message counts pending drafts, not draft files.
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            make_init_component(root)
-            add_draft(root, "03-x")
-            add_draft(root, "04-y")
-            write_ticket(root, "03-x", 1, DRAFT)
-            msg = self._die_message(root)
-            self.assertIn("1 pending draft", msg)
-
-    def test_all_ticketed_dies_write_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            make_init_component(root)
+            link_tracker(root, "03-x")
             add_draft(root, "03-x")
             write_ticket(root, "03-x", 1, DRAFT)
-            msg = self._die_message(root)
-            self.assertIn("already approved", msg)
-            self.assertIn("write the v", msg)
-
-    def test_expired_ticket_still_counts_as_pending(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            make_init_component(root)
-            add_draft(root, "03-x")
-            write_ticket(root, "03-x", 1, DRAFT, expiry=1.0)
-            msg = self._die_message(root)
-            self.assertIn("1 pending draft", msg)
-
-    def test_order_bound_orphan_counts_as_pending(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            make_init_component(root)
-            add_draft(root, "03-x")
-            ticket = write_ticket(root, "03-x", 1, DRAFT)
-            doc = json.loads(ticket.read_text(encoding="utf-8"))
-            doc["orderActionId"] = "missing-order"
-            ticket.write_text(json.dumps(doc), encoding="utf-8")
-
-            payload = board.apply_gate_batch(root, {}, allow_single=True)
-
-            self.assertEqual(len(payload["gateBatch"]), 1)
-            self.assertFalse(board.has_valid_ticket(root, "03-x", 1, DRAFT))
-            self.assertTrue(ticket.exists())
+            payload = board.apply_sign(root, self.payload(root))
+            self.assertTrue(payload["sign"]["items"][0]["ticketed"])
 
     def test_numeric_newest_draft_selected(self):
-        # Pre-existing bug: lexicographic sort picked .draft-v9 over .draft-v10.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_init_component(root)
+            link_tracker(root, "03-x")
             add_draft(root, "03-x", version=9, content="# nine\n")
             add_draft(root, "03-x", version=10, content="# ten\n")
-            payload = board.apply_gate_batch(root, {}, allow_single=True)
-            self.assertEqual(payload["gateBatch"][0]["proposedVersion"], 10)
-            self.assertIn("ten", payload["gateBatch"][0]["content"])
+            payload = board.apply_sign(root, self.payload(root))
+            self.assertEqual(payload["sign"]["items"][0]["proposedVersion"], 10)
+            self.assertIn("ten", payload["sign"]["items"][0]["content"])
 
 
 class TestCliPairing(unittest.TestCase):
-    def test_allow_single_requires_gate_batch(self):
-        err = io.StringIO()
-        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
-            board.parse_args(["--allow-single"])
-        self.assertIn("--allow-single", err.getvalue())
+    def test_sign_without_component_means_all(self):
+        args = board.parse_args(["--sign", "--no-open"])
+        self.assertEqual(args.sign, "ALL")
 
-    def test_allow_single_with_gate_batch_parses(self):
-        args = board.parse_args(["--gate-batch", "--allow-single", "--no-open"])
-        self.assertTrue(args.gate_batch)
-        self.assertTrue(args.allow_single)
+    def test_sign_with_component_parses(self):
+        args = board.parse_args(["--sign", "03-x", "--no-open"])
+        self.assertEqual(args.sign, "03-x")
+
+    def test_retired_batch_flags_are_rejected(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            board.parse_args(["--gate-batch"])
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            board.parse_args(["--allow-single"])
 
 
 class TestPayloadDraftNumeric(unittest.TestCase):
@@ -212,7 +169,7 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
         with mock.patch.object(sg.subprocess, "run", return_value=stub):
             return _run_gate_inproc(sg, root, comp / "v1.md", content)
 
-    def test_timeout_persists_draft_and_routes_to_board(self):
+    def test_timeout_persists_stripped_draft_and_routes_to_sign(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -220,10 +177,9 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
             self.assertEqual(decision, "deny")
             draft = comp / ".draft-v1.md"
             self.assertTrue(draft.exists())
-            self.assertEqual(draft.read_text(encoding="utf-8"), SIGNED)
+            self.assertEqual(draft.read_text(encoding="utf-8"), DRAFT)
             self.assertIn(".draft-v1.md", reason)
-            self.assertIn("Approve", reason)
-            self.assertIn("do NOT use --gate-batch", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("NO_GATE", reason)
 
     def test_timeout_overwrites_stale_draft(self):
@@ -234,11 +190,11 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
             decision, reason = self._timeout_run(root, comp, SIGNED)
             self.assertEqual(decision, "deny")
             self.assertEqual((comp / ".draft-v1.md").read_text(encoding="utf-8"),
-                             SIGNED)
+                             DRAFT)
 
 
 class TestTicketErrorMessages(unittest.TestCase):
-    def test_corrupt_ticket_names_board_not_batch(self):
+    def test_corrupt_ticket_names_sign_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -247,10 +203,10 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("unreadable or corrupt", reason)
-            self.assertIn("board", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
-    def test_expired_ticket_names_board_not_batch(self):
+    def test_expired_ticket_names_sign_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -258,10 +214,10 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("expired", reason)
-            self.assertIn("board", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
-    def test_hash_mismatch_names_board_not_batch(self):
+    def test_hash_mismatch_names_sign_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -270,7 +226,7 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", tampered)
             self.assertEqual(decision, "deny")
             self.assertIn("content-hash mismatch", reason)
-            self.assertIn("board", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_order_bound_orphan_fast_denies_in_actual_hook(self):

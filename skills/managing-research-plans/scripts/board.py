@@ -17,7 +17,7 @@ Stdlib only, Python 3.9+. Modes:
 Exit codes: 0 feedback delivered / export or share written / feedback collected;
 1 usage or environment error; 2 timeout with no feedback; 3 nothing to
 collect/acknowledge; 4 stale payload (an approve targeted a draft that changed
-on disk — relaunch to regenerate); 130 cancelled.
+on disk — relaunch to regenerate); 5 closed by sign-session handoff; 130 cancelled.
 """
 
 import argparse
@@ -47,7 +47,7 @@ from pathlib import Path
 # Share the gate's plan normalization so a batch ticket's hash (over the unsigned
 # draft) matches the gate's hash (over the signed vN.md write). Must not drift.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from signoff_gate import normalize_plan  # noqa: E402
+from signoff_gate import normalize_plan, parse_trailer, strip_trailer  # noqa: E402
 from results import changed_sources  # noqa: E402
 import models  # noqa: E402  (model-profile parse/view/generate — Models tab)
 
@@ -90,6 +90,7 @@ GITIGNORE_LINES = [
     "/board-share.html",
     "/execution/*/.draft-v*.md",
     "/execution/*/.gate-*.md",
+    "/execution/*/.sign-feedback-v*.md",
     "/execution/.import-approved-*",
     "/execution/*/results/.staging-*/",
     "/.board-web/",
@@ -689,6 +690,7 @@ def collect_payload(root, mode, focus):
                     continue
                 entry = read_file(root, str(f.relative_to(root)))
                 entry["version"] = int(m.group(1))
+                entry["trailerState"] = parse_trailer(entry["content"])["kind"]
                 versions.append(entry)
             versions.sort(key=lambda v: v["version"])
             group = {"component": comp_dir.name, "versions": versions}
@@ -698,6 +700,7 @@ def collect_payload(root, mode, focus):
                     version, d = nd
                     entry = read_file(root, str(d.relative_to(root)))
                     entry["proposedVersion"] = version
+                    entry["trailerState"] = parse_trailer(entry["content"])["kind"]
                     group["draft"] = entry
             # Committed within-version draft iterations (feature #1). Unlike the
             # ephemeral working draft above, these are real history and ride in
@@ -905,8 +908,8 @@ def bind_server(root, requested, handler_cls):
 
 
 def read_lock(plans_dir):
-    """Lock metadata {pid, port, bootId}; legacy plain-PID locks read as
-    port 0 / empty bootId. None when absent or unreadable."""
+    """Lock metadata {pid, port, bootId, boardToken}; legacy plain-PID locks
+    read with empty metadata. None when absent or unreadable."""
     lock = plans_dir / ".board.lock"
     if not lock.is_file():
         return None
@@ -919,13 +922,39 @@ def read_lock(plans_dir):
         if isinstance(info, dict) and "pid" in info:
             return {"pid": int(info["pid"]),
                     "port": int(info.get("port", 0)),
-                    "bootId": str(info.get("bootId", ""))}
+                    "bootId": str(info.get("bootId", "")),
+                    "boardToken": str(info.get("boardToken", ""))}
     except (ValueError, TypeError):
         pass
     try:
-        return {"pid": int(raw), "port": 0, "bootId": ""}
+        return {"pid": int(raw), "port": 0, "bootId": "", "boardToken": ""}
     except ValueError:
         return None
+
+
+def request_shutdown(plans_dir, wait=10.0):
+    """Ask a live board to release its lock for a sign-session handoff."""
+    info = read_lock(plans_dir)
+    if not info or not info.get("port") or not info.get("boardToken"):
+        return False
+    data = json.dumps({"boardToken": info["boardToken"]}).encode("utf-8")
+    req = urllib.request.Request(
+        "http://127.0.0.1:%d/api/shutdown" % info["port"],
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status != 200:
+                return False
+        deadline = time.monotonic() + wait
+        lock = plans_dir / ".board.lock"
+        while lock.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return not lock.exists()
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
 
 
 def acquire_lock(plans_dir, force, meta=None):
@@ -1074,9 +1103,12 @@ def serve(root, payload, args):
     lock = acquire_lock(plans_dir, args.force)
     retire_orphan_order_tickets(root)
 
-    gate_mode = payload.get("gate") is not None
-    batch_mode = payload.get("gateBatch") is not None
-    batch_id = uuid.uuid4().hex[:8]
+    sign_payload = payload.get("sign")
+    sign_mode = isinstance(sign_payload, dict)
+    sign_transport = sign_payload.get("transport") if sign_mode else None
+    gate_mode = sign_transport == "hook"
+    ticket_sign_mode = sign_transport == "ticket"
+    batch_id = sign_payload.get("batchId") if sign_mode else None
     boot_id = uuid.uuid4().hex
     amap = artifact_map(root, payload)
     rmap = report_map(root, payload)
@@ -1092,10 +1124,10 @@ def serve(root, payload, args):
     html_bytes = html.encode("utf-8")
     done = threading.Event()
     result = {"approved": [], "rejected": []}
-    if batch_mode:
+    if ticket_sign_mode:
         result["approved"] = [
             [e["component"], e["proposedVersion"]]
-            for e in payload.get("gateBatch", []) if e.get("ticketed")
+            for e in sign_payload.get("items", []) if e.get("ticketed")
         ]
     draft_map = draft_map_from_payload(payload)
     slot = {"actionId": None}
@@ -1109,7 +1141,7 @@ def serve(root, payload, args):
     # model-profile save so two concurrent POSTs can't both read the old file
     # and lose an update (ThreadingHTTPServer).
     profile_lock = threading.Lock()
-    batch_lock = threading.Lock()
+    sign_lock = threading.Lock()
 
     def accept_order(build_doc, exit_code, write_file, before_commit=None):
         """Single-slot order acceptance: reserve the id, build the document,
@@ -1277,70 +1309,15 @@ def serve(root, payload, args):
                 except SystemExit as e:
                     self._json(500, {"error": str(e)})
                 return
-            if self.path == "/api/feedback" and not gate_mode:
-                action = body.get("action")
-                ticket_args = None
-                validated = None
-                if action is not None:
-                    try:
-                        validated = validate_signoff_action(action, draft_map)
-                    except ValueError:
-                        self._json(400, {"error": "bad-action"})
-                        return
-                    slug_a, ver_a, decision_a, _reason_a = validated
-                    if decision_a == "approve":
-                        entry = draft_map[(slug_a, ver_a)]
-                        try:
-                            dtext = (root / entry["path"]).read_text(
-                                encoding="utf-8")
-                        except OSError:
-                            dtext = None
-                        now_hash = None if dtext is None else hashlib.sha256(
-                            normalize_plan(dtext).encode("utf-8")).hexdigest()
-                        if now_hash != entry["hash"]:
-                            # The displayed payload no longer matches disk:
-                            # refuse the ticket, then exit 4 so the command
-                            # loop relaunches with a fresh payload.
-                            self._json(409, {"error": "stale-draft"})
-                            result["doc"] = ""
-                            result["exit"] = 4
-                            done.set()
-                            return
-                        _tail = [ln.rstrip() for ln in
-                                 dtext.replace("\r\n", "\n").split("\n")]
-                        while _tail and _tail[-1] == "":
-                            _tail.pop()
-                        if _tail and _tail[-1].startswith("Signed off:"):
-                            # normalize_plan is trailer-invariant, so the hash
-                            # cannot distinguish trailer identity — refuse.
-                            self._json(400, {"error": "trailer-in-draft"})
-                            return
-                        ticket_args = (slug_a, ver_a, dtext)
-                def _write_action_ticket(aid):
-                    if ticket_args is not None:
-                        ticket_path = (
-                            root / "plans" / "execution" /
-                            (".import-approved-%s-v%d"
-                             % (ticket_args[0], ticket_args[1])))
-                        try:
-                            return write_ticket(
-                                root, ticket_args[0], ticket_args[1],
-                                ticket_args[2], aid, order_action_id=aid)
-                        except Exception:
-                            try:
-                                ticket_path.unlink()
-                            except OSError:
-                                pass
-                            raise
-                    return None
-
+            if self.path == "/api/shutdown":
+                self._json(200, {"ok": True})
+                result["shutdown"] = True
+                done.set()
+                return
+            if self.path == "/api/feedback" and not sign_mode:
                 aid = accept_order(
-                    lambda aid: document_from_body(body, payload,
-                                                   action=validated,
-                                                   action_id=aid),
-                    0, True,
-                    before_commit=_write_action_ticket
-                    if ticket_args is not None else None)
+                    lambda aid: document_from_body(body, payload, action_id=aid),
+                    0, True)
                 if aid is pending_order:
                     self._json(409, {"error": "pending-order",
                                      "message": pending_order_message})
@@ -1357,9 +1334,10 @@ def serve(root, payload, args):
                 comment = (body.get("comment") or "").strip()
 
                 def _approve_doc(aid):
+                    item = sign_payload["items"][0]
                     doc = "APPROVED: %s v%d" % (
-                        payload["gate"]["component"],
-                        payload["gate"]["proposedVersion"],
+                        item["component"],
+                        item["proposedVersion"],
                     )
                     if comment:
                         doc += "\nResearcher comment: %s" % comment
@@ -1392,14 +1370,14 @@ def serve(root, payload, args):
                                  "bootId": boot_id, "projectId": proj_id})
                 done.set()
                 return
-            # ---- Batch sign-off wizard: each approval writes its ticket NOW
-            # (incremental persistence); the session ends only on /api/batch/done. ----
-            if self.path == "/api/batch/approve" and batch_mode:
+            # ---- Ticket sign session: decisions persist immediately; the
+            # session ends only when the client posts /api/sign/done. ----
+            if self.path == "/api/sign/approve" and ticket_sign_mode:
                 comp, ver = body.get("component"), body.get("proposedVersion")
                 client_hash = body.get("contentHash")
-                with batch_lock:
+                with sign_lock:
                     entry = next(
-                        (e for e in payload["gateBatch"]
+                        (e for e in sign_payload["items"]
                          if e["component"] == comp and e["proposedVersion"] == ver),
                         None,
                     )
@@ -1423,7 +1401,7 @@ def serve(root, payload, args):
                             "ticketed": has_valid_ticket(
                                 root, comp, nd[0], fresh_text),
                         }
-                        payload["gateBatch"][payload["gateBatch"].index(entry)] = fresh
+                        sign_payload["items"][sign_payload["items"].index(entry)] = fresh
                         self._json(409, {"ok": False, "error": "newer-draft",
                                          "entry": fresh})
                         return
@@ -1432,11 +1410,7 @@ def serve(root, payload, args):
                     except OSError:
                         self._json(410, {"ok": False, "error": "draft-missing"})
                         return
-                    _tail = [ln.rstrip() for ln in
-                             dtext.replace("\r\n", "\n").split("\n")]
-                    while _tail and _tail[-1] == "":
-                        _tail.pop()
-                    if _tail and _tail[-1].startswith("Signed off:"):
+                    if parse_trailer(dtext)["kind"] != "none":
                         self._json(400, {"ok": False,
                                          "error": "trailer-in-draft"})
                         return
@@ -1460,21 +1434,41 @@ def serve(root, payload, args):
                     self._json(200, {"ok": True,
                                      "approved": len(result["approved"])})
                     return
-            if self.path == "/api/batch/reject" and batch_mode:
-                result["rejected"].append(
-                    [body.get("component"), body.get("proposedVersion"),
-                     (body.get("comment") or "").strip()])
+            if self.path == "/api/sign/reject" and ticket_sign_mode:
+                comp, ver = body.get("component"), body.get("version")
+                entry = next(
+                    (e for e in sign_payload["items"]
+                     if e["component"] == comp and e["proposedVersion"] == ver),
+                    None,
+                )
+                if entry is None:
+                    self._json(404, {"ok": False, "error": "unknown plan"})
+                    return
+                note = body.get("note")
+                annotations = body.get("annotations")
+                if not isinstance(note, str) or not isinstance(annotations, list):
+                    self._json(400, {"ok": False, "error": "bad-request"})
+                    return
+                feedback = build_sign_feedback(comp, int(ver), note, annotations)
+                feedback_path = (root / "plans" / "execution" / comp /
+                                 (".sign-feedback-v%d.md" % ver))
+                models.atomic_write(feedback_path, feedback)
+                result["rejected"] = [
+                    row for row in result["rejected"]
+                    if row[:2] != [comp, ver]
+                ]
+                result["rejected"].append([comp, ver, note.strip()])
                 self._json(200, {"ok": True})
                 return
-            if self.path == "/api/batch/done" and batch_mode:
+            if self.path == "/api/sign/done" and ticket_sign_mode:
                 result["exit"] = 0
                 self._json(200, {"ok": True})
                 done.set()
                 return
             # Model-profile save (Models tab). Repeatable — never ends the
             # session (no done.set). Serialized by profile_lock; disabled during
-            # a sign-off gate / batch wizard (defense in depth; the UI hides it).
-            if self.path == "/api/model-profile" and not gate_mode and not batch_mode:
+            # a sign session (defense in depth; the UI hides it).
+            if self.path == "/api/model-profile" and not sign_mode:
                 with profile_lock:
                     status, out = apply_model_profile(root, body)
                 self._json(status, out)
@@ -1485,7 +1479,8 @@ def serve(root, payload, args):
     server = bind_server(root, args.port, Handler)
     port = server.server_address[1]
     lock.write_text(json.dumps({"pid": os.getpid(), "port": port,
-                                "bootId": boot_id}), encoding="utf-8")
+                                "bootId": boot_id,
+                                "boardToken": board_token}), encoding="utf-8")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -1503,29 +1498,41 @@ def serve(root, payload, args):
         signal.signal(signal.SIGTERM, lambda *a: (_ for _ in ()).throw(SystemExit(130)))
 
     # Plain live serving has NO idle timeout — the board stays open until the
-    # researcher acts or closes it. Gate/batch modes (and any explicit --timeout)
-    # keep a bounded wait + exit 2, because sign-off recovery relies on the
-    # timeout persisting the draft and denying the write cleanly.
+    # researcher acts or closes it. Sign modes (and any explicit --timeout)
+    # keep a bounded wait; ticket sessions preserve decisions and exit 0 while
+    # the blocking hook transport retains its timeout exit 2.
     if args.timeout is not None:
         wait_timeout = args.timeout
-    elif gate_mode or batch_mode:
+    elif sign_mode:
         wait_timeout = 3600
     else:
         wait_timeout = None
     try:
         got = done.wait(timeout=wait_timeout)
         server.shutdown()
-        if batch_mode:
+        if result.get("shutdown"):
+            print("board: closed by sign-session handoff", file=sys.stderr)
+            sys.exit(5)
+        if ticket_sign_mode:
             appr, rej = result["approved"], result["rejected"]
-            print("Batch sign-off: %d approved, %d changes-requested%s."
-                  % (len(appr), len(rej),
-                     "" if got else " (session timed out; approvals were saved)"))
+            decided = {(c, v) for c, v in appr}
+            decided.update((c, v) for c, v, _ in rej)
+            undecided = [
+                [e["component"], e["proposedVersion"]]
+                for e in sign_payload["items"]
+                if (e["component"], e["proposedVersion"]) not in decided
+            ]
+            print("Sign session: %d approved, %d changes-requested, %d undecided%s."
+                  % (len(appr), len(rej), len(undecided),
+                     "" if got else " (session timed out; decisions were saved)"))
             for c, v in appr:
                 print("  approved: %s v%s" % (c, v))
             for c, v, cm in rej:
                 print("  changes-requested: %s v%s%s"
                       % (c, v, " — %s" % cm if cm else ""))
-            sys.exit(0)  # approvals are persisted tickets; a timeout loses nothing
+            for c, v in undecided:
+                print("  undecided: %s v%s" % (c, v))
+            sys.exit(0)
         if not got:
             print("board: no feedback received within %ds" % wait_timeout, file=sys.stderr)
             sys.exit(2)
@@ -2357,7 +2364,7 @@ def collect_file(root, path):
 
 
 def write_ticket(root, slug, version, content, batch_id, order_action_id=None):
-    """Write a batch-approval ticket that signoff_gate.check_ticket accepts.
+    """Write a sign-session ticket that signoff_gate.check_ticket accepts.
     Hashed over the NORMALIZED draft (sign-off-trailer-invariant), so the later
     signed vN.md write matches and the gate allows it without reopening a browser."""
     doc = {
@@ -2377,10 +2384,31 @@ def write_ticket(root, slug, version, content, batch_id, order_action_id=None):
     return tp
 
 
+def build_sign_feedback(slug, version, note, annotations):
+    """Durable, human-readable request-changes record for one sign item."""
+    lines = ["# Sign feedback — %s v%d" % (slug, version)]
+    if note.strip():
+        lines.extend(["", "## Note", "", note.strip()])
+    kept = [a for a in annotations if isinstance(a, dict)]
+    if kept:
+        lines.extend(["", "## Annotations"])
+    for index, annotation in enumerate(kept, 1):
+        section = str(annotation.get("sectionHeading") or "").strip()
+        quote = str(annotation.get("quote") or "").strip()
+        comment = str(annotation.get("comment") or "").strip()
+        lines.extend(["", "### %d%s" % (
+            index, " — %s" % section if section else "")])
+        if quote:
+            lines.extend(["", "> " + quote.replace("\n", "\n> ")])
+        if comment:
+            lines.extend(["", comment])
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def retire_orphan_order_tickets(root):
     """Retire live-order tickets whose durable order never committed.
 
-    Batch approvals have no orderActionId and are never touched. A bound ticket
+    Sign-session approvals have no orderActionId and are never touched. A bound ticket
     stays valid while its matching pending order exists, and is inert once the
     signed version exists. Otherwise it is an orphan from the ticket-first
     crash window and must force a fresh researcher approval.
@@ -2421,50 +2449,48 @@ def retire_orphan_order_tickets(root):
     return retired
 
 
-def apply_gate_batch(root, payload, allow_single=False):
-    """Collect every pending draft (.draft-vN.md) into payload['gateBatch'] for the
-    one-at-a-time batch sign-off wizard. Each approval writes that plan's ticket
-    immediately (incremental persistence), so an interrupted session keeps prior
-    approvals. With fewer than 2 drafts still awaiting approval it refuses
-    unless allow_single — a single plan's sign-off belongs to the write-triggered
-    gate or the researcher's Approve on the persistent board (which mints the
-    same ticket)."""
-    batch = []
-    pending = 0
-    exec_dir = root / "plans" / "execution"
-    if exec_dir.is_dir():
-        for comp_dir in sorted(p for p in exec_dir.iterdir() if p.is_dir()):
-            nd = newest_draft(comp_dir)
-            if nd is None:
-                continue
-            version, d = nd
-            content = d.read_text(encoding="utf-8")
-            ch = hashlib.sha256(content.encode("utf-8")).hexdigest()
-            ticketed = has_valid_ticket(root, comp_dir.name, version, content)
-            if not ticketed:
-                pending += 1
-            batch.append({
-                "component": comp_dir.name,
-                "proposedVersion": version,
-                "path": str(d.relative_to(root)),
-                "content": content,
-                "contentHash": ch,
-                "ticketed": ticketed,
-            })
-    if not batch:
-        die("no pending drafts (.draft-v*.md) to review — nothing to approve")
-    if pending == 0:
-        die("every pending draft is already approved (tickets present) — "
-            "write the vN.md files; no batch session is needed.")
-    if pending < 2 and not allow_single:
-        die("%d pending draft(s) — batch sign-off reviews several pending "
-            "drafts in one session. "
-            "For a single plan, write vN.md (the sign-off gate opens "
-            "automatically) or have the researcher Approve the draft on the "
-            "board (writes the same ticket). To resume an interrupted batch "
-            "with one draft left, re-run with --gate-batch --allow-single."
-            % pending)
-    payload["gateBatch"] = batch
+def apply_sign(root, payload, component=None):
+    """Collect current-tracker drafts into a one-shot ticket sign session."""
+    master = payload["files"]["masterPlan"]["content"]
+    items = []
+    for group in payload["files"]["executionPlans"]:
+        slug = group["component"]
+        if "execution/%s/" % slug not in master:
+            continue
+        if component not in (None, "ALL") and slug != component:
+            continue
+        draft = group.get("draft")
+        if draft is None:
+            continue
+        content = draft["content"]
+        tr = parse_trailer(content)
+        if tr["kind"] != "none":
+            print(
+                "board: skipping %s: trailer state is %s; repair the mutable "
+                "draft so it has no sign-off or amendment trailer"
+                % (draft["path"], tr["kind"]),
+                file=sys.stderr,
+            )
+            continue
+        version = int(draft["proposedVersion"])
+        items.append({
+            "component": slug,
+            "proposedVersion": version,
+            "path": draft["path"],
+            "content": content,
+            "contentHash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "ticketed": has_valid_ticket(root, slug, version, content),
+        })
+    if not items:
+        scope = " for %s" % component if component not in (None, "ALL") else ""
+        print("board: no eligible pending drafts%s — no sign session opened"
+              % scope, file=sys.stderr)
+        return None
+    payload["sign"] = {
+        "batchId": uuid.uuid4().hex[:8],
+        "transport": "ticket",
+        "items": items,
+    }
     return payload
 
 
@@ -2512,18 +2538,26 @@ def apply_gate(root, payload, gate_spec):
         lines = lines[1:]
     content = "\n".join(lines)
 
-    payload["gate"] = {"component": slug, "proposedVersion": version}
+    entry = {
+        "component": slug,
+        "proposedVersion": version,
+        "path": "plans/execution/%s/.gate-v%d.md" % (slug, version),
+        "content": content,
+        "contentHash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "ticketed": False,
+    }
+    payload["sign"] = {
+        "batchId": uuid.uuid4().hex[:8],
+        "transport": "hook",
+        "items": [entry],
+    }
     payload["focus"] = slug
     groups = payload["files"]["executionPlans"]
     group = next((g for g in groups if g["component"] == slug), None)
     if group is None:
         group = {"component": slug, "versions": []}
         groups.append(group)
-    group["draft"] = {
-        "proposedVersion": version,
-        "path": "plans/execution/%s/.gate-v%d.md" % (slug, version),
-        "content": content,
-    }
+    group["draft"] = dict(entry)
     return payload
 
 
@@ -2594,16 +2628,13 @@ def parse_args(argv=None):
     ap.add_argument("--ack", action="store_true",
                     help="acknowledge (delete) the routed pending order")
     ap.add_argument("--gate", default=None, metavar="SLUG/vN")
-    ap.add_argument("--gate-batch", action="store_true",
-                    help="one-at-a-time sign-off over all pending drafts "
-                         "(the /adopt bulk flow; refuses <2 pending drafts)")
-    ap.add_argument("--allow-single", action="store_true",
-                    help="let --gate-batch run with a single pending draft "
-                         "(one-component adoption / resumed batch)")
+    ap.add_argument("--sign", nargs="?", const="ALL", default=None,
+                    metavar="NN-slug",
+                    help="one-shot sign session over current-tracker drafts")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
     # Default None = no idle timeout for plain live serving (Plannotator-style).
-    # Gate/batch pass an explicit timeout; serve() also keeps a bounded wait for
+    # Sign sessions pass an explicit timeout; serve() also keeps a bounded wait for
     # those modes even if one is omitted. An explicit --timeout always bounds.
     ap.add_argument("--timeout", type=int, default=None, metavar="SECONDS")
     ap.add_argument("--force", action="store_true")
@@ -2615,10 +2646,7 @@ def parse_args(argv=None):
     ap.add_argument("--web-connect", action="store_true")
     ap.add_argument("--web-clear", action="store_true")
     ap.add_argument("--set-password", action="store_true")
-    args = ap.parse_args(argv)
-    if args.allow_single and not args.gate_batch:
-        ap.error("--allow-single only applies to --gate-batch")
-    return args
+    return ap.parse_args(argv)
 
 
 _ACTION_FLAGS = ("export", "share", "publish", "publish_web", "pull",
@@ -2693,9 +2721,12 @@ def main():
                 payload["seededAnnotations"] = seeds
         if args.gate:
             payload = apply_gate(root, payload, args.gate)
-        elif args.gate_batch:
-            payload = apply_gate_batch(root, payload,
-                                       allow_single=args.allow_single)
+        elif args.sign is not None:
+            payload = apply_sign(root, payload, component=args.sign)
+            if payload is None:
+                return
+        if args.gate or args.sign is not None:
+            request_shutdown(root / "plans")
         serve(root, payload, args)
 
 

@@ -96,4 +96,28 @@ describe("Timeline outline", () => {
     );
     expect(screen.getByText("auto-captured")).toBeTruthy();
   });
+
+  it("badges amendment plan events", () => {
+    const fixture = data();
+    fixture.files.executionPlans = [{
+      component: "01-x",
+      versions: [{
+        version: 2,
+        path: "plans/execution/01-x/v2.md",
+        content: "# X — Execution Plan v2\n\n## Context\n\nC.\n\nAmendment recorded, 2026-07-18\n",
+        trailerState: "amendment",
+      }],
+    }];
+    render(
+      <Timeline
+        data={fixture}
+        canAnnotate={false}
+        annotations={[]}
+        onAddDocComment={noop}
+        onPaintResult={noop}
+        onAddGeneral={noop}
+      />,
+    );
+    expect(screen.getByText("amended △")).toBeTruthy();
+  });
 });

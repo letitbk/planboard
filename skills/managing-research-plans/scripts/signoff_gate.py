@@ -40,7 +40,7 @@ def normalize_plan(text):
 
     A `.draft-vN.md` is unsigned; the final `vN.md` gets a `Signed off:` line (and
     a `---` rule) appended at write time. Stripping that trailer plus trailing
-    whitespace makes normalize(draft) == normalize(signed), so a batch-approval
+    whitespace makes normalize(draft) == normalize(signed), so a sign-session
     ticket hashed over the draft authorizes the signed write. Board and gate MUST
     use this same function."""
     lines = [ln.rstrip() for ln in text.replace("\r\n", "\n").split("\n")]
@@ -57,28 +57,81 @@ def normalize_plan(text):
     return "\n".join(lines) + "\n"
 
 
+TRAILER_SIGNED_RE = re.compile(r"^Signed off: .+$")
+TRAILER_AMEND_RE = re.compile(r"^Amendment recorded, \d{4}-\d{2}-\d{2}$")
+
+
+def parse_trailer(text):
+    """One strict trailer grammar (spec §3 rule 3), shared by the hook, board.py,
+    and — mirrored line-for-line in board/src/lib/trailer.ts — the board UI.
+    The LAST non-empty line may be exactly one canonical trailer; NO other line
+    (stripped, code fences included) may match either pattern. Reject, not ignore."""
+    lines = text.splitlines()
+    idx = len(lines) - 1
+    while idx >= 0 and not lines[idx].strip():
+        idx -= 1
+    final = lines[idx].strip() if idx >= 0 else ""
+    kind = "none"
+    if TRAILER_SIGNED_RE.match(final):
+        kind = "signed"
+    elif TRAILER_AMEND_RE.match(final):
+        kind = "amendment"
+    violations = []
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if i == idx and kind != "none":
+            continue
+        if TRAILER_SIGNED_RE.match(s) or TRAILER_AMEND_RE.match(s):
+            violations.append("line %d: %s" % (i + 1, s))
+    if violations:
+        return {"kind": "malformed", "line": final if kind != "none" else None,
+                "violations": violations}
+    return {"kind": kind, "line": final if kind != "none" else None, "violations": []}
+
+
+def strip_trailer(text):
+    """Remove exactly one canonical final trailer (plus an optional immediately
+    preceding --- separator and trailing blanks). Unchanged for none/malformed."""
+    tr = parse_trailer(text)
+    if tr["kind"] not in ("signed", "amendment"):
+        return text
+    lines = text.splitlines()
+    idx = len(lines) - 1
+    while idx >= 0 and not lines[idx].strip():
+        idx -= 1
+    del lines[idx:]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and lines[-1].strip() == "---":
+        lines.pop()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines) + "\n"
+
+
 def check_ticket(ticket, slug, version, content):
-    """Validate a batch-approval ticket for a new vN.md write. Returns
-    (decision, reason). Never opens the interactive board — a present-but-invalid
+    """Validate a sign-session approval ticket for a new vN.md write. Returns
+    (decision, reason). Never opens an interactive sign session — a present-but-invalid
     ticket fast-denies with a precise fix, so a bulk write loop cannot silently
     pop an unattended browser gate."""
     try:
         doc = json.loads(ticket.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "deny", (
-            "Approval ticket %s is unreadable or corrupt. Have the researcher "
-            "re-approve %s v%d on the board — their Approve writes a fresh "
-            "ticket (the draft must still exist at plans/execution/%s/"
-            ".draft-v%d.md)." % (ticket.name, slug, version, slug, version))
+            "Approval ticket %s is unreadable or corrupt. Run "
+            "/research-plans:sign %s to replace it with a fresh ticket "
+            "(the draft must still exist at plans/execution/%s/"
+            ".draft-v%d.md)." % (ticket.name, slug, slug, version))
     if doc.get("slug") != slug or doc.get("version") != version:
         return "deny", (
-            "Batch ticket %s does not match %s v%d (slug/version mismatch). "
-            "Re-approve this plan on the board." % (ticket.name, slug, version))
+            "Sign ticket %s does not match %s v%d (slug/version mismatch). "
+            "Run /research-plans:sign %s to sign this plan again."
+            % (ticket.name, slug, version, slug))
     exp = doc.get("expiry")
     if isinstance(exp, (int, float)) and time.time() > exp:
         return "deny", (
-            "Approval for %s v%d has expired. Have the researcher re-approve "
-            "the current draft on the board." % (slug, version))
+            "Approval for %s v%d has expired. Run /research-plans:sign %s to "
+            "sign the current draft again." % (slug, version, slug))
     action_id = doc.get("orderActionId")
     if isinstance(action_id, str):
         pending = ticket.parent.parent / ".board-feedback.md"
@@ -90,17 +143,18 @@ def check_ticket(ticket, slug, version, content):
         if not isinstance(meta, dict) or meta.get("actionId") != action_id:
             return "deny", (
                 "Approval ticket %s is not bound to the current pending board "
-                "order. Collect and acknowledge any existing order, then have "
-                "the researcher approve %s v%d again on the board."
+                "order. Collect and acknowledge any existing order, then run "
+                "/research-plans:sign %s to sign v%d again."
                 % (ticket.name, slug, version))
     got = hashlib.sha256(normalize_plan(content).encode("utf-8")).hexdigest()
     if doc.get("contentHash") != got:
         return "deny", (
             "The draft for %s v%d changed since it was approved (content-hash "
-            "mismatch). Have the researcher re-approve the current draft on "
-            "the board." % (slug, version))
+            "mismatch). Run /research-plans:sign %s to sign the current draft "
+            "again." % (slug, version, slug))
     return "allow", (
-        "Batch-approved: %s v%d approved by %s in batch %s at %s (ticket %s; left "
+        "Sign-session approved: %s v%d approved by %s in session %s at %s "
+        "(ticket %s; left "
         "in place — inert once v%d.md exists)." % (
             slug, version, doc.get("approver", "researcher"), doc.get("batchId", "?"),
             doc.get("approvedAt", "?"), ticket.name, version))
@@ -242,8 +296,8 @@ def main():
             )
         sys.exit(0)
 
-    # ---- Batch-approval ticket forgery guard. Tickets (.import-approved-*) are
-    # written ONLY by board.py --gate-batch (a subprocess, outside the agent's
+    # ---- Sign-session ticket forgery guard. Tickets (.import-approved-*) are
+    # written ONLY by board.py --sign (a subprocess, outside the agent's
     # Write/Edit tools). A direct agent write here would forge sign-off — deny it
     # inside the gate's own enforcement domain. ----
     if (
@@ -253,10 +307,10 @@ def main():
     ):
         if find_project_root(p) is not None:
             deny(
-                "Batch approval tickets (%s*) are created only by the board's "
-                "batch sign-off flow (board.py --gate-batch), never written "
-                "directly. Approve plans on the board; the ticket is written for "
-                "you." % TICKET_PREFIX
+                "Sign-session approval tickets (%s*) are created only by "
+                "board.py --sign, never written directly. Run "
+                "/research-plans:sign; the ticket is written for you."
+                % TICKET_PREFIX
             )
         sys.exit(0)
 
@@ -302,8 +356,30 @@ def main():
             "RESEARCH_PLANS_NO_GATE=1 and report the issue."
         )
 
-    # ---- Batch sign-off ticket: if the researcher pre-approved this exact plan
-    # on the board's --gate-batch pass, the ticket authorizes the write without
+    tr = parse_trailer(content)
+    if tr["kind"] == "malformed":
+        deny(
+            "Plan trailer grammar violation for %s: 'Signed off:' / 'Amendment "
+            "recorded,' lines may appear ONLY as the single final trailer. "
+            "Offending — %s. Remove the interior line(s) and re-attempt."
+            % (p.name, "; ".join(tr["violations"]))
+        )
+    if tr["kind"] == "amendment":
+        prev = p.parent / ("v%d.md" % (version - 1))
+        if version < 2 or not prev.exists():
+            deny(
+                "Amendment versions record revisions of an existing plan — "
+                "v%d.md does not exist. A first or gap version needs a human "
+                "sign-off: run /research-plans:sign %s." % (version - 1, slug)
+            )
+        allow(
+            "Amendment recorded for %s v%d — ungated revision write. No "
+            "human-approval claim is made; the board badges it 'amended'."
+            % (slug, version)
+        )
+
+    # ---- Sign-session ticket: if the researcher approved this exact plan in a
+    # prior sign session, the ticket authorizes the write without
     # reopening the browser. A present-but-invalid ticket fast-denies (never
     # opens the interactive gate); an absent ticket falls through to it. ----
     ticket = p.parent.parent / ("%s%s-v%d" % (TICKET_PREFIX, slug, version))
@@ -377,7 +453,7 @@ def main():
                 "line)." % (p.name, version + 1)
             )
         allow(
-            "Researcher approved %s v%d on the board. %s"
+            "Researcher approved %s v%d in the sign session. %s"
             % (slug, version, out.splitlines()[-1] if out else "")
         )
     elif code == 3:
@@ -385,7 +461,7 @@ def main():
         if len(summary) > MAX_REASON:
             summary = summary[:MAX_REASON] + "\n[...truncated...]"
         deny(
-            "SIGN-OFF NOT APPROVED. The researcher reviewed %s v%d on the board "
+            "SIGN-OFF NOT APPROVED. The researcher reviewed %s v%d in the sign session "
             "and requests changes:\n\n%s\n\nFull feedback is saved at "
             "plans/.board-feedback.md — read it before revising. Revise the "
             "draft to address ALL feedback, then attempt the SAME Write again — "
@@ -393,33 +469,27 @@ def main():
             "or any other path." % (slug, version, summary)
         )
     elif code == 2:
-        # Persist the proposal as the component's working draft so the
-        # persistent board can display and approve it — a timed-out gate must
-        # leave a durable recovery path (the in-board Approve mints a ticket
-        # over this draft; normalize_plan makes it admit the signed write).
+        # Persist the proposal as the component's working draft so a timed-out
+        # gate leaves a durable recovery path for the next sign session.
         draft = p.parent / (".draft-v%d.md" % version)
         saved = ""
         try:
-            draft.write_text(content, encoding="utf-8")
+            draft.write_text(strip_trailer(content), encoding="utf-8")
             saved = (" The proposed plan has been saved as "
                      "plans/execution/%s/.draft-v%d.md." % (slug, version))
         except OSError:
             pass
         deny(
             "Sign-off gate timed out — no approval arrived within %ds.%s "
-            "Do NOT bypass the gate and do NOT use --gate-batch. Instead, "
-            "relaunch the board for this component via the "
-            "/research-plans:board workflow and tell the researcher the draft "
-            "awaits their Approve there. Approving mints a durable ticket, and "
-            "the board workflow's routing then performs the ticketed v%d.md "
-            "write — do not re-attempt the Write separately before that "
-            "approval round-trip." % (timeout, saved, version)
+            "Do NOT bypass the gate. Run /research-plans:sign %s to reopen a "
+            "sign session for the saved draft; its durable ticket then admits "
+            "the v%d.md write." % (timeout, saved, slug, version)
         )
     else:
         deny(
-            "Sign-off gate could not open the board (%s). If a board is already "
-            "open, press 'Send to Claude' in that tab or close its server, then "
-            "attempt the write again." % (err.splitlines()[-1] if err else "exit %d" % code)
+            "Sign-off gate could not open the sign session (%s). Run "
+            "/research-plans:sign %s, then attempt the write again."
+            % (err.splitlines()[-1] if err else "exit %d" % code, slug)
         )
 
 

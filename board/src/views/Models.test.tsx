@@ -232,8 +232,11 @@ describe("Models view (editing, live)", () => {
     await screen.findByText("Use recommended defaults");
   });
 
-  it("hides the create buttons during a sign-off gate", () => {
-    const data: BoardData = { ...base("live"), gate: { component: "x", proposedVersion: 1 } };
+  it("hides the create buttons during a sign session", () => {
+    const data: BoardData = {
+      ...base("live"),
+      sign: { batchId: "b", transport: "ticket", items: [] },
+    };
     render(<Models data={data} modelProfile={undefined} onProfileChange={noop} />);
     expect(screen.queryByText("Use recommended defaults")).toBeNull();
     expect(screen.queryByText("Choose your models")).toBeNull();

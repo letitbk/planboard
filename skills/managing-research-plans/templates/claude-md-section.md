@@ -17,5 +17,5 @@ This project uses the research-plans workflow (https://github.com/letitbk/resear
 9. Evidence before claims. Run substantive analysis with output captured to `logs/` (e.g. `2>&1 | tee logs/<date>_<step>.log`; `logs/` stays gitignored). Never report a result — in chat, a results bundle, or a report — without the log, notebook output, or artifact that shows the code actually ran. Logs are local, temporary evidence: never write row-level personal data, credentials, or secrets into them.
 10. Assumptions and restraint. State working assumptions before acting on them; when an instruction has multiple readings, present them rather than picking silently. Keep changes minimal and surgical — nothing beyond what the current plan step needs.
 
-The `managing-research-plans` skill (from the research-plans plugin) has these conventions in depth. The primary loop is plan → review room → execute → tail. If work happened outside that loop or mid-session logging was missed, `/research-plans:sync` is the recovery checkpoint.
+The `managing-research-plans` skill (from the research-plans plugin) has these conventions in depth. The primary loop is plan → draft review → execute gate → tail. If work happened outside that loop or mid-session logging was missed, `/research-plans:sync` is the recovery checkpoint.
 <!-- research-plans:end -->

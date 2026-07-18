@@ -101,7 +101,7 @@ export default function Models({
   const live = data.mode === "live";
   const canEdit = actionsVisible(data) && modelProfile?.editable === true;
   // Creating a profile hits the same /api/model-profile route, which the server
-  // disables during a sign-off gate — so gate it on actionsVisible, not `live`.
+  // disables during a sign session — use the shared action-visibility rule.
   const canCreate = actionsVisible(data);
 
   const [draft, setDraft] = useState<DraftRow[]>(() => toDraft(modelProfile?.rows ?? []));

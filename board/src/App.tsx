@@ -6,7 +6,7 @@ import Timeline from "./views/Timeline";
 import Archive from "./views/Archive";
 import Reports from "./views/Reports";
 import Models from "./views/Models";
-import BatchGate from "./views/BatchGate";
+import SignOffView from "./views/SignOffView";
 import ThemeToggle from "./components/ThemeToggle";
 import Sidebar from "./components/Sidebar";
 import { allFiles, payloadContentHash } from "./lib/parse";
@@ -40,7 +40,7 @@ import {
 import { navTargetFor, type NavTarget } from "./lib/navTarget";
 import { buildFilesTree, type ActiveFileRef } from "./lib/filesTree";
 import type { OutlineEntry } from "./lib/outline";
-import type { ReopenRequest, SignoffRequest } from "./lib/types";
+import type { ReopenRequest } from "./lib/types";
 import type {
   Annotation,
   BoardData,
@@ -180,16 +180,12 @@ function seedToAnnotation(s: SeededAnnotation): Annotation {
 }
 
 export default function App({ data }: { data: BoardData }) {
-  // Batch sign-off is a full-screen wizard, isolated from the normal board's
-  // tabs/annotation state. The payload is static, so this early return is stable
-  // (hook order never changes within a session).
-  if (data.gateBatch) return <BatchGate data={data} />;
+  if (data.sign) return <SignOffView data={data} />;
 
   const hosted = data.mode === "hosted";
   const canAnnotate = data.mode === "live" || data.mode === "remote" || hosted;
   const canPost = data.mode === "live";
   const remote = data.mode === "remote";
-  const gate = data.gate ?? null;
   const payloadHash = useMemo(() => payloadContentHash(allFiles(data)), [data]);
   const storageKey = `rp-board:${data.project.name}:${payloadHash}`;
   // Hosted persistence is keyed by project + board URL (stable across a
@@ -204,9 +200,7 @@ export default function App({ data }: { data: BoardData }) {
   const sessionId = useMemo(() => newSessionId(), []);
 
   const [tab, setTab] = useState<Tab>(
-    gate
-      ? "plans"
-      : data.focusView === "reports"
+    data.focusView === "reports"
         ? "reports"
         : data.focusResults != null
           ? "results"
@@ -215,7 +209,7 @@ export default function App({ data }: { data: BoardData }) {
             : "tracker",
   );
   const [selectedComponent, setSelectedComponent] = useState<string | null>(
-    gate?.component ?? data.focus,
+    data.focus,
   );
   // Authoritative model profile — lifted here so it survives Models-tab
   // unmount/remount and a save patches it without a reload (frozen boot HTML).
@@ -253,15 +247,13 @@ export default function App({ data }: { data: BoardData }) {
     return [...base, ...seeded];
   });
   const [drawerOpen, setDrawerOpen] = useState(
-    gate !== null || (data.seededAnnotations?.length ?? 0) > 0,
+    (data.seededAnnotations?.length ?? 0) > 0,
   );
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [postFailure, setPostFailure] = useState<"server-gone" | "generic" | null>(null);
   const [closeArmed, setCloseArmed] = useState(false);
   const autoClose = useAutoClose(
-    submitState === "approved" ||
-      submitState === "denied" ||
-      (canPost && submitState === "sent" && closeArmed),
+    canPost && submitState === "sent" && closeArmed,
     autoCloseKey(data.projectId ?? data.project.name),
   );
   const [copyFallbackState, setCopyFallbackState] = useState<{
@@ -611,41 +603,6 @@ export default function App({ data }: { data: BoardData }) {
     setSubmitState("downloaded");
   };
 
-  const gateApprove = async () => {
-    setSubmitState("sending");
-    try {
-      const res = await fetch("/api/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ boardToken: data.boardToken }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSubmitState("approved");
-    } catch {
-      await recoverFailedPost();
-    }
-  };
-
-  const gateDeny = async () => {
-    setSubmitState("sending");
-    try {
-      const res = await fetch("/api/deny", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          annotations,
-          feedbackMarkdown,
-          payloadHash,
-          feedbackDocument,
-          boardToken: data.boardToken,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSubmitState("denied");
-    } catch {
-      await recoverFailedPost();
-    }
-  };
 
   // Generate report (v0.10): same channel and lifecycle as requestReview —
   // submit ends the board session; the session runs /research-plans:report
@@ -690,53 +647,6 @@ export default function App({ data }: { data: BoardData }) {
     }
   };
 
-  // ---- Control-surface actions (spec §3): typed sign-off + reopen.
-  // Each submission carries ONLY its target-scoped pending comments; unrelated
-  // drafts stay pending (and stay in storage via clearSentDrafts).
-  const submitSignoff = async (req: SignoffRequest) => {
-    const scoped = annotations.filter(
-      (a) => a.type === "plan-comment" && a.component === req.component && a.isDraft,
-    );
-    const md = buildFeedbackMarkdown(scoped, null, null, req);
-    const doc = buildFeedbackDocument(md, {
-      sessionId,
-      generatedAt: data.generatedAt,
-      mode: data.mode,
-      focus: data.focus,
-      reviewer: null,
-      payloadHash,
-      shareHash: data.shareHash ?? null,
-      annotations: scoped,
-      signoff: req,
-    });
-    setSubmitState("sending");
-    dispatchConn({ type: "submit" });
-    try {
-      const res = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          annotations: scoped,
-          feedbackMarkdown: md,
-          payloadHash,
-          feedbackDocument: doc,
-          action: { kind: "signoff", ...req },
-          boardToken: data.boardToken,
-        }),
-      });
-      const accepted = await handleActionResponse(res);
-      if (!accepted) {
-        setSubmitState("idle");
-        return;
-      }
-      setSubmitState("sent");
-      setCloseArmed(true);
-      clearSentDrafts(scoped.map((a) => a.id));
-      setAnnotations((prev) => prev.filter((a) => !scoped.includes(a)));
-    } catch {
-      await recoverFailedPost();
-    }
-  };
 
   const submitReopen = async (req: ReopenRequest) => {
     const scoped = annotations.filter(
@@ -745,7 +655,7 @@ export default function App({ data }: { data: BoardData }) {
         a.component === req.component &&
         a.resultsVersion === req.resultsVersion,
     );
-    const md = buildFeedbackMarkdown(scoped, null, null, null, req);
+    const md = buildFeedbackMarkdown(scoped, null, null, req);
     const doc = buildFeedbackDocument(md, {
       sessionId,
       generatedAt: data.generatedAt,
@@ -1010,7 +920,6 @@ export default function App({ data }: { data: BoardData }) {
     serverLive: live,
     serverStale: stale,
     hosted,
-    gate,
     canPost,
     submitState: connBlocked && submitState !== "failed" ? ("sending" as SubmitState) : submitState,
     reviewer,
@@ -1020,38 +929,11 @@ export default function App({ data }: { data: BoardData }) {
     onSaveHosted: saveHosted,
     onClose: () => setDrawerOpen(false),
     onSubmit: submit,
-    onGateApprove: gateApprove,
-    onGateDeny: gateDeny,
     onDownload: download,
     onCopyFallback: copyFallback,
     onCardClick: openAnnotation,
   };
 
-  if (submitState === "approved" || submitState === "denied") {
-    return (
-      <div className="relative flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-800/50">
-        <div className="absolute right-4 top-4">
-          <ThemeToggle />
-        </div>
-        <div className="max-w-md rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-8 text-center shadow-sm">
-          <div className="text-3xl">
-            {submitState === "approved" ? "✓" : "✎"}
-          </div>
-          <h1 className="mt-2 text-lg font-semibold text-stone-800 dark:text-stone-200">
-            {submitState === "approved"
-              ? "Approved — the version is being written"
-              : "Changes requested — return to your session"}
-          </h1>
-          <p className="mt-2 text-sm text-stone-600 dark:text-stone-400">
-            {submitState === "approved"
-              ? `${gate?.component} v${gate?.proposedVersion} will land exactly as shown here, signed.`
-              : "Claude received your feedback and will revise the draft; the gate reopens on the next sign-off attempt."}
-          </p>
-          <AutoCloseNotice state={autoClose.state} cancel={autoClose.cancel} enable={autoClose.enable} />
-        </div>
-      </div>
-    );
-  }
 
   if (submitState === "sent" && !canPost) {
     return (
@@ -1222,12 +1104,6 @@ export default function App({ data }: { data: BoardData }) {
             against this file’s location.
           </div>
         )}
-        {gate && (
-          <div className="border-t border-stone-800 bg-stone-900 dark:bg-stone-200 px-5 py-2 text-center text-sm font-semibold text-white dark:text-stone-900">
-            Sign-off gate: {gate.component} v{gate.proposedVersion} — approve in
-            this window, or request changes with comments
-          </div>
-        )}
         {hosted && saveError && (
           <div className="border-t border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 px-5 py-1.5 text-center text-xs text-red-800 dark:text-red-300">
             {saveError}
@@ -1244,12 +1120,11 @@ export default function App({ data }: { data: BoardData }) {
             Reading works here; commenting works best on a computer
           </div>
         )}
-        {canPost && <ConnBanner phase={conn.phase} gateEnded={Boolean(gate)} />}
+        {canPost && <ConnBanner phase={conn.phase} />}
         {canPost && postFailure === "server-gone" && (
           <div className="border-t border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-5 py-1.5 text-center text-xs text-amber-800 dark:text-amber-300">
-            {gate
-              ? "This sign-off gate has ended. If you clicked Approve it may already be recorded — check your Claude session. Your draft is saved either way; approve it from the board with /research-plans:board."
-              : "The board server isn't running — your submission may already have reached your session; otherwise reopen with /research-plans:board."}
+            The board server isn't running — your submission may already have
+            reached your session; otherwise reopen with /research-plans:board.
           </div>
         )}
       </header>
@@ -1273,7 +1148,6 @@ export default function App({ data }: { data: BoardData }) {
         {tab === "tracker" && (
           <Tracker
             data={data}
-            onSignoff={guardConn(submitSignoff)}
             canAnnotate={canAnnotate}
             annotations={annotations}
             onAddDocComment={addDocComment}
@@ -1299,7 +1173,6 @@ export default function App({ data }: { data: BoardData }) {
         {tab === "plans" && (
           <PlanReader
             data={data}
-            onSignoff={guardConn(submitSignoff)}
             navRequest={navRequest?.tab === "plans" ? { token: navRequest.token, planPath: navRequest.planPath } : null}
             canAnnotate={canAnnotate}
             selectedComponent={selectedComponent}
