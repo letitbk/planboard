@@ -10,6 +10,7 @@ REPO = Path(__file__).resolve().parents[1]
 class TestCommandInventoryDocs(unittest.TestCase):
     def test_expected_command_files_exist(self):
         for name in ("adopt", "board", "execute", "init", "models", "plan",
+                     "sign",
                      "renew", "report", "results", "review", "sync"):
             self.assertTrue((REPO / "commands" / (name + ".md")).is_file(), name)
 
@@ -64,6 +65,24 @@ class TestSignTransactionDocs(unittest.TestCase):
         self.assertIn("without a ticket or board action", command)
         self.assertIn("amended △", command)
         self.assertNotIn("new signed version", command)
+
+    def test_sign_and_execute_share_the_recommitment_recipe(self):
+        sign = (REPO / "commands" / "sign.md").read_text(encoding="utf-8")
+        execute = (REPO / "commands" / "execute.md").read_text(encoding="utf-8")
+        recipe = ("Copy the amendment `v<N>.md` to `.draft-v<N+1>.md`. "
+                  "Use `strip_trailer` from `signoff_gate.py`")
+
+        self.assertIn(recipe, sign)
+        self.assertIn(recipe, execute)
+        for command in (sign, execute):
+            self.assertIn("re-commitment for re-execution", command)
+            self.assertIn("trailer state `none`", command)
+
+    def test_board_has_no_plan_approval_route(self):
+        command = (REPO / "commands" / "board.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("Sign-off order", command)
+        self.assertNotIn("clicked Approve", command)
 
 
 if __name__ == "__main__":
