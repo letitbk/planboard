@@ -212,7 +212,7 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
         with mock.patch.object(sg.subprocess, "run", return_value=stub):
             return _run_gate_inproc(sg, root, comp / "v1.md", content)
 
-    def test_timeout_persists_draft_and_routes_to_board(self):
+    def test_timeout_persists_stripped_draft_and_routes_to_sign(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -220,10 +220,9 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
             self.assertEqual(decision, "deny")
             draft = comp / ".draft-v1.md"
             self.assertTrue(draft.exists())
-            self.assertEqual(draft.read_text(encoding="utf-8"), SIGNED)
+            self.assertEqual(draft.read_text(encoding="utf-8"), DRAFT)
             self.assertIn(".draft-v1.md", reason)
-            self.assertIn("Approve", reason)
-            self.assertIn("do NOT use --gate-batch", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("NO_GATE", reason)
 
     def test_timeout_overwrites_stale_draft(self):
@@ -234,11 +233,11 @@ class TestTimeoutPersistsDraft(unittest.TestCase):
             decision, reason = self._timeout_run(root, comp, SIGNED)
             self.assertEqual(decision, "deny")
             self.assertEqual((comp / ".draft-v1.md").read_text(encoding="utf-8"),
-                             SIGNED)
+                             DRAFT)
 
 
 class TestTicketErrorMessages(unittest.TestCase):
-    def test_corrupt_ticket_names_board_not_batch(self):
+    def test_corrupt_ticket_names_sign_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -247,10 +246,10 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("unreadable or corrupt", reason)
-            self.assertIn("board", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
-    def test_expired_ticket_names_board_not_batch(self):
+    def test_expired_ticket_names_sign_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -258,10 +257,10 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", SIGNED)
             self.assertEqual(decision, "deny")
             self.assertIn("expired", reason)
-            self.assertIn("board", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
-    def test_hash_mismatch_names_board_not_batch(self):
+    def test_hash_mismatch_names_sign_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             comp = make_init_component(root)
@@ -270,7 +269,7 @@ class TestTicketErrorMessages(unittest.TestCase):
             decision, reason = run_gate_reason(root, comp / "v1.md", tampered)
             self.assertEqual(decision, "deny")
             self.assertIn("content-hash mismatch", reason)
-            self.assertIn("board", reason)
+            self.assertIn("/research-plans:sign", reason)
             self.assertNotIn("--gate-batch", reason)
 
     def test_order_bound_orphan_fast_denies_in_actual_hook(self):

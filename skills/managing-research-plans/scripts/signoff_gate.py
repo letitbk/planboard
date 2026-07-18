@@ -118,19 +118,20 @@ def check_ticket(ticket, slug, version, content):
         doc = json.loads(ticket.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "deny", (
-            "Approval ticket %s is unreadable or corrupt. Have the researcher "
-            "re-approve %s v%d on the board — their Approve writes a fresh "
-            "ticket (the draft must still exist at plans/execution/%s/"
-            ".draft-v%d.md)." % (ticket.name, slug, version, slug, version))
+            "Approval ticket %s is unreadable or corrupt. Run "
+            "/research-plans:sign %s to replace it with a fresh ticket "
+            "(the draft must still exist at plans/execution/%s/"
+            ".draft-v%d.md)." % (ticket.name, slug, slug, version))
     if doc.get("slug") != slug or doc.get("version") != version:
         return "deny", (
             "Batch ticket %s does not match %s v%d (slug/version mismatch). "
-            "Re-approve this plan on the board." % (ticket.name, slug, version))
+            "Run /research-plans:sign %s to sign this plan again."
+            % (ticket.name, slug, version, slug))
     exp = doc.get("expiry")
     if isinstance(exp, (int, float)) and time.time() > exp:
         return "deny", (
-            "Approval for %s v%d has expired. Have the researcher re-approve "
-            "the current draft on the board." % (slug, version))
+            "Approval for %s v%d has expired. Run /research-plans:sign %s to "
+            "sign the current draft again." % (slug, version, slug))
     action_id = doc.get("orderActionId")
     if isinstance(action_id, str):
         pending = ticket.parent.parent / ".board-feedback.md"
@@ -142,15 +143,15 @@ def check_ticket(ticket, slug, version, content):
         if not isinstance(meta, dict) or meta.get("actionId") != action_id:
             return "deny", (
                 "Approval ticket %s is not bound to the current pending board "
-                "order. Collect and acknowledge any existing order, then have "
-                "the researcher approve %s v%d again on the board."
+                "order. Collect and acknowledge any existing order, then run "
+                "/research-plans:sign %s to sign v%d again."
                 % (ticket.name, slug, version))
     got = hashlib.sha256(normalize_plan(content).encode("utf-8")).hexdigest()
     if doc.get("contentHash") != got:
         return "deny", (
             "The draft for %s v%d changed since it was approved (content-hash "
-            "mismatch). Have the researcher re-approve the current draft on "
-            "the board." % (slug, version))
+            "mismatch). Run /research-plans:sign %s to sign the current draft "
+            "again." % (slug, version, slug))
     return "allow", (
         "Batch-approved: %s v%d approved by %s in batch %s at %s (ticket %s; left "
         "in place — inert once v%d.md exists)." % (
@@ -354,6 +355,28 @@ def main():
             "RESEARCH_PLANS_NO_GATE=1 and report the issue."
         )
 
+    tr = parse_trailer(content)
+    if tr["kind"] == "malformed":
+        deny(
+            "Plan trailer grammar violation for %s: 'Signed off:' / 'Amendment "
+            "recorded,' lines may appear ONLY as the single final trailer. "
+            "Offending — %s. Remove the interior line(s) and re-attempt."
+            % (p.name, "; ".join(tr["violations"]))
+        )
+    if tr["kind"] == "amendment":
+        prev = p.parent / ("v%d.md" % (version - 1))
+        if version < 2 or not prev.exists():
+            deny(
+                "Amendment versions record revisions of an existing plan — "
+                "v%d.md does not exist. A first or gap version needs a human "
+                "sign-off: run /research-plans:sign %s." % (version - 1, slug)
+            )
+        allow(
+            "Amendment recorded for %s v%d — ungated revision write. No "
+            "human-approval claim is made; the board badges it 'amended'."
+            % (slug, version)
+        )
+
     # ---- Batch sign-off ticket: if the researcher pre-approved this exact plan
     # on the board's --gate-batch pass, the ticket authorizes the write without
     # reopening the browser. A present-but-invalid ticket fast-denies (never
@@ -429,7 +452,7 @@ def main():
                 "line)." % (p.name, version + 1)
             )
         allow(
-            "Researcher approved %s v%d on the board. %s"
+            "Researcher approved %s v%d in the sign session. %s"
             % (slug, version, out.splitlines()[-1] if out else "")
         )
     elif code == 3:
@@ -437,7 +460,7 @@ def main():
         if len(summary) > MAX_REASON:
             summary = summary[:MAX_REASON] + "\n[...truncated...]"
         deny(
-            "SIGN-OFF NOT APPROVED. The researcher reviewed %s v%d on the board "
+            "SIGN-OFF NOT APPROVED. The researcher reviewed %s v%d in the sign session "
             "and requests changes:\n\n%s\n\nFull feedback is saved at "
             "plans/.board-feedback.md — read it before revising. Revise the "
             "draft to address ALL feedback, then attempt the SAME Write again — "
@@ -445,33 +468,27 @@ def main():
             "or any other path." % (slug, version, summary)
         )
     elif code == 2:
-        # Persist the proposal as the component's working draft so the
-        # persistent board can display and approve it — a timed-out gate must
-        # leave a durable recovery path (the in-board Approve mints a ticket
-        # over this draft; normalize_plan makes it admit the signed write).
+        # Persist the proposal as the component's working draft so a timed-out
+        # gate leaves a durable recovery path for the next sign session.
         draft = p.parent / (".draft-v%d.md" % version)
         saved = ""
         try:
-            draft.write_text(content, encoding="utf-8")
+            draft.write_text(strip_trailer(content), encoding="utf-8")
             saved = (" The proposed plan has been saved as "
                      "plans/execution/%s/.draft-v%d.md." % (slug, version))
         except OSError:
             pass
         deny(
             "Sign-off gate timed out — no approval arrived within %ds.%s "
-            "Do NOT bypass the gate and do NOT use --gate-batch. Instead, "
-            "relaunch the board for this component via the "
-            "/research-plans:board workflow and tell the researcher the draft "
-            "awaits their Approve there. Approving mints a durable ticket, and "
-            "the board workflow's routing then performs the ticketed v%d.md "
-            "write — do not re-attempt the Write separately before that "
-            "approval round-trip." % (timeout, saved, version)
+            "Do NOT bypass the gate. Run /research-plans:sign %s to reopen a "
+            "sign session for the saved draft; its durable ticket then admits "
+            "the v%d.md write." % (timeout, saved, slug, version)
         )
     else:
         deny(
-            "Sign-off gate could not open the board (%s). If a board is already "
-            "open, press 'Send to Claude' in that tab or close its server, then "
-            "attempt the write again." % (err.splitlines()[-1] if err else "exit %d" % code)
+            "Sign-off gate could not open the sign session (%s). Run "
+            "/research-plans:sign %s, then attempt the write again."
+            % (err.splitlines()[-1] if err else "exit %d" % code, slug)
         )
 
 
