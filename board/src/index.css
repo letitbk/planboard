@@ -7,11 +7,17 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+  --rp-prose-heading: var(--color-stone-900);
+  --rp-prose-body: var(--color-stone-800);
+  --rp-prose-muted: var(--color-stone-500);
 }
 
 html.dark {
   background: var(--color-stone-950);
   color-scheme: dark;
+  --rp-prose-heading: var(--color-stone-100);
+  --rp-prose-body: var(--color-stone-200);
+  --rp-prose-muted: var(--color-stone-400);
 }
 
 code,
@@ -19,34 +25,54 @@ pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-/* Hand-rolled prose styles for rendered markdown (no typography plugin). */
+/* Hand-rolled prose styles for rendered markdown (no typography plugin).
+   v0.21: real hierarchy (1.5x h1, 2rem section rhythm), an emphasis ladder
+   via custom properties, task-list/table/code polish. Values benchmarked
+   against plannotator's reading surface. */
 .prose-md {
   line-height: 1.65;
-  color: var(--color-stone-800);
+  color: var(--rp-prose-body);
 }
 .prose-md h1 {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 700;
-  margin: 1.25rem 0 0.5rem;
+  letter-spacing: -0.01em;
+  margin: 1.5rem 0 0.75rem;
+  color: var(--rp-prose-heading);
 }
 .prose-md h2 {
-  font-size: 1.05rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  margin: 1.25rem 0 0.4rem;
+  margin: 2rem 0 0.6rem;
   padding-bottom: 0.2rem;
   border-bottom: 1px solid var(--color-stone-200);
+  color: var(--rp-prose-heading);
 }
 .prose-md h3 {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  margin: 1rem 0 0.3rem;
+  margin: 1.5rem 0 0.4rem;
+  color: var(--rp-prose-heading);
+}
+.prose-md h4,
+.prose-md h5,
+.prose-md h6 {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 1.25rem 0 0.3rem;
+  color: var(--rp-prose-heading);
+}
+.prose-md h1,
+.prose-md h2,
+.prose-md h3 {
+  scroll-margin-top: 6rem; /* sticky header clearance for outline jumps */
 }
 .prose-md p {
-  margin: 0.5rem 0;
+  margin: 0 0 0.75rem;
 }
 .prose-md ul,
 .prose-md ol {
-  margin: 0.5rem 0 0.5rem 1.4rem;
+  margin: 0 0 0.75rem 1.4rem;
 }
 .prose-md ul {
   list-style: disc;
@@ -55,13 +81,26 @@ pre {
   list-style: decimal;
 }
 .prose-md li {
-  margin: 0.15rem 0;
+  margin: 0.3rem 0;
+}
+/* Task lists: tight lists put the checkbox directly under li; LOOSE lists
+   nest it inside the first <p> (marked's DOM, probe-verified). Cover both. */
+.prose-md li:has(> input[type="checkbox"]),
+.prose-md li:has(> p:first-child > input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.4rem;
+}
+.prose-md li > input[type="checkbox"],
+.prose-md li > p:first-child > input[type="checkbox"] {
+  margin-right: 0.4rem;
+  accent-color: var(--color-green-600);
 }
 .prose-md blockquote {
   border-left: 3px solid var(--color-stone-300);
   padding-left: 0.75rem;
-  color: var(--color-stone-600);
-  margin: 0.5rem 0;
+  color: var(--rp-prose-muted);
+  font-style: italic;
+  margin: 0.75rem 0;
 }
 .prose-md code {
   background: var(--color-stone-100);
@@ -71,10 +110,11 @@ pre {
 }
 .prose-md pre {
   background: var(--color-stone-100);
+  border: 1px solid var(--color-stone-200);
   padding: 0.6rem 0.8rem;
-  border-radius: 0.4rem;
+  border-radius: 0.5rem;
   overflow-x: auto;
-  margin: 0.6rem 0;
+  margin: 0.75rem 0;
   font-size: 0.85em;
 }
 .prose-md pre code {
@@ -89,19 +129,24 @@ pre {
 }
 .prose-md th,
 .prose-md td {
-  border: 1px solid var(--color-stone-200);
-  padding: 0.35rem 0.6rem;
+  border: none;
+  border-bottom: 1px solid var(--color-stone-200);
+  padding: 0.4rem 0.6rem;
   text-align: left;
   vertical-align: top;
 }
 .prose-md th {
   background: var(--color-stone-50);
+  border-bottom-width: 2px;
   font-weight: 600;
+}
+.prose-md tbody tr:hover {
+  background: var(--color-stone-50);
 }
 .prose-md hr {
   border: none;
   border-top: 1px solid var(--color-stone-200);
-  margin: 1rem 0;
+  margin: 2rem 0;
 }
 .prose-md a {
   color: var(--color-blue-700);
@@ -128,21 +173,18 @@ mark[data-annotation] {
 
 /* Dark counterparts (v0.11). prose-md, annotation marks, and diffs are the
    styles that live outside Tailwind utilities, so they get explicit rules. */
-.dark .prose-md {
-  color: var(--color-stone-200);
-}
 .dark .prose-md h2 {
   border-bottom-color: var(--color-stone-700);
 }
 .dark .prose-md blockquote {
   border-left-color: var(--color-stone-600);
-  color: var(--color-stone-400);
 }
 .dark .prose-md code {
   background: var(--color-stone-800);
 }
 .dark .prose-md pre {
   background: var(--color-stone-800);
+  border-color: var(--color-stone-700);
 }
 .dark .prose-md th,
 .dark .prose-md td {
@@ -150,6 +192,9 @@ mark[data-annotation] {
 }
 .dark .prose-md th {
   background: var(--color-stone-900);
+}
+.dark .prose-md tbody tr:hover {
+  background: var(--color-stone-800);
 }
 .dark .prose-md hr {
   border-top-color: var(--color-stone-700);
