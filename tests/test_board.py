@@ -136,6 +136,29 @@ def add_report(root: Path):
     return rep
 
 
+OUTPUT_SCORE = {
+    "schemaVersion": 1,
+    "channels": [
+        {"id": "fidelity", "name": "Fidelity", "score": 3,
+         "basis": "all 2 steps followed"},
+        {"id": "attainment", "name": "Attainment", "score": 3,
+         "basis": "all 1 criteria met"},
+        {"id": "integrity", "name": "Integrity", "score": 3,
+         "basis": "all 4 checks pass"},
+    ],
+    "profile": "F3·A3·I3", "total": 9, "max": 9,
+    "computedAt": "2026-07-18 12:00",
+}
+
+
+def add_output_score(root: Path):
+    manifest_path = (root / "plans" / "execution" / "01-data-prep" /
+                     "results" / "r1" / "manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["score"] = OUTPUT_SCORE
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
 def run_board(cwd, *argv):
     return subprocess.run(
         [sys.executable, str(BOARD), *argv],
@@ -394,6 +417,15 @@ class TestCollaboratorFacingPayload(unittest.TestCase):
             self.assertIn("drift", static)
             self.assertNotIn("shareHash", static)
 
+    def test_score_survives_hosted_payload(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root); add_output_score(root)
+            hosted = self._payload(root, "hosted")
+            group = next(g for g in hosted["files"]["executionPlans"]
+                         if g["component"] == "01-data-prep")
+            self.assertEqual(group["results"][0]["manifest"]["score"]["profile"],
+                             "F3·A3·I3")
+
 
 class TestRemotePayload(unittest.TestCase):
     def test_remote_payload_shape(self):
@@ -429,6 +461,18 @@ class TestRemotePayload(unittest.TestCase):
             self.assertNotIn("shareHash", payload)
             groups = {g["component"]: g for g in payload["files"]["executionPlans"]}
             self.assertNotIn("draft", groups["01-data-prep"])
+
+    def test_score_survives_focused_remote_share(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            add_output_score(root)
+            slug, results_version, _view = board.split_focus("01-data-prep:r1")
+            payload = board.collect_payload(root, "remote", slug)
+            payload["focusResults"] = results_version
+            group = payload["files"]["executionPlans"][0]
+            self.assertEqual(group["results"][0]["manifest"]["score"]["profile"],
+                             "F3·A3·I3")
 
     def test_draft_snapshots_collected_in_all_modes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -569,6 +613,26 @@ class TestCollectFile(unittest.TestCase):
 
 
 class TestResultsPayload(unittest.TestCase):
+    def test_score_block_reaches_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            add_output_score(root)
+            payload = board.collect_payload(root, "live", None)
+            group = next(g for g in payload["files"]["executionPlans"]
+                         if g["component"] == "01-data-prep")
+            self.assertEqual(group["results"][0]["manifest"]["score"]["profile"],
+                             "F3·A3·I3")
+
+    def test_score_perturbs_share_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            without_score = board.collect_payload(root, "remote", None)["shareHash"]
+            add_output_score(root)
+            with_score = board.collect_payload(root, "remote", None)["shareHash"]
+            self.assertNotEqual(with_score, without_score)
+
     def test_bundles_collected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -689,6 +753,19 @@ class TestExportResults(unittest.TestCase):
                      if g["component"] == "01-data-prep")
             self.assertTrue(
                 g["results"][0]["assets"]["fig1.png"].startswith("data:image/png;base64,"))
+
+    def test_score_survives_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_project(root)
+            add_output_score(root)
+            p = run_board(root, "--export")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            payload = extract_payload((root / "plans" / "board.html").read_text())
+            group = next(g for g in payload["files"]["executionPlans"]
+                         if g["component"] == "01-data-prep")
+            self.assertEqual(group["results"][0]["manifest"]["score"]["profile"],
+                             "F3·A3·I3")
 
 
 class TestMaterializeWebDir(unittest.TestCase):
