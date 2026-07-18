@@ -14,7 +14,7 @@ On yes: commit the plan (`plan: <NN-slug> v<N>` + the scorecard file), **set the
 
 ## During execution
 
-Unchanged doctrine — the plan resolves the big choices, but interpretive choices that arise mid-run still surface to the researcher before acting (CLAUDE.md rule 4), and decisions append to the log in real time. Multiple components run SEQUENTIALLY in this session — never parallel, never dispatched to subagents.
+Unchanged doctrine — the plan resolves the big choices, but interpretive choices that arise mid-run still surface to the researcher before acting (CLAUDE.md rule 4), and decisions append to the log in real time. Multiple components run SEQUENTIALLY in this session — never parallel, never dispatched to subagents. Capture the output of substantive analysis commands to `logs/` (`2>&1 | tee logs/<date>_<step>.log`, gitignored) — rule 9's run evidence; local and temporary, never row-level personal data, credentials, or secrets.
 
 ## The per-component tail (after the work of one component ends)
 

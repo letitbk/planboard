@@ -200,3 +200,7 @@ npm run build    # regenerates the committed template
 ```
 
 If you change any artifact format (templates or the commands that write them), the parser tests in `board/src/lib/parse.test.ts` are the alarm that the board needs updating.
+
+## Works well with
+
+**Works well with.** The workflow is self-contained, but pairs well with general process plugins — e.g. superpowers (TDD and worktree discipline for code-heavy components) or plannotator (in-browser plan annotation). Optional: nothing here depends on them, and plan documents always follow this plugin's own template and review flow.

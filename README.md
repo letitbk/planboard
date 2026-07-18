@@ -90,6 +90,8 @@ The core plan-review-execute-tail workflow needs only `python3` (no dependencies
 
 Everything technical lives in **[docs/reference.md](docs/reference.md)**: the full command table, the board in depth (live vs. snapshot, every view, sharing and private web publishing), results bundles, model profiles, the sign-off gate, what the plugin creates in your project, updating and version pinning, and how to develop the board itself.
 
+**Works well with.** The workflow is self-contained, but pairs well with general process plugins — e.g. superpowers (TDD and worktree discipline for code-heavy components) or plannotator (in-browser plan annotation). Optional: nothing here depends on them, and plan documents always follow this plugin's own template and review flow.
+
 ## License
 
 [PolyForm Noncommercial License 1.0.0](LICENSE). Free to use, modify, and share for any **noncommercial** purpose — academic research, teaching, personal, and non-profit use all qualify. Commercial use is not permitted without a separate license; contact the author.
