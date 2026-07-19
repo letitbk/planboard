@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0] - 2026-07-19
+
+Open the board without Claude. A mechanical `rp-board` launcher lets you reach the board when the Claude session is rate-limited — no model in the loop, and no shell setup.
+
+### Added
+- **`./rp-board` launcher.** The board now writes a small, machine-specific launcher into each project. Run `./rp-board` in a terminal (or `!./rp-board` in-session) to open the board with no LLM — it reconnects to a running board or serves a fresh one. It is created at `/research-plans:init`, refreshed on every board open, and can be written on demand with `board.py --install-launcher`. The launcher is kept out of git via `.git/info/exclude`, so it never enters a commit.
+
 ## [0.23.0] - 2026-07-18
 
 Sign-at-execution (PR #26): approval moves out of the persistent board into slim one-shot sign sessions, plans sign at the `/execute` gate instead of at authoring, and post-execution revisions are recorded as amendment versions — one browser decision per component, at the moment it matters.
