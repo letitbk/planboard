@@ -30,6 +30,7 @@ import mimetypes
 import os
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import subprocess
@@ -869,6 +870,156 @@ def derive_port(root):
 def project_id(root):
     """Stable public project identity (same digest input as derive_port)."""
     return hashlib.sha256(str(Path(root).resolve()).encode("utf-8")).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------------------
+# Mechanical launcher (rp-board): a project-local script that opens the board
+# with no LLM in the loop, so a researcher can reach it while the Claude
+# session is rate-limited. board.py writes it itself, so the interpreter and
+# board.py path are baked without any path-guessing.
+# ---------------------------------------------------------------------------
+
+LAUNCHER_NAME = "rp-board"
+LAUNCHER_MARKER = "rp-board-managed-launcher-v1"
+
+
+def launcher_script(board_path=None, interpreter=None):
+    """POSIX-sh launcher text. Every interpolated value is shlex-quoted so a
+    path containing spaces or shell metacharacters cannot be expanded."""
+    if board_path is None:
+        board_path = Path(__file__).resolve()
+    if interpreter is None:
+        interpreter = sys.executable or "python3"
+    return (
+        "#!/bin/sh\n"
+        "# %s\n"
+        "# research-plans: open the board with no Claude/LLM. Auto-generated; do not edit.\n"
+        'cd "$(dirname "$0")" || exit 1\n'
+        'exec %s %s --project-root . --reuse "$@"\n'
+        % (LAUNCHER_MARKER, shlex.quote(str(interpreter)), shlex.quote(str(board_path)))
+    )
+
+
+def _git_exclude_path(root):
+    """Resolve <gitdir>/info/exclude for a normal repo or a worktree/submodule
+    whose `.git` is a file. None when this is not a git working tree."""
+    dotgit = Path(root) / ".git"
+    if dotgit.is_dir():
+        return dotgit / "info" / "exclude"
+    if dotgit.is_file():
+        try:
+            for line in dotgit.read_text(encoding="utf-8").splitlines():
+                if line.startswith("gitdir:"):
+                    gd = Path(line.split(":", 1)[1].strip())
+                    if not gd.is_absolute():
+                        gd = (Path(root) / gd).resolve()
+                    return gd / "info" / "exclude"
+        except OSError:
+            return None
+    return None
+
+
+def ensure_git_exclude(root):
+    """Add `/rp-board` to the repo's local exclude (no tracked-file churn).
+    Idempotent; a no-op outside a git working tree."""
+    excl = _git_exclude_path(root)
+    if excl is None:
+        return
+    entry = "/" + LAUNCHER_NAME
+    try:
+        existing = excl.read_text(encoding="utf-8").splitlines() if excl.is_file() else []
+        if entry in existing:
+            return
+        excl.parent.mkdir(parents=True, exist_ok=True)
+        with excl.open("a", encoding="utf-8") as fh:
+            if existing and existing[-1] != "":
+                fh.write("\n")
+            fh.write(entry + "\n")
+    except OSError:
+        pass  # non-fatal: the launcher still works, it is just not excluded
+
+
+def ensure_launcher(root, explicit=False):
+    """Write/refresh <root>/rp-board and exclude it from git. Returns a status
+    string: created / refreshed / unchanged / skipped:<reason>.
+
+    Never destructive: only a regular file carrying LAUNCHER_MARKER is replaced.
+    A symlink, directory, or unmanaged regular file at that path is refused —
+    a warning on the ordinary serve path (explicit=False), a hard error for the
+    `--install-launcher` action (explicit=True). Writes atomically."""
+    lp = Path(root) / LAUNCHER_NAME
+    desired = launcher_script()
+
+    def refuse(reason):
+        msg = "%s: refusing to overwrite %s (%s)" % (LAUNCHER_NAME, lp, reason)
+        if explicit:
+            die(msg)
+        print("board: " + msg + "; skipping launcher install", file=sys.stderr)
+        return "skipped:" + reason
+
+    if lp.is_symlink():
+        return refuse("symlink")
+    if lp.exists():
+        if lp.is_dir():
+            return refuse("directory")
+        if not lp.is_file():
+            return refuse("special-file")
+        try:
+            current = lp.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return refuse("unreadable")
+        if LAUNCHER_MARKER not in current:
+            return refuse("foreign")
+        has_x = os.access(lp, os.X_OK)
+        if current == desired and has_x:
+            ensure_git_exclude(root)
+            return "unchanged"
+        status = "refreshed"
+    else:
+        status = "created"
+
+    tmp = lp.with_name(lp.name + ".tmp-%d" % os.getpid())
+    try:
+        tmp.write_text(desired, encoding="utf-8")
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, lp)
+    except OSError as e:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        if explicit:
+            die("%s: could not write %s (%s)" % (LAUNCHER_NAME, lp, e))
+        print("board: could not write %s (%s); skipping launcher install"
+              % (lp, e), file=sys.stderr)
+        return "skipped:write-error"
+    ensure_git_exclude(root)
+    if status == "created":
+        print("board: wrote ./%s — open the board without Claude by running ./%s"
+              % (LAUNCHER_NAME, LAUNCHER_NAME), file=sys.stderr)
+    return status
+
+
+def healthy_running_board(root):
+    """Port of a live board already serving THIS project, or None. Confirms via
+    /api/health (app + projectId) so a stale lock or a foreign process reusing
+    the port is not mistaken for our board."""
+    info = read_lock(Path(root) / "plans")
+    if not info or not info.get("port"):
+        return None
+    port = info["port"]
+    try:
+        with urllib.request.urlopen(
+                "http://127.0.0.1:%d/api/health" % port, timeout=1.5) as r:
+            if r.status != 200:
+                return None
+            data = json.loads(r.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    if (data.get("app") == "research-plans-board"
+            and data.get("projectId") == project_id(root)):
+        return port
+    return None
 
 
 def token_ok(body, expected):
@@ -2646,11 +2797,20 @@ def parse_args(argv=None):
     ap.add_argument("--web-connect", action="store_true")
     ap.add_argument("--web-clear", action="store_true")
     ap.add_argument("--set-password", action="store_true")
+    ap.add_argument("--install-launcher", action="store_true",
+                    help="write the mechanical ./rp-board launcher and exit")
+    ap.add_argument("--project-root", default=None, metavar="DIR",
+                    help="use DIR as the project root instead of inferring it "
+                         "(the rp-board launcher passes --project-root .)")
+    ap.add_argument("--reuse", action="store_true",
+                    help="on a plain-live launch, open an already-running board "
+                         "for this project instead of failing or double-serving")
     return ap.parse_args(argv)
 
 
 _ACTION_FLAGS = ("export", "share", "publish", "publish_web", "pull",
-                 "web_connect", "web_clear", "set_password", "ack")
+                 "web_connect", "web_clear", "set_password", "ack",
+                 "install_launcher")
 
 
 def selected_actions(args):
@@ -2676,13 +2836,21 @@ def main():
     args = parse_args()
     check_action_exclusivity(args)
 
-    root = find_root()
-    if not (root / "plans" / "master-plan.md").is_file():
-        # find_root may have picked a git root above a non-initialized cwd
-        if (Path.cwd() / "plans" / "master-plan.md").is_file():
-            root = Path.cwd()
-        else:
-            die("no plans/master-plan.md found — run /research-plans:init first")
+    if args.project_root:
+        # The rp-board launcher passes --project-root . after cd'ing to its own
+        # dir, pinning the board to THIS project even when a parent git repo also
+        # has plans/ (find_root() would otherwise prefer the git toplevel).
+        root = Path(args.project_root).resolve()
+        if not (root / "plans" / "master-plan.md").is_file():
+            die("no plans/master-plan.md at --project-root %s" % root)
+    else:
+        root = find_root()
+        if not (root / "plans" / "master-plan.md").is_file():
+            # find_root may have picked a git root above a non-initialized cwd
+            if (Path.cwd() / "plans" / "master-plan.md").is_file():
+                root = Path.cwd()
+            else:
+                die("no plans/master-plan.md found — run /research-plans:init first")
 
     if args.collect is not None:
         if args.collect == "PENDING":
@@ -2707,7 +2875,27 @@ def main():
         web_clear(root, args)
     elif args.set_password:
         set_password(root, args)
+    elif args.install_launcher:
+        ensure_launcher(root, explicit=True)
     else:
+        # Plain live serving (not a gate/sign session, which deliberately shut
+        # down a prior board and can return without serving). Keep the launcher
+        # current, and — for the launcher's own --reuse — reconnect to an
+        # already-running board instead of failing on the lock or double-serving.
+        plain_live = not args.gate and args.sign is None
+        if plain_live:
+            ensure_launcher(root)
+            if args.reuse:
+                port = healthy_running_board(root)
+                if port is not None:
+                    url = "http://127.0.0.1:%d" % port
+                    print("Board already open: %s" % url, file=sys.stderr)
+                    if not args.no_open:
+                        try:
+                            webbrowser.open(url)
+                        except Exception:
+                            pass
+                    return
         slug, focus_results, focus_view = split_focus(args.focus)
         payload = collect_payload(root, "live", slug)
         payload["focusResults"] = focus_results

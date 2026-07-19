@@ -3205,3 +3205,179 @@ class TestDetailLevel(unittest.TestCase):
                 encoding="utf-8")
             self.assertEqual(
                 board.collect_payload(root, "live", None)["detailLevel"], "compact")
+
+
+class TestLauncherScript(unittest.TestCase):
+    """The generated rp-board launcher text and its shell-injection safety."""
+
+    def test_has_shebang_marker_and_required_fields(self):
+        s = board.launcher_script("/plugins/x/board.py", interpreter="/usr/bin/python3")
+        self.assertTrue(s.startswith("#!/bin/sh\n"))
+        self.assertIn(board.LAUNCHER_MARKER, s)
+        self.assertIn('cd "$(dirname "$0")"', s)
+        self.assertIn("--project-root .", s)
+        self.assertIn("--reuse", s)
+        self.assertIn('"$@"', s)
+        self.assertIn("/plugins/x/board.py", s)
+        self.assertIn("/usr/bin/python3", s)
+
+    def test_defaults_to_running_interpreter_and_board(self):
+        s = board.launcher_script()
+        self.assertIn(str(Path(board.__file__).resolve()), s)
+
+    def test_quotes_adversarial_paths(self):
+        import shlex
+        nasty = '/tmp/we ird/$HOME/`id`/a"b/board.py'
+        s = board.launcher_script(nasty, interpreter="/usr/bin/python3")
+        self.assertIn(shlex.quote(nasty), s)
+        exec_line = [l for l in s.splitlines() if l.startswith("exec ")][0]
+        toks = shlex.split(exec_line[len("exec "):].replace('"$@"', ""))
+        self.assertEqual(
+            toks, ["/usr/bin/python3", nasty, "--project-root", ".", "--reuse"])
+
+
+class TestEnsureLauncher(unittest.TestCase):
+    def _read(self, p):
+        return p.read_text(encoding="utf-8")
+
+    def test_creates_executable_with_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            self.assertEqual(board.ensure_launcher(root), "created")
+            lp = root / "rp-board"
+            self.assertTrue(lp.is_file())
+            self.assertIn(board.LAUNCHER_MARKER, self._read(lp))
+            self.assertTrue(os.access(lp, os.X_OK))
+
+    def test_idempotent_second_call_unchanged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            board.ensure_launcher(root)
+            self.assertEqual(board.ensure_launcher(root), "unchanged")
+
+    def test_rewrites_stale_managed_content(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            lp = root / "rp-board"
+            lp.write_text(
+                "#!/bin/sh\n# %s\nexec /old/py /old/board.py\n" % board.LAUNCHER_MARKER,
+                encoding="utf-8")
+            os.chmod(lp, 0o755)
+            self.assertEqual(board.ensure_launcher(root), "refreshed")
+            self.assertIn(str(Path(board.__file__).resolve()), self._read(lp))
+
+    def test_restores_lost_exec_bit_even_when_content_matches(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            board.ensure_launcher(root)
+            lp = root / "rp-board"
+            os.chmod(lp, 0o644)
+            self.assertEqual(board.ensure_launcher(root), "refreshed")
+            self.assertTrue(os.access(lp, os.X_OK))
+
+    def test_refuses_foreign_regular_file_nonfatal(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            lp = root / "rp-board"
+            lp.write_text("#!/bin/sh\necho my own script\n", encoding="utf-8")
+            status = board.ensure_launcher(root)
+            self.assertTrue(status.startswith("skipped"), status)
+            self.assertNotIn(board.LAUNCHER_MARKER, self._read(lp))
+
+    def test_refuses_foreign_regular_file_fatal_when_explicit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "rp-board").write_text("mine\n", encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                board.ensure_launcher(root, explicit=True)
+
+    def test_refuses_symlink_without_following(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            target = root / "secret.txt"
+            target.write_text("do not touch\n", encoding="utf-8")
+            (root / "rp-board").symlink_to(target)
+            status = board.ensure_launcher(root)
+            self.assertTrue(status.startswith("skipped"), status)
+            self.assertEqual(target.read_text(encoding="utf-8"), "do not touch\n")
+
+    def test_refuses_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / "rp-board").mkdir()
+            self.assertTrue(board.ensure_launcher(root).startswith("skipped"))
+
+    def test_no_git_still_creates_launcher(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            self.assertEqual(board.ensure_launcher(root), "created")
+
+
+class TestGitExclude(unittest.TestCase):
+    def test_adds_rp_board_to_git_info_exclude(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / ".git" / "info").mkdir(parents=True)
+            board.ensure_launcher(root)
+            excl = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+            self.assertIn("/rp-board", excl)
+
+    def test_not_duplicated_across_calls(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            (root / ".git" / "info").mkdir(parents=True)
+            board.ensure_launcher(root)
+            board.ensure_launcher(root)
+            excl = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+            self.assertEqual(excl.count("/rp-board"), 1)
+
+    def test_worktree_gitfile_redirect(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); make_project(root)
+            realgit = root / "realgit"
+            (realgit / "info").mkdir(parents=True)
+            (root / ".git").write_text("gitdir: %s\n" % realgit, encoding="utf-8")
+            board.ensure_launcher(root)
+            excl = (realgit / "info" / "exclude").read_text(encoding="utf-8")
+            self.assertIn("/rp-board", excl)
+
+
+class TestHealthyRunningBoard(unittest.TestCase):
+    def test_detects_live_matching_server(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); make_project(root)
+            url, info, t = serve_in_thread(root)
+            self.assertEqual(board.healthy_running_board(root), info["port"])
+
+    def test_none_when_no_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); make_project(root)
+            self.assertIsNone(board.healthy_running_board(root))
+
+    def test_none_when_lock_port_dead(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); make_project(root)
+            dead = _free_port()
+            (root / "plans" / ".board.lock").write_text(
+                json.dumps({"pid": os.getpid(), "port": dead,
+                            "bootId": "x", "boardToken": "y"}),
+                encoding="utf-8")
+            self.assertIsNone(board.healthy_running_board(root))
+
+
+class TestLauncherArgs(unittest.TestCase):
+    def test_install_launcher_is_an_action(self):
+        args = board.parse_args(["--install-launcher"])
+        self.assertTrue(args.install_launcher)
+        self.assertIn("install_launcher", board.selected_actions(args))
+
+    def test_install_launcher_excludes_other_actions(self):
+        with self.assertRaises(SystemExit):
+            board.check_action_exclusivity(
+                board.parse_args(["--install-launcher", "--pull"]))
+
+    def test_project_root_and_reuse_are_not_actions(self):
+        args = board.parse_args(["--project-root", "/x", "--reuse"])
+        self.assertEqual(args.project_root, "/x")
+        self.assertTrue(args.reuse)
+        board.check_action_exclusivity(args)  # no raise — neither is an action
