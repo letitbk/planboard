@@ -21,7 +21,7 @@ Five artifacts, each one an answer to *"what did the AI actually do, and can I s
 - **A plan you sign before the work.** For each piece of the project — a data-cleaning pass, one analysis, a simulation — you and the agent co-author a short execution plan: its goal, the scope decisions and why you made them, the steps, and how you'll judge success. The draft stays pending until `/execute` opens a slim sign session, or you run `/sign` sooner. Nothing is signed until you approve it, and signing is enforced, not suggested (see [the sign-off gate](docs/reference.md#the-sign-off-gate)).
 - **A decision log written as decisions happen.** Every choice you and the agent make lands in an append-only, timestamped log — not reconstructed afterward from memory, when the reasons have already blurred.
 - **Plan versions that are immutable.** When execution teaches you something and the plan changes, `/sync` records a new amendment version that says what changed and why. The old version is never edited. Re-execution signs a fresh commitment to that amendment. A recorded revision is legitimate; only a silent deviation is a breach.
-- **Results you can verify.** Each analysis is captured as an immutable results bundle: the figures and tables (checksum-verified against the scripts that made them), the exact code, the key numbers, and an automatic plan-vs-execution audit. Re-running an analysis can never quietly change what you already verified — a redo is the next bundle.
+- **Results you can verify.** Each analysis is captured as an immutable results bundle: the figures and tables (checksum-verified against the scripts that made them), the exact code, the key numbers, an automatic plan-vs-execution audit, and a mechanical score for how well the work held to its plan. Re-running an analysis can never quietly change what you already verified — a redo is the next bundle.
 - **A board that shows all of it.** A browser dashboard renders the whole project — the tracker, every plan and its diffs, the results, the decisions, the reviews — so you, a coauthor, or a reviewer can actually read what happened. Nobody has to trust a chat log they'll never see.
 
 ## How it works in practice
@@ -52,7 +52,7 @@ The plugin adds a handful of commands to Claude Code. A normal project moves thr
 
 <sub>The validation checks the work against the plan you signed and flags where they diverge — advisory, never a gate. Reopen requests a fix without changing the immutable bundle.</sub>
 
-The board runs on `python3` alone — nothing to install — as a small local server, or as a single self-contained HTML file you can email. Sharing to a private, password-protected link for browser-only collaborators is one more step (it uses Vercel and needs Node.js once, to set up). Full details are in the [reference](docs/reference.md#the-board).
+The board runs on `python3` alone — nothing to install — as a small local server, or as a single self-contained HTML file you can email. It does not need Claude to open: every board open leaves a `./rp-board` script in the project, so a terminal command gets you the dashboard with no model in the loop, which matters on the day your session is rate-limited. Sharing to a private, password-protected link for browser-only collaborators is one more step (it uses Vercel and needs Node.js once, to set up). Full details are in the [reference](docs/reference.md#the-board).
 
 ## Who it's for
 

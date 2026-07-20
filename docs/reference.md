@@ -27,7 +27,7 @@ Complete technical reference. For what the plugin is and why you'd use it, start
 | `/research-plans:models` | View or edit the per-stage model profile; regenerates the project's `rp-*` review agents. |
 | `/research-plans:results` | Capture a versioned results bundle for a component — brief report, figure/table snapshots, key numbers, script snapshots, and an automatic plan-vs-execution validation. `--adopt` brings pre-existing artifacts under verification. |
 | `/research-plans:report` | Generate a shareable report for a bundle (markdown always; PDF/DOCX via pandoc) into `plans/reports/` — also available as the board's Generate report button; offered automatically at capture end. |
-| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish-web` to a private, password-protected link for collaborators. |
+| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish-web` to a private, password-protected link for collaborators. `./rp-board` opens the same board from a terminal with no model in the loop. |
 
 Everything is opt-in. The plugin does nothing in projects you have not initialized.
 
@@ -54,6 +54,14 @@ The board follows your OS light/dark preference, with a header toggle to overrid
 **Live** — `/research-plans:board` starts a small local server (`python3` only, nothing to install) on a stable per-project port. Bookmark the URL; it stays valid for the whole session. The live board is a dashboard and feedback surface. Select text to attach a comment, press **Send to Claude**, request an agent review, generate a report, reopen a results bundle, or edit model settings. A pending plan is labeled `pending — signs at /execute or /sign`; plan approval is not on the persistent board. The board has no idle timeout. It closes when you submit an action so your session can route it; `/research-plans:board` reopens it at the same URL whenever you want to continue.
 
 Or let an agent do the reviewing: the **Review with** button on any plan version, the master plan, or a results bundle runs Codex, Gemini, a Claude subagent, or a three-lens subagent panel and seeds its section-anchored comments onto the board — attributed to the reviewer — for you to curate before they route the same way.
+
+### Opening the board without Claude
+
+Every plain live open also writes or refreshes `./rp-board` in the project root — a small launcher that opens the board with no model in the loop. Run `./rp-board` in a terminal, or `!./rp-board` from inside a session; it reconnects to a board already running on the project's port, or serves a fresh one. Use it when your Claude session is rate-limited, or when you only want to read.
+
+The launcher is created at `/research-plans:init` and can be written on demand with `python3 <plugin>/skills/managing-research-plans/scripts/board.py --install-launcher`. It bakes in this machine's python interpreter and plugin path, so it is machine-specific and kept out of git through `.git/info/exclude` rather than `.gitignore` — no tracked-file churn, and it never enters a commit. board.py only ever replaces a launcher it wrote itself; a symlink, a directory, or a file of your own at that path is refused, not overwritten.
+
+Feedback you send from a launcher-served board has no session to route it, so it is saved to `plans/.board-feedback.md` and picked up the next time you run `/research-plans:board` in Claude.
 
 **Snapshot** — `/research-plans:board --export` writes a single self-contained `plans/board.html` that anyone can open without Claude Code or an internet connection (figures are inlined). Snapshots are read-only. Treat the file like publishing your plans: it contains everything under `plans/`, including result figures, tables, and script snapshots.
 
@@ -141,7 +149,7 @@ plans/
             └── r2/             a redo; r1 is never edited
 ```
 
-Plus a short marked section in your project's `CLAUDE.md` so every future session follows the conventions. Unsigned working drafts (`.draft-vN.md`), results staging directories (`.staging-*`), and board bookkeeping files are gitignored automatically.
+Plus a short marked section in your project's `CLAUDE.md` so every future session follows the conventions, and `./rp-board` in the project root — the machine-specific board launcher, excluded from git through `.git/info/exclude`. Unsigned working drafts (`.draft-vN.md`), sign feedback (`.sign-feedback-vN.md`), results staging directories (`.staging-*`), and board bookkeeping files are gitignored automatically.
 
 ## Install, updating, and pinning
 
@@ -177,7 +185,7 @@ To silence the update notice (e.g. on an intentionally pinned install), set `RES
 
 ### Installing a specific version
 
-Every release is a git tag (`v0.1.0` … `v0.23.0`). To pin an older version, add a local marketplace file whose entry pins the tag, then install from it.
+Every release is a git tag (`v0.1.0` … `v0.24.0`). To pin an older version, add a local marketplace file whose entry pins the tag, then install from it.
 
 Create `rp-pinned/.claude-plugin/marketplace.json`:
 
