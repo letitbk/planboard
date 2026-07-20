@@ -49,3 +49,4 @@ reading the newest CHANGELOG entry for highlights — so write that entry for a 
 | v0.22.0 | 7eb0930 | release commit (PR #25 output & validation: tab rename + F·A·I score + reviewer discipline + planning doctrine; bump on main after merge) |
 | v0.23.0 | f465edc | release commit (PR #26 sign-at-execution: strict trailer grammar + sign sessions both transports + amendments + /sign + shutdown handoff; bump on main after merge) |
 | v0.24.0 | 89f7b95 | release commit (mechanical rp-board launcher: ./rp-board opens the board with no LLM; feature merged to main directly, bump on main) |
+| v0.24.1 | cfd9e15 | release commit (hotfix: board highlight-and-comment, broken since v0.19.0; fix committed to main directly, bump on main) |
