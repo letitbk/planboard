@@ -133,6 +133,7 @@ export function paintHighlights(
     else scopeEls.set(key, [el]);
   });
   for (const a of anchors) {
+    if (!a.quote.trim()) continue; // unanchored (e.g. a global plan comment) — nothing to paint
     if (a.scope) {
       const els = scopeEls.get(a.scope);
       if (!els) {
