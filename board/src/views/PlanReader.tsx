@@ -300,7 +300,7 @@ export default function PlanReader({
     () =>
       annotations.filter(
         (a): a is PlanCommentAnnotation =>
-          a.type === "plan-comment" && doc !== null && a.planPath === doc.path,
+          a.type === "plan-comment" && doc !== null && a.planPath === doc.path && a.quote.trim() !== "",
       ),
     [annotations, doc],
   );
@@ -335,6 +335,24 @@ export default function PlanReader({
   // never annotated. Feedback routing must not touch an immutable snapshot.
   const annotatable = canAnnotate && doc.docKind !== "draftSnapshot";
 
+  const [globalOpen, setGlobalOpen] = useState(false);
+  const [globalText, setGlobalText] = useState("");
+  useEffect(() => {
+    setGlobalOpen(false);
+    setGlobalText("");
+  }, [doc.path]);
+  const saveGlobal = () => {
+    if (!globalText.trim()) return;
+    onAddPlanComment({
+      quote: "", prefix: "", suffix: "", sectionHeading: "", scope: "",
+      occurrenceIndex: 0, anchored: false,
+      planPath: doc.path, component: group.component, version: doc.version, isDraft: doc.isDraft,
+      comment: globalText.trim(),
+    });
+    setGlobalOpen(false);
+    setGlobalText("");
+  };
+
   return (
     <div className="min-w-0">
         <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -356,6 +374,14 @@ export default function PlanReader({
             ),
           )}
           <div className="ml-auto flex items-center gap-2">
+            {annotatable && !diffOn && (
+              <button
+                className="rounded-full border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 px-3 py-1 text-xs font-medium text-stone-600 hover:border-stone-500 dark:hover:border-stone-400"
+                onClick={() => setGlobalOpen((o) => !o)}
+              >
+                Global comment
+              </button>
+            )}
             {scorecard && <ScorePanel scorecard={scorecard} />}
             {actionsVisible(data) && onRequestReview && doc.docKind !== "draftSnapshot" && (
               <ReviewMenu
@@ -383,6 +409,37 @@ export default function PlanReader({
             )}
           </div>
         </div>
+
+        {annotatable && globalOpen && !diffOn && (
+          <div className="mb-3 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-sm">
+            <textarea
+              autoFocus
+              value={globalText}
+              onChange={(e) => setGlobalText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveGlobal();
+                if (e.key === "Escape") { setGlobalOpen(false); setGlobalText(""); }
+              }}
+              placeholder="A comment on this whole plan… (⌘↵ to save)"
+              className="h-20 w-full resize-none rounded border border-stone-200 dark:border-stone-800 p-2 text-sm outline-none focus:border-stone-400 dark:focus:border-stone-500"
+            />
+            <div className="mt-1 flex justify-end gap-2">
+              <button
+                className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+                onClick={() => { setGlobalOpen(false); setGlobalText(""); }}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded bg-stone-900 dark:bg-stone-200 px-3 py-1 text-xs font-medium text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400 disabled:opacity-40"
+                disabled={!globalText.trim()}
+                onClick={saveGlobal}
+              >
+                Save comment
+              </button>
+            </div>
+          </div>
+        )}
 
         {docs.some((d) => d.docKind === "draftSnapshot") && (
           <div className="mb-3 flex flex-wrap items-center gap-1.5">
