@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { Marked } from "marked";
 import { unwrapSoftBreaks } from "../lib/markdownText";
 
@@ -72,7 +72,14 @@ function makeMarked(assets?: Record<string, string>) {
 
 const defaultMarked = makeMarked();
 
-export default function Markdown({
+// Memoized: a plan body renders through many <Markdown> blocks, and the board
+// re-renders frequently (3s health poll, drawer/annotation state). Without memo,
+// each re-render recreates the dangerouslySetInnerHTML payload and React
+// re-commits the innerHTML — which tears out any <mark> highlights AnnotationLayer
+// injected imperatively into this DOM. Skipping re-render when `source` is
+// unchanged keeps those highlights alive; a genuine source change still
+// re-renders and the paint pass repaints.
+function Markdown({
   source,
   className = "",
   assets,
@@ -92,3 +99,5 @@ export default function Markdown({
     />
   );
 }
+
+export default memo(Markdown);
