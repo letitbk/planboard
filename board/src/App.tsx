@@ -437,6 +437,10 @@ export default function App({ data }: { data: BoardData }) {
     setAnnotations((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
+  const editAnnotation = useCallback((id: string, text: string) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, comment: text } : a)));
+  }, []);
+
   const onPaintResult = useCallback(
     (painted: Set<string>, docKey?: string, scopeAbsent?: Set<string>) => {
       setAnnotations((prev) => {
@@ -926,6 +930,7 @@ export default function App({ data }: { data: BoardData }) {
     savingIds,
     onReviewerChange: setReviewer,
     onRemove: removeAnnotation,
+    onEdit: editAnnotation,
     onSaveHosted: saveHosted,
     onClose: () => setDrawerOpen(false),
     onSubmit: submit,
