@@ -84,6 +84,13 @@ class TestSignTransactionDocs(unittest.TestCase):
         self.assertNotIn("Sign-off order", command)
         self.assertNotIn("clicked Approve", command)
 
+    def test_board_reopens_on_a_produced_draft(self):
+        command = (REPO / "commands" / "board.md").read_text(encoding="utf-8")
+        # A produced/refined plan draft is a third reopen trigger beside review/report.
+        self.assertIn("produced a new or refined plan draft", command)
+        # ...and the reopen focuses that component's draft.
+        self.assertIn("reopen the board focused on that component", command)
+
     def test_results_uses_the_governing_canonical_version(self):
         command = (REPO / "commands" / "results.md").read_text(encoding="utf-8")
         validator = (REPO / "skills" / "managing-research-plans" /
