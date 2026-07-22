@@ -142,7 +142,7 @@ export function AnnotationCard({
           </button>
         )}
       </div>
-      {(a.type === "plan-comment" || a.type === "doc-comment") && (
+      {(a.type === "plan-comment" || a.type === "doc-comment") && a.quote && (
         <div className="mb-1 line-clamp-2 rounded bg-amber-50 dark:bg-amber-950 px-1.5 py-1 text-[11px] italic text-stone-500">
           “{a.quote}”
         </div>

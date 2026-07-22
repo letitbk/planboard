@@ -4,7 +4,7 @@ import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 
 // vitest globals are off, so testing-library's auto-cleanup never registers.
 afterEach(cleanup);
-import FeedbackPanel, { type FeedbackPanelProps } from "./FeedbackPanel";
+import FeedbackPanel, { type FeedbackPanelProps, AnnotationCard } from "./FeedbackPanel";
 import type { Annotation } from "../lib/types";
 
 function ann(id: string): Annotation {
@@ -95,5 +95,23 @@ describe("FeedbackPanel", () => {
     expect(screen.getByText(payload)).toBeTruthy();
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("a")).toBeNull();
+  });
+});
+
+describe("AnnotationCard empty-quote", () => {
+  function unanchored(): Annotation {
+    return {
+      id: "g1", type: "plan-comment", planPath: "p", component: "01-x", version: 1,
+      isDraft: false, quote: "", prefix: "", suffix: "", sectionHeading: "",
+      occurrenceIndex: 0, anchored: false, comment: "note on the whole plan",
+    } as unknown as Annotation;
+  }
+
+  it("shows the unanchored badge and no empty quote block", () => {
+    const { container, getByText } = render(<AnnotationCard a={unanchored()} />);
+    expect(getByText("unanchored")).toBeTruthy();
+    // The amber quote block uses italic styling; with an empty quote it must not render.
+    expect(container.querySelector(".italic")).toBeNull();
+    expect(getByText("note on the whole plan")).toBeTruthy();
   });
 });

@@ -114,7 +114,7 @@ export function buildFeedbackMarkdown(
       case "plan-comment": {
         const head = `${a.component} v${a.version}${a.isDraft ? " (draft)" : ""}${a.sectionHeading ? ` — ${a.sectionHeading}` : ""}`;
         lines.push(`## ${i + 1}. [${head}]${a.author ? ` (via ${a.author})` : ""}`);
-        lines.push(`Feedback on: "${a.quote}"`);
+        if (a.quote) lines.push(`Feedback on: "${a.quote}"`);
         break;
       }
       case "result-comment": {

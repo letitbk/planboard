@@ -79,6 +79,14 @@ describe("buildFeedbackMarkdown", () => {
     id: "a3", type: "general", view: "Timeline", comment: "looks sparse",
   };
 
+  function planCommentWithQuote(quote: string): Annotation {
+    return {
+      id: "a1", type: "plan-comment", planPath: "plans/execution/01-x/v1.md",
+      component: "01-x", version: 1, isDraft: false, quote, prefix: "", suffix: "",
+      sectionHeading: "", occurrenceIndex: 0, anchored: quote !== "", comment: "whole-plan note",
+    } as unknown as Annotation;
+  }
+
   it("returns the no-feedback stub when empty", () => {
     expect(buildFeedbackMarkdown([])).toBe(
       "# Board Feedback\n\nNo feedback.",
@@ -172,6 +180,19 @@ describe("buildFeedbackMarkdown", () => {
     ]);
     expect(md).toContain("[Reports]");
     expect(md).toContain('Feedback on: "the finding"');
+  });
+
+  it("omits the Feedback-on line when the quote is empty", () => {
+    const md = buildFeedbackMarkdown([planCommentWithQuote("")]);
+    expect(md).toContain("[01-x v1]");
+    expect(md).toContain("whole-plan note");
+    expect(md).not.toContain('Feedback on: ""');
+    expect(md).not.toContain("Feedback on:");
+  });
+
+  it("keeps the Feedback-on line for a real quote", () => {
+    const md = buildFeedbackMarkdown([planCommentWithQuote("some quoted text")]);
+    expect(md).toContain('Feedback on: "some quoted text"');
   });
 
   it("renders (via author) for script-comment and general", () => {
