@@ -85,8 +85,10 @@ SLOT_OPEN = '<script id="board-data" type="application/json">'
 GITIGNORE_LINES = [
     "/.board-feedback.md",
     "/.board-feedback.md.tmp",
-    "/.rp-seed-*.json",
-    "/.rp-review-*.txt",
+    "/.pb-seed-*.json",
+    "/.pb-review-*.txt",
+    "/.rp-seed-*.json",   # legacy temp patterns — kept so a pre-rename leftover
+    "/.rp-review-*.txt",  # from an interrupted run stays ignored
     "/.board.lock",
     "/board-share.html",
     "/execution/*/.draft-v*.md",
@@ -2065,7 +2067,7 @@ def share(root, args):
 
 # --- GitHub Pages publish (feature #4) ---
 
-TMP_BRANCH_PREFIX = "_rp_pages_"  # per-run throwaway branch backing the publish worktree
+TMP_BRANCH_PREFIX = "_pb_pages_"  # per-run throwaway branch backing the publish worktree
 # github.com must be the HOST (right after an optional scheme and userinfo), not
 # merely appear somewhere in the URL/path — so git.example.com/github.com/... is rejected.
 GITHUB_RE = re.compile(
@@ -2124,7 +2126,7 @@ def publish_to_branch(root, files, branch, message):
         root, ["show-ref", "--verify", "--quiet", "refs/remotes/origin/%s" % branch],
         check=False,
     ).returncode == 0
-    tmp = tempfile.mkdtemp(prefix="rp-pages-")
+    tmp = tempfile.mkdtemp(prefix="pb-pages-")
     try:
         if has_remote:
             _git(root, ["worktree", "add", "-B", tmp_branch, tmp, "origin/%s" % branch])
