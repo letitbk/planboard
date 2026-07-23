@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0] - 2026-07-23
+
+The model-profile nudge now fires deterministically, and a new `/planboard:handoff` command lets a cooperative codex run the plan/execute/results loop from a project's AGENTS.md.
+
+### Added
+- **Codex handoff.** `/planboard:handoff` writes a marked planboard block into the project's `AGENTS.md`, pointing a cooperative codex at the plugin's shipped references and stdlib scripts by absolute path so it can author plans and execute the loop. Review and signing stay in a Claude session (the sign gate is hook-enforced there); provenance records the codex model as self-attested. The block is machine-local — re-run to refresh after a plugin upgrade.
+
+### Changed
+- **Deterministic model nudge.** The per-stage model nudge no longer depends on the model guessing its own identity; it fires from the profile row alone. The execute prompt always pre-selects the profile's `execute` model when the profile names one.
+
 ## [1.0.0] - 2026-07-23
 
 The plugin is renamed from research-plans to planboard. Commands move from `/research-plans:*` to `/planboard:*`, and the install id becomes `planboard@planboard`. Already-initialized projects and existing board state keep working: the old markers, environment variables, storage keys, launcher, and review agents are all still recognized, and old artifacts migrate to the new names on first use.
