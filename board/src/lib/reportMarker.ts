@@ -25,7 +25,9 @@ export interface ParsedReport {
   body: string; // always safe to render
 }
 
-export const MARKER_PREFIX = "<!-- rp-report";
+export const MARKER_PREFIX = "<!-- pb-report";
+// Dual-read: legacy reports carry `<!-- rp-report`, new reports `<!-- pb-report`.
+const MARKER_PREFIXES = ["<!-- pb-report", "<!-- rp-report"];
 export const REPORT_DOCKEY_RE = /^plans\/reports\/(.+)-r(\d+)-report\.md$/;
 
 const VERDICTS = new Set(["accepted", "changes-requested", "pending"]);
@@ -42,11 +44,11 @@ const VALIDATIONS = new Set([
 export function parseReport(content: string): ParsedReport {
   const nl = content.indexOf("\n");
   const first = nl === -1 ? content : content.slice(0, nl);
-  if (!first.trimStart().startsWith(MARKER_PREFIX)) {
+  if (!MARKER_PREFIXES.some((p) => first.trimStart().startsWith(p))) {
     return { marker: null, malformed: false, body: content };
   }
   const body = nl === -1 ? "" : content.slice(nl + 1);
-  const m = /^<!--\s*rp-report\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
+  const m = /^<!--\s*(?:rp|pb)-report\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
   if (!m) return { marker: null, malformed: true, body };
   try {
     const j = JSON.parse(m[1]) as Record<string, unknown>;

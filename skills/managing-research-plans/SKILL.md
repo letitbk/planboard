@@ -15,8 +15,8 @@ Artifacts are organized around **the research project and its questions**: the m
 
 This skill applies only when **both** opt-in markers exist:
 
-1. `plans/master-plan.md` containing `<!-- research-plans:master-plan -->`
-2. The repo's `CLAUDE.md` containing `<!-- research-plans:start -->`
+1. `plans/master-plan.md` containing `<!-- planboard:master-plan -->` (or the legacy `<!-- research-plans:master-plan -->`)
+2. The repo's `CLAUDE.md` containing `<!-- planboard:start -->` (or the legacy `<!-- research-plans:start -->`)
 
 If either is absent, this workflow does not apply. Stay silent about it, never create `plans/` uninvited, and never suggest initializing unless the researcher asks. A stray copied `master-plan.md` without the CLAUDE.md marker does not count as opt-in. For software implementation plans, use superpowers writing-plans instead.
 

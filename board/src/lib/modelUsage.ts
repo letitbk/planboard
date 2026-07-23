@@ -36,7 +36,9 @@ export function modelsEquivalent(a: string, b: string): boolean {
   return false;
 }
 
-export const PLAN_MARKER_PREFIX = "<!-- rp-model";
+export const PLAN_MARKER_PREFIX = "<!-- pb-model";
+// Dual-read: legacy plans carry `<!-- rp-model`, new plans `<!-- pb-model`.
+const PLAN_MARKER_PREFIXES = ["<!-- pb-model", "<!-- rp-model"];
 
 export interface ParsedPlanModel {
   modelUsage: ModelUsage | null;
@@ -49,11 +51,11 @@ export interface ParsedPlanModel {
 export function parsePlanModelMarker(content: string): ParsedPlanModel {
   const nl = content.indexOf("\n");
   const first = nl === -1 ? content : content.slice(0, nl);
-  if (!first.trimStart().startsWith(PLAN_MARKER_PREFIX)) {
+  if (!PLAN_MARKER_PREFIXES.some((p) => first.trimStart().startsWith(p))) {
     return { modelUsage: null, malformed: false, body: content };
   }
   const body = nl === -1 ? "" : content.slice(nl + 1);
-  const m = /^<!--\s*rp-model\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
+  const m = /^<!--\s*(?:rp|pb)-model\s+(\{.*\})\s*-->\s*$/.exec(first.trim());
   if (!m) return { modelUsage: null, malformed: true, body };
   try {
     const usage = coerceModelUsage(JSON.parse(m[1]));

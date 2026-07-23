@@ -111,8 +111,14 @@ def web_project_hash(root):
 
 def _web_data_dir():
     base = os.environ.get("CLAUDE_PLUGIN_DATA")
-    d = Path(base) / "web" if base else Path.home() / ".research-plans" / "web"
+    d = Path(base) / "web" if base else Path.home() / ".planboard" / "web"
     return d
+
+
+def _legacy_web_data_dir():
+    """Pre-rename home-dir location, read as a fallback so existing hosted-board
+    configs keep resolving. Only reachable when CLAUDE_PLUGIN_DATA is unset."""
+    return Path.home() / ".research-plans" / "web"
 
 
 def web_config_path(root):
@@ -120,11 +126,13 @@ def web_config_path(root):
 
 
 def read_web_config(root):
-    p = web_config_path(root)
-    try:
-        return json.loads(p.read_text())
-    except (OSError, ValueError):
-        return None
+    name = "%s.json" % web_project_hash(root)
+    for d in (_web_data_dir(), _legacy_web_data_dir()):
+        try:
+            return json.loads((d / name).read_text())
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def write_web_config(root, cfg):
@@ -250,13 +258,15 @@ def fnv1a_hex(s):
     return format(h, "08x")
 
 
-REPORT_MARKER_PREFIX = "<!-- rp-report"
+REPORT_MARKER_PREFIX = "<!-- pb-report"
+# Dual-read: legacy reports carry `<!-- rp-report`, new reports `<!-- pb-report`.
+REPORT_MARKER_PREFIXES = ("<!-- pb-report", "<!-- rp-report")
 
 
 def _strip_report_marker(content):
-    """Drop the first line when it is (or tries to be) an rp-report marker."""
+    """Drop the first line when it is (or tries to be) a report marker."""
     first, sep, rest = content.partition("\n")
-    if first.lstrip().startswith(REPORT_MARKER_PREFIX):
+    if any(first.lstrip().startswith(p) for p in REPORT_MARKER_PREFIXES):
         return rest
     return content
 
@@ -1016,7 +1026,9 @@ def healthy_running_board(root):
             data = json.loads(r.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError):
         return None
-    if (data.get("app") == "research-plans-board"
+    # Dual-accept the app id so a new `pb-board --reuse` reconnects to a still-
+    # running old server (correctness is keyed on projectId, not the app id).
+    if (data.get("app") in ("planboard-board", "research-plans-board")
             and data.get("projectId") == project_id(root)):
         return port
     return None

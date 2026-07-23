@@ -80,3 +80,22 @@ describe("modelChipText", () => {
     expect(modelChipText({ prescribed: null, reported: null })).toBeNull();
   });
 });
+
+describe("parsePlanModelMarker rename compat (rp/pb dual-read)", () => {
+  const usage = { prescribed: { model: "opus", effort: "max" }, reported: { model: "sonnet", effort: null } };
+  it("parses the new pb-model prefix", () => {
+    const p = parsePlanModelMarker(`<!-- pb-model ${JSON.stringify(usage)} -->\n# Plan\n\nBody.`);
+    expect(p.malformed).toBe(false);
+    expect(p.modelUsage).toEqual(usage);
+    expect(p.body).toBe("# Plan\n\nBody.");
+  });
+  it("still parses the legacy rp-model prefix", () => {
+    const p = parsePlanModelMarker(`<!-- rp-model ${JSON.stringify(usage)} -->\nB\n`);
+    expect(p.malformed).toBe(false);
+    expect(p.modelUsage).toEqual(usage);
+  });
+  it("strips either prefix line", () => {
+    expect(stripPlanMarkerLine(`<!-- pb-model ${JSON.stringify(usage)} -->\nB\n`)).toBe("B\n");
+    expect(stripPlanMarkerLine(`<!-- rp-model ${JSON.stringify(usage)} -->\nB\n`)).toBe("B\n");
+  });
+});

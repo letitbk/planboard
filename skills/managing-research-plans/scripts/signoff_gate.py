@@ -27,8 +27,18 @@ from pathlib import Path
 
 VERSION_RE = re.compile(r"^v(\d+)\.md$")
 RESULTS_RE = re.compile(r"/plans/execution/([^/]+)/results/(r\d+)/")
-MASTER_MARKER = "<!-- research-plans:master-plan -->"
-CLAUDE_MARKER = "<!-- research-plans:start -->"
+# Content markers are dual-recognized: the new `planboard:` form is written going
+# forward, the legacy `research-plans:` form is still accepted so already-initialized
+# projects keep gating. NEVER drop the legacy entries — find_project_root fails OPEN,
+# so an unrecognized marker silently disables every gate that rides it.
+MASTER_MARKERS = (
+    "<!-- planboard:master-plan -->",
+    "<!-- research-plans:master-plan -->",
+)
+CLAUDE_MARKERS = (
+    "<!-- planboard:start -->",
+    "<!-- research-plans:start -->",
+)
 TICKET_PREFIX = ".import-approved-"
 ORDER_FENCE_RE = re.compile(r"```json board-feedback\n(.*?)\n```", re.DOTALL)
 DEFAULT_TIMEOUT = 1500
@@ -183,13 +193,27 @@ def deny(reason):
     decide("deny", reason)
 
 
+def _env(name, default=""):
+    """Read PLANBOARD_<name>, falling back to the legacy RESEARCH_PLANS_<name>."""
+    v = os.environ.get("PLANBOARD_" + name)
+    if v is None:
+        v = os.environ.get("RESEARCH_PLANS_" + name)
+    return default if v is None else v
+
+
 def gate_timeout():
-    raw = os.environ.get("RESEARCH_PLANS_GATE_TIMEOUT", "")
-    try:
-        val = int(raw)
-    except ValueError:
-        return DEFAULT_TIMEOUT
-    return max(30, min(val, DEFAULT_TIMEOUT))
+    # Precedence: new PLANBOARD_ first, then legacy RESEARCH_PLANS_; a malformed
+    # value falls through to the next source rather than silently forcing default.
+    for name in ("PLANBOARD_GATE_TIMEOUT", "RESEARCH_PLANS_GATE_TIMEOUT"):
+        raw = os.environ.get(name)
+        if raw is None:
+            continue
+        try:
+            val = int(raw)
+        except ValueError:
+            continue
+        return max(30, min(val, DEFAULT_TIMEOUT))
+    return DEFAULT_TIMEOUT
 
 
 def find_project_root(path):
@@ -198,13 +222,14 @@ def find_project_root(path):
         mp = parent / "plans" / "master-plan.md"
         if mp.is_file():
             try:
-                if MASTER_MARKER not in mp.read_text(encoding="utf-8", errors="replace"):
+                text = mp.read_text(encoding="utf-8", errors="replace")
+                if not any(mk in text for mk in MASTER_MARKERS):
                     return None
                 cm = parent / "CLAUDE.md"
-                if cm.is_file() and CLAUDE_MARKER in cm.read_text(
-                    encoding="utf-8", errors="replace"
-                ):
-                    return parent
+                if cm.is_file():
+                    ctext = cm.read_text(encoding="utf-8", errors="replace")
+                    if any(mk in ctext for mk in CLAUDE_MARKERS):
+                        return parent
             except OSError:
                 return None
             return None
@@ -239,7 +264,7 @@ def main():
     # the board — a browser gate here would deadlock capture). ----
     res_m = RESULTS_RE.search(str(p))
     if res_m:
-        if os.environ.get("RESEARCH_PLANS_NO_GATE", "") == "1":
+        if _env("NO_GATE", "") == "1":
             print(
                 "research-plans: results immutability bypassed by "
                 "RESEARCH_PLANS_NO_GATE for %s" % p.name,
@@ -279,7 +304,7 @@ def main():
     # policy like the results branch — never opens a browser. Creation (the
     # renewal's own archive write) is allowed; edits and overwrites are denied. ----
     if p.parent.name == "archive" and p.parent.parent.name == "plans":
-        if os.environ.get("RESEARCH_PLANS_NO_GATE", "") == "1":
+        if _env("NO_GATE", "") == "1":
             print(
                 "research-plans: archive immutability bypassed by "
                 "RESEARCH_PLANS_NO_GATE for %s" % p.name,
@@ -324,7 +349,7 @@ def main():
     version = int(m.group(1))
     slug = p.parent.name
 
-    if os.environ.get("RESEARCH_PLANS_NO_GATE", "") == "1":
+    if _env("NO_GATE", "") == "1":
         print(
             "research-plans: sign-off gate bypassed by RESEARCH_PLANS_NO_GATE for %s"
             % p.name,

@@ -53,3 +53,22 @@ describe("parseReport", () => {
     expect(stripMarkerLine("B\n")).toBe("B\n");
   });
 });
+
+describe("parseReport rename compat (rp/pb dual-read)", () => {
+  const body = '{"schemaVersion": 1, "component": "01-x", "bundle": 2, "plan": 1, "verdict": "pending", "generated": "t"}';
+  it("parses the new pb-report prefix", () => {
+    const r = parseReport(`<!-- pb-report ${body} -->\n# Title\n`);
+    expect(r.malformed).toBe(false);
+    expect(r.marker?.component).toBe("01-x");
+    expect(r.body).toBe("# Title\n");
+  });
+  it("still parses the legacy rp-report prefix", () => {
+    const r = parseReport(`<!-- rp-report ${body} -->\nB\n`);
+    expect(r.malformed).toBe(false);
+    expect(r.marker?.component).toBe("01-x");
+  });
+  it("strips either prefix", () => {
+    expect(stripMarkerLine(`<!-- pb-report ${body} -->\nB\n`)).toBe("B\n");
+    expect(stripMarkerLine(`<!-- rp-report ${body} -->\nB\n`)).toBe("B\n");
+  });
+});

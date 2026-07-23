@@ -165,7 +165,9 @@ def _read_json_file(path):
 
 
 def main():
-    if os.environ.get("RESEARCH_PLANS_NO_UPDATE_CHECK"):
+    if os.environ.get("PLANBOARD_NO_UPDATE_CHECK") or os.environ.get(
+        "RESEARCH_PLANS_NO_UPDATE_CHECK"
+    ):
         return 0
     root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
