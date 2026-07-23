@@ -89,8 +89,8 @@ New command (working name `/planboard:handoff`) writes/refreshes the marked `AGE
 
 ## Verify before implementation (external runtime facts, not repo facts)
 
-- Codex's `AGENTS.md` loading rules (project-root discovery, nested precedence) and that codex has no `${CLAUDE_PLUGIN_ROOT}` — confirm against codex/OpenAI docs.
-- That `/model <current-model>` is a harmless no-op mid-session.
+- **VERIFIED 2026-07-23** (OpenAI codex docs, `developers.openai.com/codex/guides/agents-md`, corroborated by the `agents.md` standard): Codex starts at the **project root (typically the Git root)** and walks down to the cwd, reading `AGENTS.md` (and `AGENTS.override.md`) in each directory; it concatenates them **root-to-leaf** (global `~/.codex` → repo root → nested → cwd), injected before the user prompt. So a **repo-root `AGENTS.md` is automatically read and honored** anywhere in the repo — the design's write target is correct. A closer subdir `AGENTS.md` is also read and concatenated *after* the root block, so our planboard block at the repo root is always present (a deeper file can add, not erase it). Codex has **no `${CLAUDE_PLUGIN_ROOT}`** — it uses `CODEX_HOME`/`~/.codex`; that variable is Claude Code plugin machinery, absent in codex, so baking absolute paths at generation time is required (as designed).
+- `/model <current-model>` mid-session is a harmless no-op in Claude Code (a confirmation, nothing lost) — low-risk assumption, not independently doc-verified.
 
 ## What this explicitly does NOT do (YAGNI)
 
