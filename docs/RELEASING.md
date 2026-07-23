@@ -1,21 +1,68 @@
 # Releasing planboard
 
-## Every release
-1. Bump the version in **two** files (keep them identical):
-   - `.claude-plugin/plugin.json`
-   - `board/package.json`
-   (`.claude-plugin/marketplace.json` no longer carries a version — `plugin.json` is authoritative.)
-   Then sync the lockfile's two copies of the version: `cd board && npm install --package-lock-only`, and commit `board/package-lock.json` with the cut (it lagged at 0.13.0 through two releases before this step existed).
-2. Add a `## [X.Y.Z] - YYYY-MM-DD` entry to `CHANGELOG.md` in Keep-a-Changelog form
-   (`### Added / ### Changed / ### Fixed`, user-facing bold-lead bullets).
-3. Commit as `vX.Y.Z: <summary>` (no `Co-Authored-By` trailer).
-4. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`.
-5. Push with tags: `git push && git push --tags`.
+## Pull requests
 
-The SessionStart update hook announces the new version to installed users automatically,
-reading the newest CHANGELOG entry for highlights — so write that entry for a human reader.
+Every pull request that changes shipped code or behavior is a release. Use the
+next patch version by default. A larger feature may use the next minor version
+with its patch number reset to zero.
 
-## Retroactive tag map (created 2026-07-09)
+Before opening the pull request:
+
+1. Update `.claude-plugin/plugin.json` and `board/package.json` to the same
+   version.
+2. Run `cd board && npm install --package-lock-only`. Commit both version fields
+   in `board/package-lock.json`.
+3. Add `## [X.Y.Z] - YYYY-MM-DD` as the first release entry in `CHANGELOG.md`.
+   Add at least one bullet under `Added`, `Changed`, `Fixed`, `Removed`,
+   `Deprecated`, or `Security`.
+4. Run the validation commands in the root `AGENTS.md`.
+
+Documentation, tests, and repository maintenance may keep the current version.
+If a maintenance pull request changes the version, it must follow the complete
+release process above.
+
+The `release-policy` pull request check enforces these rules. The repository
+also requires the Python, board, and hosted board checks. Keep the pull request
+branch current with `main` so two pull requests cannot claim the same version.
+
+## After merge
+
+The release workflow compares the version before and after each push to `main`.
+An unchanged version ends without a release. A new version causes the workflow
+to create an annotated `vX.Y.Z` tag on the merged commit and a GitHub release
+whose body comes from the matching changelog entry.
+
+Do not create or push release tags by hand. The workflow never changes
+repository files and never moves an existing tag.
+
+At session start, the update hook announces the new version to installed users.
+It uses the newest changelog entry for highlights. Write that entry for a human
+reader.
+
+## Repository setup
+
+After the workflows first run, configure the repository settings:
+
+1. Allow GitHub Actions to write repository contents.
+2. Require `release-policy`, `python-tests`, `board`, and `hosted-board` before
+   merge.
+3. Require pull request branches to be current with `main`.
+4. Turn on Code review and Automatic reviews for `letitbk/planboard` in
+   [Codex settings](https://chatgpt.com/codex/settings/code-review).
+
+GitHub must see each workflow job once before you can select it as a required
+check.
+
+## Recovery
+
+If tag creation succeeds but release creation fails, fix the permission or
+temporary error and rerun the workflow. It will keep the tag and create the
+missing release.
+
+If a version tag points to another commit, stop and inspect the history. Do not
+move or replace the tag.
+
+## Historical tag map through v1.0.0
 | version | commit  | note |
 |---------|---------|------|
 | v0.1.0  | 3a02ddb | |
