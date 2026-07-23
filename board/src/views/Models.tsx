@@ -13,7 +13,7 @@ import type {
 // The per-stage model profile (plans/model-profile.md) as a board tab. Read-only
 // in every mode; when the board is served live and the on-disk profile is
 // canonical, model/effort become editable inline (mechanism stays read-only).
-// Saving writes the file and regenerates the rp-* agents server-side.
+// Saving writes the file and regenerates the pb-* agents server-side.
 
 const MODEL_ALIASES = ["inherit", "opus", "sonnet", "haiku", "fable"];
 const EFFORT_OPTIONS: { value: string; label: string }[] = [

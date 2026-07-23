@@ -2937,7 +2937,7 @@ class TestModelProfileWrite(unittest.TestCase):
             self.assertTrue(body["saved"])
             text = (root / "plans" / "model-profile.md").read_text()
             self.assertIn("| plan review (verdict + grade) | sonnet | medium | agent |", text)
-            agent = (root / ".claude" / "agents" / "rp-plan-reviewer.md").read_text()
+            agent = (root / ".claude" / "agents" / "pb-plan-reviewer.md").read_text()
             self.assertIn("model: sonnet", agent)
             self.assertTrue(body["restartNeeded"])
             self.assertIn("plan-review", body["changedAgentStages"])
@@ -3024,7 +3024,7 @@ class TestModelProfileWrite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)
             agents = root / ".claude" / "agents"; agents.mkdir(parents=True)
-            (agents / "rp-plan-reviewer.md").write_text("---\nname: rp-plan-reviewer\n---\nmine\n")
+            (agents / "pb-plan-reviewer.md").write_text("---\nname: pb-plan-reviewer\n---\nmine\n")
             url, info, t = serve_in_thread(root)
             bh = self._baseline(url)
             status, body, _ = self._save(url, info["boardToken"], bh,
@@ -3051,7 +3051,7 @@ class TestModelProfileWrite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)
             board.models.generate(root)
-            (root / ".claude" / "agents" / "rp-board-reviewer.md").unlink()
+            (root / ".claude" / "agents" / "pb-board-reviewer.md").unlink()
             url, info, t = serve_in_thread(root)
             bh = self._baseline(url)
             status, body, _ = self._save(url, info["boardToken"], bh,
@@ -3074,7 +3074,7 @@ class TestModelProfileWrite(unittest.TestCase):
             row = next(r for r in body["modelProfile"]["rows"] if r["stage"] == "results-validation")
             self.assertEqual(row["model"], "haiku")
             self.assertIn("model: haiku",
-                          (root / ".claude" / "agents" / "rp-results-validator.md").read_text())
+                          (root / ".claude" / "agents" / "pb-results-validator.md").read_text())
 
     def test_generation_failure_still_saves_with_error_not_a_crash(self):
         with tempfile.TemporaryDirectory() as d:

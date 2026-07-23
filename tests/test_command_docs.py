@@ -95,7 +95,7 @@ class TestSignTransactionDocs(unittest.TestCase):
         command = (REPO / "commands" / "results.md").read_text(encoding="utf-8")
         validator = (REPO / "skills" / "managing-planboard" /
                      "templates" / "agents" /
-                     "rp-results-validator.md").read_text(encoding="utf-8")
+                     "pb-results-validator.md").read_text(encoding="utf-8")
 
         self.assertIn("governing plan version", command)
         self.assertIn("valid signed or amendment trailer", command)

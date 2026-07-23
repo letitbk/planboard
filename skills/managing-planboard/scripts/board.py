@@ -501,7 +501,7 @@ def agents_gitignored(root):
     None when git is unavailable. Checks the three concrete files (not just the
     dir) so a rule targeting an individual agent is caught. Boot-time only."""
     paths = [f".claude/agents/{a}.md"
-             for a in ("rp-plan-reviewer", "rp-results-validator", "rp-board-reviewer")]
+             for a in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer")]
     try:
         r = subprocess.run(["git", "-C", str(root), "check-ignore", *paths],
                            capture_output=True, text=True, timeout=5)
@@ -2897,6 +2897,9 @@ def main():
         plain_live = not args.gate and args.sign is None
         if plain_live:
             ensure_launcher(root)
+            # Opening the board migrates pre-rename rp-* review agents to pb-* so
+            # a legacy project's model/effort pins survive the planboard rename.
+            models.migrate_legacy_agents(root)
             if args.reuse:
                 port = healthy_running_board(root)
                 if port is not None:
