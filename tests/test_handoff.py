@@ -98,6 +98,17 @@ class TestGenerate(unittest.TestCase):
             self.assertIn("malformed", err)
             self.assertIn(handoff.BLOCK_START + "\nno end", (root / "AGENTS.md").read_text())
 
+    def test_refuses_when_agents_md_aliases_claude_md(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            claude = root / "CLAUDE.md"
+            (root / "AGENTS.md").symlink_to(claude)
+            before = claude.read_text()
+            code, out, err = run_generate(root)
+            self.assertEqual(code, 2)
+            self.assertIn("same file as CLAUDE.md", err)
+            self.assertEqual(claude.read_text(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

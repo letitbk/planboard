@@ -79,7 +79,7 @@ def splice(existing, block):
         )
     i, j = existing.index(BLOCK_START), existing.index(BLOCK_END)
     if j < i:
-        raise ValueError("AGENTS.md planboard markers are in reverse order")
+        raise ValueError("AGENTS.md has malformed planboard markers in reverse order")
     return existing[:i] + block + existing[j + len(BLOCK_END):], "refreshed"
 
 
@@ -96,6 +96,15 @@ def cmd_generate(root, codex_model):
         return 2
     block = render_block(codex_model)
     target = root / "AGENTS.md"
+    claude = root / "CLAUDE.md"
+    if target.exists() and claude.exists() and os.path.samefile(str(target), str(claude)):
+        print(
+            "handoff: AGENTS.md resolves to the same file as CLAUDE.md (symlink or hardlink) — "
+            "the codex handoff block cannot share a file with the Claude conventions block; "
+            "give AGENTS.md its own file, then rerun",
+            file=sys.stderr,
+        )
+        return 2
     if not target.exists():
         _atomic_write(target, block + "\n")
         print("wrote AGENTS.md (planboard block, model %s)" % codex_model)
