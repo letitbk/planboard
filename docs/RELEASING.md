@@ -50,3 +50,4 @@ reading the newest CHANGELOG entry for highlights — so write that entry for a 
 | v0.23.0 | f465edc | release commit (PR #26 sign-at-execution: strict trailer grammar + sign sessions both transports + amendments + /sign + shutdown handoff; bump on main after merge) |
 | v0.24.0 | 89f7b95 | release commit (mechanical rp-board launcher: ./rp-board opens the board with no LLM; feature merged to main directly, bump on main) |
 | v0.24.1 | cfd9e15 | release commit (hotfix: board highlight-and-comment, broken since v0.19.0; fix committed to main directly, bump on main) |
+| v0.25.0 | 2d3ce3c | release commit (PR #27 board comment UX: global comment + edit-unsent + highlight-persistence fix; PR #28 reopen-on-draft; bump on main after merges) |
