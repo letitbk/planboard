@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.25.0] - 2026-07-22
+
+Board plan-review commenting gets more capable, and the board now reopens on a produced draft. Reopen your boards to pick up the highlight fix.
+
+### Added
+- **Comment on a whole plan.** A **Global comment** button in the plan reader adds a comment attributed to the whole plan — no text selection needed, for feedback that isn't about one passage.
+- **Edit unsent comments.** Fix the wording of a local comment before you submit it, in place. Sent comments stay immutable, and submitting is held until you finish the edit.
+
+### Changed
+- **The board reopens on a produced draft.** When you route a request-change into a new or refined plan draft, the board reopens focused on that component's draft — landing on the draft with its diff and score, the same way a review or report request reopens to show its result. Feedback that is only discussed or declined still leaves the board closed.
+
+### Fixed
+- **Highlights stay after you save a comment.** Painted highlights used to disappear a few seconds after saving, which also broke click-to-jump. They now persist, clicking a comment scrolls to and flashes its highlighted passage, and clicking a highlight opens its comment. Reopen existing boards to pick up the fix.
+
 ## [0.24.1] - 2026-07-20
 
 Highlight-and-comment works again. Saving a comment on the board has been silently failing since v0.19.0; update and reopen your boards.
