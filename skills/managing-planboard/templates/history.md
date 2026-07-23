@@ -1,4 +1,4 @@
-<!-- research-plans:history -->
+<!-- planboard:history -->
 # Reconstructed History (pre-adoption)
 
 Reconstructed at adoption on <YYYY-MM-DD>; covers <first commit date> – <Initialized>.

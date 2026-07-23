@@ -1,8 +1,8 @@
 # Model profile
 
-<!-- research-plans:model-profile -->
+<!-- planboard:model-profile -->
 
-How each research-plans stage picks a Claude model. Two mechanisms — **nudge**: Claude tells you the profile's model for this stage and suggests `/model`; you decide. **agent**: this delegated stage runs on the profile's model automatically (best-effort — an org model allowlist, `CLAUDE_CODE_SUBAGENT_MODEL`, or a per-invocation override can supersede the request). `inherit` in a model cell means "whatever your session is using."
+How each planboard stage picks a Claude model. Two mechanisms — **nudge**: Claude tells you the profile's model for this stage and suggests `/model`; you decide. **agent**: this delegated stage runs on the profile's model automatically (best-effort — an org model allowlist, `CLAUDE_CODE_SUBAGENT_MODEL`, or a per-invocation override can supersede the request). `inherit` in a model cell means "whatever your session is using."
 
 | stage | model | effort | mechanism |
 |---|---|---|---|

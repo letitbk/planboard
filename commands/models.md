@@ -3,7 +3,7 @@ description: View or edit the per-stage model profile and regenerate the project
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
-Manage `plans/model-profile.md` — which Claude model each research-plans stage runs on. Script: `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/models.py` (python3, stdlib only). Requires an initialized project (`plans/master-plan.md` with its marker); if absent, say so and stop.
+Manage `plans/model-profile.md` — which Claude model each planboard stage runs on. Script: `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/models.py` (python3, stdlib only). Requires an initialized project (`plans/master-plan.md` with its marker); if absent, say so and stop.
 
 The board also exposes this as a **Models** tab (`/research-plans:board`): it shows the profile in every mode and, when served live from the project, edits model/effort inline and regenerates the agents on Save — the same operations as this command, for when the researcher is already on the board. This command remains the way to change a stage's mechanism, repair a non-canonical profile, or work headless.
 

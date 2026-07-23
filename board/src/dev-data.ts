@@ -1,11 +1,11 @@
-// Sample payload for `npm run dev` only. The string RP_BOARD_DEV_DATA below is
+// Sample payload for `npm run dev` only. The string PB_BOARD_DEV_DATA below is
 // a tree-shake sentinel: the build check greps the built template to confirm
 // this module was eliminated from production output.
 import type { BoardData } from "./lib/types";
 
-const MARKER = "RP_BOARD_DEV_DATA";
+const MARKER = "PB_BOARD_DEV_DATA";
 
-const masterPlan = `<!-- research-plans:master-plan -->
+const masterPlan = `<!-- planboard:master-plan -->
 # Immigration Attitudes (ISSP) — Master Plan
 
 Last updated: 2026-07-02
@@ -39,7 +39,7 @@ Statuses: \`not started\` / \`planned\` / \`in progress\` / \`done\` / \`dropped
 Renewed 2026-07-02 from archive/master-plan-2026-07-02.md. Carried: data acquisition, data cleaning. Not carried: 09-attrition-pilot (superseded by the new direction) — its plans and results remain browsable.
 `;
 
-const archivedMasterPlan = `<!-- research-plans:master-plan -->
+const archivedMasterPlan = `<!-- planboard:master-plan -->
 # Immigration Attitudes (panel attrition) — Master Plan
 
 Last updated: 2026-07-01
@@ -882,7 +882,7 @@ const descriptivesResults = [
   },
 ];
 
-const history = `<!-- research-plans:history -->
+const history = `<!-- planboard:history -->
 # Reconstructed History (pre-adoption)
 
 Reconstructed at adoption on 2026-07-02; covers 2026-05 – 2026-07-02 12:00.
@@ -911,7 +911,7 @@ export const devData: BoardData = {
     baselineHash: "dev0000000000000000000000000000000000000000000000000000000000dev",
     raw: "",
     proseBefore:
-      "How each research-plans stage picks a Claude model. **nudge**: Claude tells you the profile's model and suggests `/model`; you decide. **agent**: the delegated stage runs on the profile's model automatically.",
+      "How each planboard stage picks a Claude model. **nudge**: Claude tells you the profile's model and suggests `/model`; you decide. **agent**: the delegated stage runs on the profile's model automatically.",
     proseAfter:
       "Planning gets the strongest model at max effort; execution a fast cheap one; review and validation a smarter prior at low effort.",
     rows: [

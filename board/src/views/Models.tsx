@@ -395,7 +395,7 @@ function Header() {
     <div className="mb-4">
       <h1 className="text-lg font-semibold text-stone-800 dark:text-stone-200">Model profile</h1>
       <p className="text-xs text-stone-500 dark:text-stone-400">
-        Which Claude model each research-plans stage runs on.
+        Which Claude model each planboard stage runs on.
       </p>
     </div>
   );

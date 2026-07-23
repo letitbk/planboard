@@ -34,7 +34,7 @@ describe("master plan parsing (contract: current template)", () => {
   it("parses the literal template with RQs and Serves", () => {
     const mp = parseMasterPlan(read(join(TEMPLATES, "master-plan.md")));
     expect(mp.ok).toBe(true);
-    expect(mp.raw).toContain("<!-- research-plans:master-plan -->");
+    expect(mp.raw).toContain("<!-- planboard:master-plan -->");
     expect(mp.researchQuestions.length).toBe(2);
     expect(mp.researchQuestions[0].num).toBe(1);
     expect(mp.components.length).toBeGreaterThanOrEqual(2);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""research-plans board: serve or export the project board.
+"""planboard: serve or export the project board.
 
 Stdlib only, Python 3.9+. Modes:
   (default)          serve the live board; block until feedback; print it to stdout
@@ -1298,7 +1298,7 @@ def serve(root, payload, args):
     amap = artifact_map(root, payload)
     rmap = report_map(root, payload)
     publish_token = hashlib.sha256(os.urandom(32)).hexdigest()
-    payload["publishToken"] = publish_token  # board reads window.__RP_PUBLISH_TOKEN__ from this
+    payload["publishToken"] = publish_token  # board reads publishToken from the payload JSON
     payload["projectId"] = project_id(root)
     proj_id = payload["projectId"]
     board_token = hashlib.sha256(os.urandom(32)).hexdigest()
@@ -1390,7 +1390,7 @@ def serve(root, payload, args):
                 self.end_headers()
                 return
             if self.path == "/api/health":
-                self._json(200, {"ok": True, "app": "research-plans-board",
+                self._json(200, {"ok": True, "app": "planboard-board",
                                  "bootId": boot_id, "generation": generation,
                                  "projectId": proj_id}, no_store=True)
                 return
@@ -2076,7 +2076,7 @@ GITHUB_RE = re.compile(
 _VOLATILE_RE = re.compile(r'"generatedAt":\s*"[^"]*"')
 INDEX_REDIRECT = (
     '<!doctype html>\n<meta charset="utf-8">\n'
-    "<title>research-plans board</title>\n"
+    "<title>planboard</title>\n"
     '<meta http-equiv="refresh" content="0; url=board.html">\n'
     '<a href="board.html">Open the board</a>\n'
 )
@@ -2202,7 +2202,7 @@ def publish_pages(root, args):
     html = render_static_html(root, None)  # v1 publishes the full board (no --focus)
     outcome = publish_to_branch(
         root, {"board.html": html, "index.html": INDEX_REDIRECT},
-        "gh-pages", "Publish research-plans board",
+        "gh-pages", "Publish planboard",
     )
     url = "https://%s.github.io/%s/" % (owner, repo)
     enabled = _pages_enabled(owner, repo)
@@ -2803,7 +2803,7 @@ def load_seed_annotations(path):
 
 
 def parse_args(argv=None):
-    ap = argparse.ArgumentParser(description="research-plans board")
+    ap = argparse.ArgumentParser(description="planboard")
     ap.add_argument("--focus", default=None, metavar="NN-slug")
     ap.add_argument("--export", nargs="?", const="DEFAULT", default=None, metavar="PATH")
     ap.add_argument("--share", nargs="?", const="DEFAULT", default=None, metavar="PATH")

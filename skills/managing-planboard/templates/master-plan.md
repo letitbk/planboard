@@ -1,4 +1,4 @@
-<!-- research-plans:master-plan -->
+<!-- planboard:master-plan -->
 # <Project name> — Master Plan
 
 Last updated: <YYYY-MM-DD>

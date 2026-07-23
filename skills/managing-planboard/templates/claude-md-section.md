@@ -1,4 +1,4 @@
-<!-- research-plans:start -->
+<!-- planboard:start -->
 ## Research plans workflow
 
 This project uses the research-plans workflow (https://github.com/letitbk/research-plans). These rules apply to every session in this repository:
@@ -18,4 +18,4 @@ This project uses the research-plans workflow (https://github.com/letitbk/resear
 10. Assumptions and restraint. State working assumptions before acting on them; when an instruction has multiple readings, present them rather than picking silently. Keep changes minimal and surgical — nothing beyond what the current plan step needs.
 
 The `managing-planboard` skill (from the research-plans plugin) has these conventions in depth. The primary loop is plan → draft review → execute gate → tail. If work happened outside that loop or mid-session logging was missed, `/research-plans:sync` is the recovery checkpoint.
-<!-- research-plans:end -->
+<!-- planboard:end -->

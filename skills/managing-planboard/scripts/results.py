@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""research-plans results: bundle mechanics for the results layer.
+"""planboard results: bundle mechanics for the results layer.
 
 Stdlib only, Python 3.9+. Subcommands:
   discover                             list candidate output artifacts (JSON)
@@ -547,7 +547,7 @@ def cmd_changed(root, args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="research-plans results mechanics")
+    ap = argparse.ArgumentParser(description="planboard results mechanics")
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("discover")
     d.add_argument("--dir", action="append", default=None,

@@ -1024,7 +1024,7 @@ export default function App({ data }: { data: BoardData }) {
               {data.project.name}
             </div>
             <div className="text-[11px] text-stone-400 dark:text-stone-500">
-              research-plans board · generated {data.generatedAt.slice(0, 16)}
+              planboard · generated {data.generatedAt.slice(0, 16)}
               {data.git.available && data.git.head ? ` · ${data.git.head}` : ""}
             </div>
           </div>

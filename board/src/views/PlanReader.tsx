@@ -76,7 +76,7 @@ function MetadataCard({ rows }: { rows: Array<[string, string]> }) {
     <div className="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg border border-stone-200 bg-stone-50 p-4 text-sm text-stone-800 dark:border-stone-700 dark:bg-stone-800/50 dark:text-stone-200">
       {rows.map(([k, v]) => (
         <Fragment key={k}>
-          <span className="font-medium" style={{ color: "var(--rp-prose-muted)" }}>{k}</span>
+          <span className="font-medium" style={{ color: "var(--pb-prose-muted)" }}>{k}</span>
           <span>{v}</span>
         </Fragment>
       ))}
@@ -231,7 +231,7 @@ export default function PlanReader({
     setDiffOn(Boolean(doc?.isDraft && prevDoc));
   }, [doc?.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Strip the leading rp-model provenance marker before parsing/rendering/diff
+  // Strip the leading pb-model provenance marker before parsing/rendering/diff
   // (a malformed one would otherwise swallow the plan body in Markdown).
   const planMarker = useMemo(
     () => (doc ? parsePlanModelMarker(doc.content) : null),

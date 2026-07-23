@@ -26,7 +26,7 @@ function NoData() {
     <div className="flex min-h-screen items-center justify-center bg-stone-50 dark:bg-stone-800/50">
       <div className="max-w-md rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 p-8 text-center shadow-sm">
         <h1 className="text-lg font-semibold text-stone-800 dark:text-stone-200">
-          Research Plans Board
+          Planboard
         </h1>
         <p className="mt-3 text-sm text-stone-600 dark:text-stone-400">
           No project data is injected into this page. This file is a template.
