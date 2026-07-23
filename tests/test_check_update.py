@@ -11,7 +11,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-research-plans" / "scripts"
+    / "skills" / "managing-planboard" / "scripts"
 )
 sys.path.insert(0, str(SCRIPTS))
 import check_update as cu  # noqa: E402

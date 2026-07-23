@@ -24,7 +24,7 @@ import { devData } from "../dev-data";
 
 const TEMPLATES = join(
   __dirname,
-  "../../../skills/managing-research-plans/templates",
+  "../../../skills/managing-planboard/templates",
 );
 const FIXTURES = join(__dirname, "__fixtures__");
 

@@ -40,7 +40,7 @@ class TestBoardReviewerPortabilityDocs(unittest.TestCase):
 
 class TestSignTransactionDocs(unittest.TestCase):
     def test_sign_reference_names_the_shared_procedures(self):
-        reference = (REPO / "skills" / "managing-research-plans" /
+        reference = (REPO / "skills" / "managing-planboard" /
                      "references" / "sign-off.md").read_text(encoding="utf-8")
 
         for heading in ("## The finalization transaction",
@@ -93,7 +93,7 @@ class TestSignTransactionDocs(unittest.TestCase):
 
     def test_results_uses_the_governing_canonical_version(self):
         command = (REPO / "commands" / "results.md").read_text(encoding="utf-8")
-        validator = (REPO / "skills" / "managing-research-plans" /
+        validator = (REPO / "skills" / "managing-planboard" /
                      "templates" / "agents" /
                      "rp-results-validator.md").read_text(encoding="utf-8")
 

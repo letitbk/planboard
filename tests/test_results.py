@@ -11,7 +11,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-research-plans" / "scripts"
+    / "skills" / "managing-planboard" / "scripts"
 )
 RESULTS = SCRIPTS / "results.py"
 sys.path.insert(0, str(SCRIPTS))
@@ -901,7 +901,7 @@ class TestResultsCommandDocs(unittest.TestCase):
     def test_adopt_reconcile_and_regeneration_route_to_reference(self):
         repo = Path(__file__).resolve().parents[1]
         command = (repo / "commands" / "results.md").read_text(encoding="utf-8")
-        reference = (repo / "skills" / "managing-research-plans" / "references" /
+        reference = (repo / "skills" / "managing-planboard" / "references" /
                      "results-adopt.md").read_text(encoding="utf-8")
 
         self.assertIn("references/results-adopt.md", command)

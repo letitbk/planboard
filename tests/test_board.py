@@ -20,7 +20,7 @@ from pathlib import Path
 
 SCRIPTS = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-research-plans" / "scripts"
+    / "skills" / "managing-planboard" / "scripts"
 )
 BOARD = SCRIPTS / "board.py"
 sys.path.insert(0, str(SCRIPTS))
@@ -207,7 +207,7 @@ class TestWebConfig(unittest.TestCase):
 class TestWebPublishingDocs(unittest.TestCase):
     def test_firewall_rate_limit_is_required_before_first_deploy(self):
         repo = Path(__file__).resolve().parents[1]
-        runbook = (repo / "skills" / "managing-research-plans" / "references" /
+        runbook = (repo / "skills" / "managing-planboard" / "references" /
                    "web-publishing.md").read_text(encoding="utf-8")
         guide = (repo / "docs" / "hosting-the-board.md").read_text(encoding="utf-8")
 
@@ -220,7 +220,7 @@ class TestWebPublishingDocs(unittest.TestCase):
     def test_web_modes_route_to_named_reference_sections(self):
         repo = Path(__file__).resolve().parents[1]
         command = (repo / "commands" / "board.md").read_text(encoding="utf-8")
-        runbook = (repo / "skills" / "managing-research-plans" / "references" /
+        runbook = (repo / "skills" / "managing-planboard" / "references" /
                    "web-publishing.md").read_text(encoding="utf-8")
 
         for flag, heading in (

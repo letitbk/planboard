@@ -4,7 +4,7 @@ argument-hint: [component name/number]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
-Sign pending execution plans. Load `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/references/sign-off.md` and follow its named sections. This command requires an initialized project with a marked `plans/master-plan.md`. If the project is not initialized, say so, suggest `/research-plans:init`, and stop.
+Sign pending execution plans. Load `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/references/sign-off.md` and follow its named sections. This command requires an initialized project with a marked `plans/master-plan.md`. If the project is not initialized, say so, suggest `/research-plans:init`, and stop.
 
 1. **Resolve current components.** Read the current tracker and execution plan directories. Only components linked from the current tracker are eligible. A pre-renewal or archived component is permanently browse-only. An unknown name or number is an error that lists the valid current rows and stops.
 

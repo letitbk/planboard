@@ -71,7 +71,7 @@ If you're **curious about agents but wary** of turning one loose on your analysi
 - The decision log is written as decisions happen, never backfilled.
 - The researcher decides and signs. The AI asks, drafts, and keeps the books.
 
-The workflow comes out of a methods paper on plan-based human–AI research partnerships (reference to follow). The quality rubric bundled with the plugin (`skills/managing-research-plans/references/plan-rubric.md`) is a working draft.
+The workflow comes out of a methods paper on plan-based human–AI research partnerships (reference to follow). The quality rubric bundled with the plugin (`skills/managing-planboard/references/plan-rubric.md`) is a working draft.
 
 ## Install
 

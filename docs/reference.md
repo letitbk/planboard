@@ -59,7 +59,7 @@ Or let an agent do the reviewing: the **Review with** button on any plan version
 
 Every plain live open also writes or refreshes `./rp-board` in the project root — a small launcher that opens the board with no model in the loop. Run `./rp-board` in a terminal, or `!./rp-board` from inside a session; it reconnects to a board already running on the project's port, or serves a fresh one. Use it when your Claude session is rate-limited, or when you only want to read.
 
-The launcher is created at `/research-plans:init` and can be written on demand with `python3 <plugin>/skills/managing-research-plans/scripts/board.py --install-launcher`. It bakes in this machine's python interpreter and plugin path, so it is machine-specific and kept out of git through `.git/info/exclude` rather than `.gitignore` — no tracked-file churn, and it never enters a commit. board.py only ever replaces a launcher it wrote itself; a symlink, a directory, or a file of your own at that path is refused, not overwritten.
+The launcher is created at `/research-plans:init` and can be written on demand with `python3 <plugin>/skills/managing-planboard/scripts/board.py --install-launcher`. It bakes in this machine's python interpreter and plugin path, so it is machine-specific and kept out of git through `.git/info/exclude` rather than `.gitignore` — no tracked-file churn, and it never enters a commit. board.py only ever replaces a launcher it wrote itself; a symlink, a directory, or a file of your own at that path is refused, not overwritten.
 
 Feedback you send from a launcher-served board has no session to route it, so it is saved to `plans/.board-feedback.md` and picked up the next time you run `/research-plans:board` in Claude.
 
@@ -212,7 +212,7 @@ If your Claude Code build prefers it, the equivalent fallback is to check out th
 
 ## Developing the board
 
-The board UI is a React app in `board/`, built once into a single committed HTML template at `skills/managing-research-plans/assets/board-template.html`. The core plan-review-execute-tail workflow needs only `python3` — `board.py` just injects data into the prebuilt template; web sharing (`--publish-web` and friends) additionally needs Node.js, for the Vercel CLI. Changing the UI itself also needs Node, to rebuild that template:
+The board UI is a React app in `board/`, built once into a single committed HTML template at `skills/managing-planboard/assets/board-template.html`. The core plan-review-execute-tail workflow needs only `python3` — `board.py` just injects data into the prebuilt template; web sharing (`--publish-web` and friends) additionally needs Node.js, for the Vercel CLI. Changing the UI itself also needs Node, to rebuild that template:
 
 ```
 cd board

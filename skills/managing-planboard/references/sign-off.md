@@ -23,7 +23,7 @@ Before launch, inspect every selected draft for an old placeholder trailer. If a
 
 Run this command with background Bash when the harness supports it:
 
-`python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/scripts/board.py --sign [NN-slug] --no-open`
+`python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/board.py --sign [NN-slug] --no-open`
 
 Follow the live board pattern in `/research-plans:board`. Open the printed URL for the researcher. A live persistent board closes automatically before the sign server takes over. Exit 5 from that board is the expected shutdown handoff. The existing board tab may show that it is sleeping.
 

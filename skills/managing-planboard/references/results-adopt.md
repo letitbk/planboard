@@ -1,6 +1,6 @@
 # Adopt, reconcile, and regenerate results
 
-Load this reference for `/research-plans:results --adopt`, reconcile mode, or any capture that needs to run a producing recipe. The mechanics script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/scripts/results.py`.
+Load this reference for `/research-plans:results --adopt`, reconcile mode, or any capture that needs to run a producing recipe. The mechanics script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/results.py`.
 
 ## Adopt existing results (`--adopt`)
 

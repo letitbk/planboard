@@ -4,7 +4,7 @@ argument-hint: [component names/numbers... | --go --report yes|no [--model <id>]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(python3:*), Bash(python:*), Bash(Rscript:*), Bash(bash:*), Bash(tee:*), Bash(mkdir:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
-Sign the plans that need a commitment, then execute them and run the full loop. Skill context: `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/SKILL.md`. Load `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/references/sign-off.md` and `${CLAUDE_PLUGIN_ROOT}/skills/managing-research-plans/references/execution-loop.md`. Follow their named sections. This command requires an initialized project with a marked `plans/master-plan.md`. If it is absent, say so and stop.
+Sign the plans that need a commitment, then execute them and run the full loop. Skill context: `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/SKILL.md`. Load `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/references/sign-off.md` and `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/references/execution-loop.md`. Follow their named sections. This command requires an initialized project with a marked `plans/master-plan.md`. If it is absent, say so and stop.
 
 1. **Resolve the components.** Arguments starting with `--` are headless flags from **Headless rules**, never component names. Resolve each other argument from the current tracker. With no component argument, propose the first `planned` row and confirm it before signing. An unknown component is an error that lists the valid current rows and stops. A pre-renewal or archived component is browse-only.
 

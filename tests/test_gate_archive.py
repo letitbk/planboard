@@ -11,7 +11,7 @@ from pathlib import Path
 
 GATE = (
     Path(__file__).resolve().parents[1]
-    / "skills" / "managing-research-plans" / "scripts" / "signoff_gate.py"
+    / "skills" / "managing-planboard" / "scripts" / "signoff_gate.py"
 )
 
 

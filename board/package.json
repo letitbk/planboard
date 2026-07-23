@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cp dist/index.html ../skills/managing-research-plans/assets/board-template.html",
+    "build": "vite build && cp dist/index.html ../skills/managing-planboard/assets/board-template.html",
     "test": "vitest run"
   },
   "dependencies": {

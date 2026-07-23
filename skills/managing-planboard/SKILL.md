@@ -1,5 +1,5 @@
 ---
-name: managing-research-plans
+name: managing-planboard
 description: Use when working in a research repository initialized for the research-plans workflow (plans/master-plan.md exists AND the repo's CLAUDE.md contains the research-plans marker) — when a session starts there, when the researcher asks to adopt the workflow mid-session after exploratory work has begun, when executing analysis or data work, when a decision point arises with the researcher, when work deviates from an execution plan, or when the researcher mentions the master plan, an execution plan, or the decision log. Not for software project planning, and not for repositories without both markers.
 ---
 
