@@ -1,5 +1,5 @@
 {
-  "name": "research-plans",
+  "name": "planboard",
   "description": "Plan-based AI research workflows for social science research projects.",
   "owner": {
     "name": "letitbk",
@@ -7,7 +7,7 @@
   },
   "plugins": [
     {
-      "name": "research-plans",
+      "name": "planboard",
       "source": "./",
       "description": "Plan-based AI research workflows: master plan with tracker, versioned execution plans, decision log, plan-quality rubric, and a browser board for review and annotation.",
       "author": {

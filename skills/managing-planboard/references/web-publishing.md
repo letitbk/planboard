@@ -1,6 +1,6 @@
 # Web publishing and hosted-board modes
 
-Load this reference only for `/research-plans:board` web modes. The board script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/board.py`.
+Load this reference only for `/planboard:board` web modes. The board script is `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/board.py`.
 
 ## Deprecated GitHub Pages publishing (`--publish`)
 

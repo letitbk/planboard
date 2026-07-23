@@ -28,7 +28,7 @@ import board  # noqa: E402
 
 
 def make_project(root: Path):
-    """Minimal initialized research-plans project with two components."""
+    """Minimal initialized planboard project with two components."""
     plans = root / "plans"
     (plans / "execution" / "01-data-prep").mkdir(parents=True)
     (plans / "execution" / "02-other").mkdir(parents=True)
@@ -3314,7 +3314,7 @@ class TestEnsureLauncher(unittest.TestCase):
 
 
 class TestGitExclude(unittest.TestCase):
-    def test_adds_rp_board_to_git_info_exclude(self):
+    def test_adds_pb_board_to_git_info_exclude(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root)
             (root / ".git" / "info").mkdir(parents=True)

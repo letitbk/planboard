@@ -39,7 +39,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
       activeId="plans/execution/01-x/v1.md"
       activeLabel="v1 — 01-x"
       activeOutlineId={null}
-      storageKey="rp-sidebar:test"
+      storageKey="pb-sidebar:test"
       {...over}
     />,
   );
@@ -163,7 +163,7 @@ describe("Sidebar", () => {
   it("collapses, persists, and starts collapsed when defaultCollapsed and nothing stored", () => {
     renderSidebar();
     fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
-    expect(localStorage.getItem("rp-sidebar:test")).toContain("collapsed");
+    expect(localStorage.getItem("pb-sidebar:test")).toContain("collapsed");
     expect(screen.queryByText("Goal")).toBeNull();
     const expand = screen.getByRole("button", { name: /expand sidebar/i });
     expect(expand.getAttribute("aria-expanded")).toBe("false");

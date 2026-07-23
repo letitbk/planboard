@@ -609,7 +609,7 @@ export default function App({ data }: { data: BoardData }) {
 
 
   // Generate report (v0.10): same channel and lifecycle as requestReview —
-  // submit ends the board session; the session runs /research-plans:report
+  // submit ends the board session; the session runs /planboard:report
   // and offers to reopen. Pending manual comments ride along.
   const requestReport = async (req: ReportRequest) => {
     const md = buildFeedbackMarkdown(annotations, null, req);
@@ -1010,7 +1010,7 @@ export default function App({ data }: { data: BoardData }) {
               Sent — your session is applying it
             </h1>
             <p className="mt-2 text-sm text-stone-600 dark:text-stone-400">
-              This action closes the board; run /research-plans:board to reopen
+              This action closes the board; run /planboard:board to reopen
               it later.
             </p>
             <AutoCloseNotice state={autoClose.state} cancel={autoClose.cancel} enable={autoClose.enable} />
@@ -1073,7 +1073,7 @@ export default function App({ data }: { data: BoardData }) {
                 </button>
               ) : (
                 <span className="text-[11px] text-stone-400 dark:text-stone-500">
-                  Run /research-plans:board --publish-web in Claude Code
+                  Run /planboard:board --publish-web in Claude Code
                 </span>
               ))}
             {canAnnotate && (
@@ -1092,7 +1092,7 @@ export default function App({ data }: { data: BoardData }) {
             {data.git.available && data.git.head
               ? ` at commit ${data.git.head}`
               : ""}{" "}
-            — regenerate with /research-plans:board --export
+            — regenerate with /planboard:board --export
           </div>
         )}
         {remote && (
@@ -1129,7 +1129,7 @@ export default function App({ data }: { data: BoardData }) {
         {canPost && postFailure === "server-gone" && (
           <div className="border-t border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 px-5 py-1.5 text-center text-xs text-amber-800 dark:text-amber-300">
             The board server isn't running — your submission may already have
-            reached your session; otherwise reopen with /research-plans:board.
+            reached your session; otherwise reopen with /planboard:board.
           </div>
         )}
       </header>

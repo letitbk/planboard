@@ -1,6 +1,6 @@
 # Planning doctrine — how an execution plan gets authored
 
-Referenced by `/research-plans:plan` (steps 3–5). The rubric (`plan-rubric.md`) grades the artifact; this file governs the authoring, so a plan authored here works as well standalone as one authored inside a heavyweight personal setup.
+Referenced by `/planboard:plan` (steps 3–5). The rubric (`plan-rubric.md`) grades the artifact; this file governs the authoring, so a plan authored here works as well standalone as one authored inside a heavyweight personal setup.
 
 ## Research first — plan from the repo's reality, not from memory of it
 
@@ -20,7 +20,7 @@ Plan the minimum that answers the research question — no analyses, robustness 
 
 ## The revision loop
 
-Authoring produces a scored pending draft. The researcher can annotate it on the board, then revise it through as many passes as needed. `/research-plans:execute` signs the draft before work begins. `/research-plans:sign` signs it sooner when requested. A canonical plan changes only through a new version with a `Supersedes` line. `/sync` records a confirmed amendment, and re-execution recommits that amendment through a sign session.
+Authoring produces a scored pending draft. The researcher can annotate it on the board, then revise it through as many passes as needed. `/planboard:execute` signs the draft before work begins. `/planboard:sign` signs it sooner when requested. A canonical plan changes only through a new version with a `Supersedes` line. `/sync` records a confirmed amendment, and re-execution recommits that amendment through a sign session.
 
 ## Compatibility with other skills
 

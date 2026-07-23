@@ -51,6 +51,6 @@ describe("failed sign-session POST recovery", () => {
     await waitFor(() => {
       expect(screen.getByText(/This sign session has ended/i)).toBeTruthy();
     });
-    expect(screen.getByText(/research-plans:sign/)).toBeTruthy();
+    expect(screen.getByText(/planboard:sign/)).toBeTruthy();
   });
 });

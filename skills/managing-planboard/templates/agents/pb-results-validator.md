@@ -1,6 +1,6 @@
 ---
 name: pb-results-validator
-description: Independent plan-vs-execution validation for a staged research-plans results bundle. Dispatched by /planboard:results with the governing plan version, staging dir, decision log, and git evidence; returns the strict validation JSON.
+description: Independent plan-vs-execution validation for a staged planboard results bundle. Dispatched by /planboard:results with the governing plan version, staging dir, decision log, and git evidence; returns the strict validation JSON.
 model: {{MODEL}}
 effort: {{EFFORT}}
 tools: Read, Grep, Glob

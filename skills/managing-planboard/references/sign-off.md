@@ -25,10 +25,10 @@ Run this command with background Bash when the harness supports it:
 
 `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/board.py --sign [NN-slug] --no-open`
 
-Follow the live board pattern in `/research-plans:board`. Open the printed URL for the researcher. A live persistent board closes automatically before the sign server takes over. Exit 5 from that board is the expected shutdown handoff. The existing board tab may show that it is sleeping.
+Follow the live board pattern in `/planboard:board`. Open the printed URL for the researcher. A live persistent board closes automatically before the sign server takes over. Exit 5 from that board is the expected shutdown handoff. The existing board tab may show that it is sleeping.
 
 After the sign server exits, enumerate the valid `.import-approved-<slug>-v<N>` tickets and all `.sign-feedback-v<N>.md` files on disk. Those files are the durable record. Do not rely on stdout alone. Apply **The finalization transaction** to each valid approved item. Route each feedback file into draft revision, then delete it only after the feedback has been applied.
 
 ## Recovery
 
-An interruption, timeout, or Ctrl-C does not remove a draft, a valid ticket, or saved sign feedback. Run `/research-plans:sign` again. If a valid unexpired ticket exists and `v<N>.md` does not, complete **The finalization transaction** without opening a browser. Pending items without tickets return to the sign session.
+An interruption, timeout, or Ctrl-C does not remove a draft, a valid ticket, or saved sign feedback. Run `/planboard:sign` again. If a valid unexpired ticket exists and `v<N>.md` does not, complete **The finalization transaction** without opening a browser. Pending items without tickets return to the sign session.

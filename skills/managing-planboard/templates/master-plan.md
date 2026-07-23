@@ -6,7 +6,7 @@ Initialized: <YYYY-MM-DD HH:MM>
 Detail level: <compact | standard | full>
 <!-- Initialized is the adoption cutoff: nothing before it is loggable, and nothing before it counts as a deviation — no plan governed that work. Never edit it — a renewal copies it forward unchanged. -->
 <!-- Detail level sets how much of each plan the board shows by default: compact = the contract (context, goal, decisions, boundaries); standard = + approach, steps, verification; full = + agent-detail code blocks. Every plan is authored in full; this only sets the default collapse, and any reader can toggle. Default: standard. -->
-Renewed: <YYYY-MM-DD — one line: the new direction and why; names the archived plan. Written only by /research-plans:renew; delete this line otherwise.>
+Renewed: <YYYY-MM-DD — one line: the new direction and why; names the archived plan. Written only by /planboard:renew; delete this line otherwise.>
 
 ## Project context
 

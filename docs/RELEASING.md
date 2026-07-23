@@ -1,4 +1,4 @@
-# Releasing research-plans
+# Releasing planboard
 
 ## Every release
 1. Bump the version in **two** files (keep them identical):

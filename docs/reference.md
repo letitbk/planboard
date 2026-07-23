@@ -1,4 +1,4 @@
-# research-plans — reference
+# planboard — reference
 
 Complete technical reference. For what the plugin is and why you'd use it, start with the [README](../README.md).
 
@@ -16,22 +16,22 @@ Complete technical reference. For what the plugin is and why you'd use it, start
 
 | Command | What it does |
 |---------|--------------|
-| `/research-plans:init` | Opt a project in. Interview, seed the components list, create the artifacts. |
-| `/research-plans:adopt` | Retrospectively decompose already-done work into components, each with a full retrospective plan; review and sign the drafts in one sign session; reconstruct pre-adoption history. |
-| `/research-plans:renew` | Change the project's direction: archive the master plan, write a fresh one over the existing work. Numbering continues, carried components keep their plans and results, the rest stay browsable in the archive. Preferred over adopt when starting the workflow in an exploratory repo you want to take somewhere new. |
-| `/research-plans:plan` | Scope the next component, co-author its execution plan, score the pending draft, and mark the tracker row `planned`. |
-| `/research-plans:sign` | Sign one or many pending plans without starting execution. Recovers durable tickets and saved sign feedback after an interruption. |
-| `/research-plans:execute` | Sign pending plans at the execution gate, then execute them. One prompt sets timing, model, and report preference; then capture, validation, reporting, bookkeeping, and next steps run as one loop. |
-| `/research-plans:sync` | Manual recovery checkpoint for out-of-loop work, crashed sessions, hosted comments, and missed logging. Update the tracker, catch unlogged decisions, and version the plan if execution deviated. |
-| `/research-plans:review` | Score the plan against the five-channel rubric (goal & success, decisions & reasons, steps, validation, boundaries; 0–3 each). Reports a profile, the biggest leak, and the forks to fix — a diagnosis, not a pass/fail. Includes a split assessment. |
-| `/research-plans:models` | View or edit the per-stage model profile; regenerates the project's `rp-*` review agents. |
-| `/research-plans:results` | Capture a versioned results bundle for a component — brief report, figure/table snapshots, key numbers, script snapshots, and an automatic plan-vs-execution validation. `--adopt` brings pre-existing artifacts under verification. |
-| `/research-plans:report` | Generate a shareable report for a bundle (markdown always; PDF/DOCX via pandoc) into `plans/reports/` — also available as the board's Generate report button; offered automatically at capture end. |
-| `/research-plans:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish-web` to a private, password-protected link for collaborators. `./pb-board` opens the same board from a terminal with no model in the loop. |
+| `/planboard:init` | Opt a project in. Interview, seed the components list, create the artifacts. |
+| `/planboard:adopt` | Retrospectively decompose already-done work into components, each with a full retrospective plan; review and sign the drafts in one sign session; reconstruct pre-adoption history. |
+| `/planboard:renew` | Change the project's direction: archive the master plan, write a fresh one over the existing work. Numbering continues, carried components keep their plans and results, the rest stay browsable in the archive. Preferred over adopt when starting the workflow in an exploratory repo you want to take somewhere new. |
+| `/planboard:plan` | Scope the next component, co-author its execution plan, score the pending draft, and mark the tracker row `planned`. |
+| `/planboard:sign` | Sign one or many pending plans without starting execution. Recovers durable tickets and saved sign feedback after an interruption. |
+| `/planboard:execute` | Sign pending plans at the execution gate, then execute them. One prompt sets timing, model, and report preference; then capture, validation, reporting, bookkeeping, and next steps run as one loop. |
+| `/planboard:sync` | Manual recovery checkpoint for out-of-loop work, crashed sessions, hosted comments, and missed logging. Update the tracker, catch unlogged decisions, and version the plan if execution deviated. |
+| `/planboard:review` | Score the plan against the five-channel rubric (goal & success, decisions & reasons, steps, validation, boundaries; 0–3 each). Reports a profile, the biggest leak, and the forks to fix — a diagnosis, not a pass/fail. Includes a split assessment. |
+| `/planboard:models` | View or edit the per-stage model profile; regenerates the project's `pb-*` review agents. |
+| `/planboard:results` | Capture a versioned results bundle for a component — brief report, figure/table snapshots, key numbers, script snapshots, and an automatic plan-vs-execution validation. `--adopt` brings pre-existing artifacts under verification. |
+| `/planboard:report` | Generate a shareable report for a bundle (markdown always; PDF/DOCX via pandoc) into `plans/reports/` — also available as the board's Generate report button; offered automatically at capture end. |
+| `/planboard:board` | Open the board: a browser dashboard over everything, with drift flags, live annotation, a shareable snapshot, or `--publish-web` to a private, password-protected link for collaborators. `./pb-board` opens the same board from a terminal with no model in the loop. |
 
 Everything is opt-in. The plugin does nothing in projects you have not initialized.
 
-The primary path has four stops: plan → draft review → execute gate → tail. `/research-plans:plan` ends with a scored pending draft. The board is optional for reading and annotations. `/research-plans:execute` opens one slim sign session before the work. After signing and the execute prompt, the tail captures and validates each component, reports when requested, updates the tracker and log, suggests one commit, opens one view-only board, and proposes what comes next. `/research-plans:sign` signs pending plans without execution. `/research-plans:sync` remains available for work that happened outside this loop or needs recovery, and it records confirmed amendments directly.
+The primary path has four stops: plan → draft review → execute gate → tail. `/planboard:plan` ends with a scored pending draft. The board is optional for reading and annotations. `/planboard:execute` opens one slim sign session before the work. After signing and the execute prompt, the tail captures and validates each component, reports when requested, updates the tracker and log, suggests one commit, opens one view-only board, and proposes what comes next. `/planboard:sign` signs pending plans without execution. `/planboard:sync` remains available for work that happened outside this loop or needs recovery, and it records confirmed amendments directly.
 
 ## The board
 
@@ -51,7 +51,7 @@ The board follows your OS light/dark preference, with a header toggle to overrid
 
 ### Two modes
 
-**Live** — `/research-plans:board` starts a small local server (`python3` only, nothing to install) on a stable per-project port. Bookmark the URL; it stays valid for the whole session. The live board is a dashboard and feedback surface. Select text to attach a comment, press **Send to Claude**, request an agent review, generate a report, reopen a results bundle, or edit model settings. A pending plan is labeled `pending — signs at /execute or /sign`; plan approval is not on the persistent board. The board has no idle timeout. It closes when you submit an action so your session can route it; `/research-plans:board` reopens it at the same URL whenever you want to continue.
+**Live** — `/planboard:board` starts a small local server (`python3` only, nothing to install) on a stable per-project port. Bookmark the URL; it stays valid for the whole session. The live board is a dashboard and feedback surface. Select text to attach a comment, press **Send to Claude**, request an agent review, generate a report, reopen a results bundle, or edit model settings. A pending plan is labeled `pending — signs at /execute or /sign`; plan approval is not on the persistent board. The board has no idle timeout. It closes when you submit an action so your session can route it; `/planboard:board` reopens it at the same URL whenever you want to continue.
 
 Or let an agent do the reviewing: the **Review with** button on any plan version, the master plan, or a results bundle runs Codex, Gemini, a Claude subagent, or a three-lens subagent panel and seeds its section-anchored comments onto the board — attributed to the reviewer — for you to curate before they route the same way.
 
@@ -59,37 +59,37 @@ Or let an agent do the reviewing: the **Review with** button on any plan version
 
 Every plain live open also writes or refreshes `./pb-board` in the project root — a small launcher that opens the board with no model in the loop. Run `./pb-board` in a terminal, or `!./pb-board` from inside a session; it reconnects to a board already running on the project's port, or serves a fresh one. Use it when your Claude session is rate-limited, or when you only want to read.
 
-The launcher is created at `/research-plans:init` and can be written on demand with `python3 <plugin>/skills/managing-planboard/scripts/board.py --install-launcher`. It bakes in this machine's python interpreter and plugin path, so it is machine-specific and kept out of git through `.git/info/exclude` rather than `.gitignore` — no tracked-file churn, and it never enters a commit. board.py only ever replaces a launcher it wrote itself; a symlink, a directory, or a file of your own at that path is refused, not overwritten.
+The launcher is created at `/planboard:init` and can be written on demand with `python3 <plugin>/skills/managing-planboard/scripts/board.py --install-launcher`. It bakes in this machine's python interpreter and plugin path, so it is machine-specific and kept out of git through `.git/info/exclude` rather than `.gitignore` — no tracked-file churn, and it never enters a commit. board.py only ever replaces a launcher it wrote itself; a symlink, a directory, or a file of your own at that path is refused, not overwritten.
 
-Feedback you send from a launcher-served board has no session to route it, so it is saved to `plans/.board-feedback.md` and picked up the next time you run `/research-plans:board` in Claude.
+Feedback you send from a launcher-served board has no session to route it, so it is saved to `plans/.board-feedback.md` and picked up the next time you run `/planboard:board` in Claude.
 
-**Snapshot** — `/research-plans:board --export` writes a single self-contained `plans/board.html` that anyone can open without Claude Code or an internet connection (figures are inlined). Snapshots are read-only. Treat the file like publishing your plans: it contains everything under `plans/`, including result figures, tables, and script snapshots.
+**Snapshot** — `/planboard:board --export` writes a single self-contained `plans/board.html` that anyone can open without Claude Code or an internet connection (figures are inlined). Snapshots are read-only. Treat the file like publishing your plans: it contains everything under `plans/`, including result figures, tables, and script snapshots.
 
 ### Share with collaborators (offline file)
 
-`/research-plans:board --share` exports an annotatable board file you can email. Collaborators comment in their browser and send back a feedback file that `/research-plans:board --collect <file>` routes into your session with attribution and a stale-hash warning if the board moved on.
+`/planboard:board --share` exports an annotatable board file you can email. Collaborators comment in their browser and send back a feedback file that `/planboard:board --collect <file>` routes into your session with attribution and a stale-hash warning if the board moved on.
 
 ## Share the board privately (Vercel)
 
-For collaborators who only have a browser, `/research-plans:board --publish-web` publishes the full board to a private, password-protected URL on Vercel: they read it and comment from their own browser, and their comments flow back into your session on request. One-time setup takes about 20 minutes and needs Node.js in addition to `python3`; every publish after that is one click. The full walkthrough, including a copy-paste collaborator invitation you can send as-is, lives in [`docs/hosting-the-board.md`](hosting-the-board.md).
+For collaborators who only have a browser, `/planboard:board --publish-web` publishes the full board to a private, password-protected URL on Vercel: they read it and comment from their own browser, and their comments flow back into your session on request. One-time setup takes about 20 minutes and needs Node.js in addition to `python3`; every publish after that is one click. The full walkthrough, including a copy-paste collaborator invitation you can send as-is, lives in [`docs/hosting-the-board.md`](hosting-the-board.md).
 
-**If you used the old GitHub Pages publish:** earlier versions used `/research-plans:board --publish` to push the board to a public GitHub Pages URL with no password and no access control — anyone who found the link could read it, indefinitely. If that applies to you, take it down: delete the `gh-pages` branch (`git push origin --delete gh-pages`), or disable it in the repo's Settings → Pages (set Source to None). Deleting the branch is the more complete cleanup; a disabled-but-present `gh-pages` branch can be quietly re-enabled by anyone with repo-settings access.
+**If you used the old GitHub Pages publish:** earlier versions used `/planboard:board --publish` to push the board to a public GitHub Pages URL with no password and no access control — anyone who found the link could read it, indefinitely. If that applies to you, take it down: delete the `gh-pages` branch (`git push origin --delete gh-pages`), or disable it in the repo's Settings → Pages (set Source to None). Deleting the branch is the more complete cleanup; a disabled-but-present `gh-pages` branch can be quietly re-enabled by anyone with repo-settings access.
 
 ## Output & Validation
 
-Plans say what the work will do; results bundles show what it did. The execution loop captures them automatically as agent-curated, `curatedBy`-labeled bundles; direct `/research-plans:results` and `/sync` captures retain the researcher interview. Each path creates a **versioned, immutable bundle** per component at `plans/execution/<component>/results/rN/`: a brief agent-drafted report, snapshot copies of the figures and tables (sha256-matched against their sources; files over 5 MB are recorded by path + checksum instead of copied), the exact scripts that produced them, and the key numbers as metric tiles. Capture goes through a staging directory and an atomic rename, so a bundle either exists complete or not at all. Re-running an analysis can never silently change the captured record — a redo is the next `rN`.
+Plans say what the work will do; results bundles show what it did. The execution loop captures them automatically as agent-curated, `curatedBy`-labeled bundles; direct `/planboard:results` and `/sync` captures retain the researcher interview. Each path creates a **versioned, immutable bundle** per component at `plans/execution/<component>/results/rN/`: a brief agent-drafted report, snapshot copies of the figures and tables (sha256-matched against their sources; files over 5 MB are recorded by path + checksum instead of copied), the exact scripts that produced them, and the key numbers as metric tiles. Capture goes through a staging directory and an atomic rename, so a bundle either exists complete or not at all. Re-running an analysis can never silently change the captured record — a redo is the next `rN`.
 
 Bundles are journal-first: the project's CLAUDE.md carries output conventions with a target journal, so analysis deliverables are journal-ready figures (vector PDF + PNG) and typeset tables (a `.png` render with its `.tex` source and estimates CSV attached) — a CSV is click-to-open data, never dumped inline on the board. Every planned capture also runs an automatic **validation**: an independent subagent compares the governing plan version against the staged scripts, artifacts, and decision log, and its per-step result (conforms / conforms-with-amendments / deviations-found) is sealed into the bundle and rendered on the board. The governing version is the latest canonical signed plan or recorded amendment named by `manifest.planVersion`. Capture also seals a mechanical **integrity check** into the manifest — artifact checksums match, references resolve, and every substantive finding is sourced to an artifact. Both are advisory, never a gate — an unrecorded deviation is flagged, and the remedy is a plan revision.
 
-On the board's Output & Validation view you review a bundle — its mechanical F·A·I output score (fidelity · attainment · integrity, 0–3 each, derived at finalize from the validation verdicts and integrity checks; diagnostic, never a gate), its validation audit, integrity check, stat tiles, figure/table gallery, and a per-artifact "produced by" script drawer with line-anchored comments. Validation is the bundle's standing state and sets the tracker to `done (validated)`, `done (unvalidated)`, or `done (retrofit)` as appropriate. A finalized bundle is immutable. Use **Reopen** with comments to request a script fix and a re-run, which is captured as the next bundle. The board shows any legacy pre-v0.20 verdict read-only. The narrative report lives on the separate **Reports** view; a **Generate report** button (also offered by `/research-plans:results` at capture end) assembles the bundle into a standalone shareable report (markdown plus PDF/DOCX via pandoc) under `plans/reports/`, with each figure embedded under the finding it supports and a first-line marker the board uses to flag stale reports. A bundle with no substantive findings gets no report — `/research-plans:report` refuses, and the board shows a null-result state instead of an empty document.
+On the board's Output & Validation view you review a bundle — its mechanical F·A·I output score (fidelity · attainment · integrity, 0–3 each, derived at finalize from the validation verdicts and integrity checks; diagnostic, never a gate), its validation audit, integrity check, stat tiles, figure/table gallery, and a per-artifact "produced by" script drawer with line-anchored comments. Validation is the bundle's standing state and sets the tracker to `done (validated)`, `done (unvalidated)`, or `done (retrofit)` as appropriate. A finalized bundle is immutable. Use **Reopen** with comments to request a script fix and a re-run, which is captured as the next bundle. The board shows any legacy pre-v0.20 verdict read-only. The narrative report lives on the separate **Reports** view; a **Generate report** button (also offered by `/planboard:results` at capture end) assembles the bundle into a standalone shareable report (markdown plus PDF/DOCX via pandoc) under `plans/reports/`, with each figure embedded under the finding it supports and a first-line marker the board uses to flag stale reports. A bundle with no substantive findings gets no report — `/planboard:report` refuses, and the board shows a null-result state instead of an empty document.
 
-**Adopting the workflow mid-project?** `/research-plans:results --adopt` scans your output folders, lets you pick which existing figures/tables matter, and files them as bundles marked `retrofit` — honest that no plan governed their production, reviewable and verifiable all the same.
+**Adopting the workflow mid-project?** `/planboard:results --adopt` scans your output folders, lets you pick which existing figures/tables matter, and files them as bundles marked `retrofit` — honest that no plan governed their production, reviewable and verifiable all the same.
 
-**Plans ran ahead of your results record?** `/research-plans:results` with **no argument** is reconcile mode: it walks the tracker for components that are done but bundle-less or whose captured sources have drifted, and backfills them one interview at a time. Work that a signed plan or recorded amendment governed but was captured after the fact is marked `late` — the same honesty rule as the decision log's late-captured entries: backfilling is fine, unlabeled backfilling is not.
+**Plans ran ahead of your results record?** `/planboard:results` with **no argument** is reconcile mode: it walks the tracker for components that are done but bundle-less or whose captured sources have drifted, and backfills them one interview at a time. Work that a signed plan or recorded amendment governed but was captured after the fact is marked `late` — the same honesty rule as the decision log's late-captured entries: backfilling is fine, unlabeled backfilling is not.
 
 ## Model profiles
 
-Different stages deserve different models: planning is where quality compounds (strongest model, max effort), execution is interactive and iterative (a fast cheap model stretches subscription quota), and review or validation are short judgment tasks where a smarter prior beats longer thinking. `/research-plans:init` asks whether to use the recommended per-stage defaults or choose your own, then writes a per-project profile at `plans/model-profile.md` (committed). You can edit it later with `/research-plans:models`, or inline on the board's **Models** tab when it's served live — the board rewrites `plans/model-profile.md` and regenerates the `rp-*` review agents itself (nudge-stage edits apply immediately; agent-stage edits are flagged for a session restart).
+Different stages deserve different models: planning is where quality compounds (strongest model, max effort), execution is interactive and iterative (a fast cheap model stretches subscription quota), and review or validation are short judgment tasks where a smarter prior beats longer thinking. `/planboard:init` asks whether to use the recommended per-stage defaults or choose your own, then writes a per-project profile at `plans/model-profile.md` (committed). You can edit it later with `/planboard:models`, or inline on the board's **Models** tab when it's served live — the board rewrites `plans/model-profile.md` and regenerates the `rp-*` review agents itself (nudge-stage edits apply immediately; agent-stage edits are flagged for a session restart).
 
 Two mechanisms, named in the profile's mechanism column:
 
@@ -100,11 +100,11 @@ Projects without a profile behave exactly as before. Model profiles need a curre
 
 ## The sign-off gate
 
-Signing a plan is enforced, not offered. `/research-plans:execute` opens a slim sign session for pending drafts before work begins; `/research-plans:sign` opens the same session without starting execution. You approve each exact draft or request changes with annotations and a note. An approval writes a content-hash-bound ticket, and the finalization transaction copies the approved draft into its canonical `vN.md` with the `Signed off:` trailer. Tickets and `.sign-feedback-vN.md` files survive interruption, so rerunning `/sign` recovers the session from disk.
+Signing a plan is enforced, not offered. `/planboard:execute` opens a slim sign session for pending drafts before work begins; `/planboard:sign` opens the same session without starting execution. You approve each exact draft or request changes with annotations and a note. An approval writes a content-hash-bound ticket, and the finalization transaction copies the approved draft into its canonical `vN.md` with the `Signed off:` trailer. Tickets and `.sign-feedback-vN.md` files survive interruption, so rerunning `/sign` recovers the session from disk.
 
 The plugin also ships a PreToolUse hook. It denies edits and overwrites of every existing canonical `vN.md`. A direct write to a new canonical version opens the same sign UI through the hook transport. `/sync` may write a next consecutive version with an `Amendment recorded, YYYY-MM-DD` trailer without claiming a human sign decision. Re-execution materializes and signs a fresh commitment to that amendment.
 
-**Scope and honesty:** the gate covers Claude's Write and Edit tools. Bash-mediated file writes, including shell redirection and scripts, are outside the matcher; the plugin workflow uses Write for canonical plans. The immutability convention and the review's revisability check cover after-the-fact edits. The gate activates only in projects that opted in with both markers. For headless or CI work, set `RESEARCH_PLANS_NO_GATE=1`; the bypass leaves a visible trace in the transcript. The hook-transport wait ceiling is 25 minutes (`RESEARCH_PLANS_GATE_TIMEOUT`, clamped), and an unanswered gate denies safely. These boundaries are why the invariant is scoped to the gated Write and Edit workflow.
+**Scope and honesty:** the gate covers Claude's Write and Edit tools. Bash-mediated file writes, including shell redirection and scripts, are outside the matcher; the plugin workflow uses Write for canonical plans. The immutability convention and the review's revisability check cover after-the-fact edits. The gate activates only in projects that opted in with both markers. For headless or CI work, set `PLANBOARD_NO_GATE=1`; the bypass leaves a visible trace in the transcript. The hook-transport wait ceiling is 25 minutes (`PLANBOARD_GATE_TIMEOUT`, clamped), and an unanswered gate denies safely. These boundaries are why the invariant is scoped to the gated Write and Edit workflow.
 
 Board and sign servers use these exit codes:
 
@@ -158,8 +158,8 @@ Plus a short marked section in your project's `CLAUDE.md` so every future sessio
 In Claude Code:
 
 ```
-/plugin marketplace add letitbk/research-plans
-/plugin install research-plans@research-plans
+/plugin marketplace add letitbk/planboard
+/plugin install planboard@planboard
 ```
 
 Then restart Claude Code. See [QUICKSTART.md](../QUICKSTART.md) for a walkthrough.
@@ -169,33 +169,35 @@ Then restart Claude Code. See [QUICKSTART.md](../QUICKSTART.md) for a walkthroug
 When a new version ships, a one-time notice appears at session start naming the exact command. To update:
 
 ```
-/plugin update research-plans@research-plans
+/plugin update planboard@planboard
 /reload-plugins
 ```
 
 (then restart Claude Code if a component doesn't pick up).
 
-To update automatically instead, enable auto-update once: open `/plugin`, go to **Marketplaces**, select **research-plans**, and turn on auto-update. Claude Code then updates the plugin at startup and prompts you to run `/reload-plugins`.
+To update automatically instead, enable auto-update once: open `/plugin`, go to **Marketplaces**, select **planboard**, and turn on auto-update. Claude Code then updates the plugin at startup and prompts you to run `/reload-plugins`.
 
-To silence the update notice (e.g. on an intentionally pinned install), set `RESEARCH_PLANS_NO_UPDATE_CHECK=1` in the `env` block of `~/.claude/settings.json` (not `.zshrc` — a hook launched by Claude Code may not source your shell profile):
+To silence the update notice (e.g. on an intentionally pinned install), set `PLANBOARD_NO_UPDATE_CHECK=1` in the `env` block of `~/.claude/settings.json` (not `.zshrc` — a hook launched by Claude Code may not source your shell profile):
 
 ```
-{ "env": { "RESEARCH_PLANS_NO_UPDATE_CHECK": "1" } }
+{ "env": { "PLANBOARD_NO_UPDATE_CHECK": "1" } }
 ```
 
 ### Installing a specific version
 
-Every release is a git tag (`v0.1.0` … `v0.25.0`). To pin an older version, add a local marketplace file whose entry pins the tag, then install from it.
+Every release is a git tag (`v0.1.0` … `v1.0.0`). To pin an older version, add a local marketplace file whose entry pins the tag, then install from it.
 
-Create `rp-pinned/.claude-plugin/marketplace.json`:
+**Note on the rename.** The plugin was named `research-plans` through `v0.25.0` and `planboard` from `v1.0.0` on; the GitHub repo `letitbk/research-plans` was renamed to `letitbk/planboard` (the old URL redirects), so `repo: "letitbk/planboard"` resolves for every tag. But a pinned tag's **plugin name** is whatever that tag shipped — `planboard` for `v1.0.0`+ and `research-plans` for `v0.25.0` and earlier — and the marketplace entry's plugin `name` and the `/plugin install <name>@…` id must match it.
+
+Create `pb-pinned/.claude-plugin/marketplace.json` — this example pins `v1.0.0`:
 
 ```
 {
-  "name": "research-plans-pinned",
+  "name": "planboard-pinned",
   "plugins": [
     {
-      "name": "research-plans",
-      "source": { "source": "github", "repo": "letitbk/research-plans", "ref": "v0.9.0" }
+      "name": "planboard",
+      "source": { "source": "github", "repo": "letitbk/planboard", "ref": "v1.0.0" }
     }
   ]
 }
@@ -204,11 +206,11 @@ Create `rp-pinned/.claude-plugin/marketplace.json`:
 Then:
 
 ```
-/plugin marketplace add ./rp-pinned
-/plugin install research-plans@research-plans-pinned
+/plugin marketplace add ./pb-pinned
+/plugin install planboard@planboard-pinned
 ```
 
-If your Claude Code build prefers it, the equivalent fallback is to check out the tag locally (`git checkout v0.9.0`) and `/plugin marketplace add` the repo's local path. On a pinned install, set `RESEARCH_PLANS_NO_UPDATE_CHECK=1` (see [Updating](#updating)) so you aren't reminded about newer releases you deliberately skipped.
+For a pre-v1 tag, set the plugin `name` to `research-plans` and the `ref` to that tag (e.g. `v0.25.0`), and install `research-plans@planboard-pinned`. If your Claude Code build prefers it, the equivalent fallback is to check out the tag locally (`git checkout v1.0.0`) and `/plugin marketplace add` the repo's local path. On a pinned install, set `PLANBOARD_NO_UPDATE_CHECK=1` (or the legacy `RESEARCH_PLANS_NO_UPDATE_CHECK=1`) — see [Updating](#updating) — so you aren't reminded about newer releases you deliberately skipped.
 
 ## Developing the board
 

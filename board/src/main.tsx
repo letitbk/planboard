@@ -33,7 +33,7 @@ function NoData() {
           Generate a real board from your research project with:
         </p>
         <pre className="mt-3 rounded bg-stone-100 dark:bg-stone-800 p-2 text-left text-xs">
-          /research-plans:board
+          /planboard:board
         </pre>
       </div>
     </div>

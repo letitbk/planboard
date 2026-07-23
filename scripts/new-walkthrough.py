@@ -7,7 +7,7 @@ Usage:
 Creates <parent-dir>/wt-YYYYMMDD-HHMMSS/ (default parent: ~/walkthroughs)
 containing a synthetic solo-quant survey project — research brief (README.md)
 plus data/survey.csv — initialized as a git repository, ready for a full
-research-plans workflow loop against the LOCAL dev plugin.
+planboard workflow loop against the LOCAL dev plugin.
 
 The dataset is generated deterministically (fixed seed), so every scratch
 project carries identical data: runs are comparable and nothing sensitive
@@ -30,7 +30,7 @@ EDU_LEVELS = ["high school", "some college", "bachelor", "graduate"]
 README = """\
 # Social media and trust in science — walkthrough project
 
-Synthetic solo-quant scenario for the research-plans walkthrough harness.
+Synthetic solo-quant scenario for the planboard walkthrough harness.
 All data are simulated (seed {seed}); nothing here is real.
 
 ## Research questions
@@ -150,10 +150,10 @@ def main():
     print(f"  cd {target}")
     print(f"  claude --plugin-dir {PLUGIN_ROOT}")
     print()
-    print("Then start the loop with /research-plans:init")
+    print("Then start the loop with /planboard:init")
     print()
     print(
-        "Note: if the marketplace-installed research-plans plugin is enabled,\n"
+        "Note: if the marketplace-installed planboard plugin is enabled,\n"
         "it may shadow the dev copy. Check /plugin inside the session; disable\n"
         "the installed one there if both are loaded."
     )

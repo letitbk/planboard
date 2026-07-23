@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0] - 2026-07-23
+
+The plugin is renamed from research-plans to planboard. Commands move from `/research-plans:*` to `/planboard:*`, and the install id becomes `planboard@planboard`. Already-initialized projects and existing board state keep working: the old markers, environment variables, storage keys, launcher, and review agents are all still recognized, and old artifacts migrate to the new names on first use.
+
+### Changed
+- **Renamed to planboard.** The plugin and marketplace are now `planboard`, every command is `/planboard:<name>` (for example `/planboard:board`, `/planboard:plan`), and the GitHub repo is `letitbk/planboard`.
+- **Reinstall to pick up the rename.** A plugin name change is not an in-place update, and the update notice from an installed `research-plans` build points at a now-dead command. Remove the old marketplace, then run `/plugin marketplace add letitbk/planboard`, `/plugin install planboard@planboard`, and restart.
+- **Refresh your initialized projects.** Run `/planboard:init` in update mode in each research project to rewrite the marked CLAUDE.md block, which still names the old `/research-plans:*` commands. Hosted-board users re-run `/planboard:board --web-connect`.
+- **Environment variables renamed, old names still work.** `RESEARCH_PLANS_NO_GATE`, `RESEARCH_PLANS_NO_UPDATE_CHECK`, and `RESEARCH_PLANS_GATE_TIMEOUT` are now `PLANBOARD_*`; the legacy names are still read as a fallback.
+- **Old artifacts kept and migrated.** Legacy `<!-- research-plans:* -->` plan and CLAUDE.md markers, `rp-*` review agents, the `./rp-board` launcher, `rp-board:` browser storage, and the `~/.research-plans/web` hosted config are all still recognized. Review agents and the launcher regenerate as `pb-*` on first use (restart the session to load the renamed agents), and browser storage migrates in place.
+
 ## [0.25.0] - 2026-07-22
 
 Board plan-review commenting gets more capable, and the board now reopens on a produced draft. Reopen your boards to pick up the highlight fix.

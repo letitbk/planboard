@@ -1,10 +1,10 @@
-# research-plans
+# planboard
 
 > Stay the author of your research when a coding agent does the work.
 
 Coding agents can produce plausible analyses faster than you can track why each one exists — five versions of a figure, three model specifications, and no record of which one made it into the draft, or why.
 
-research-plans keeps you in charge of that. It's a [Claude Code](https://claude.com/claude-code) plugin for social scientists: the agent works from a short plan you sign at the execution gate *before* it runs — what the work will do, why, and how you'll know it worked — then records every revision, decision, and result against that plan. You stay the author of the choices; the agent does the work and keeps the books.
+planboard keeps you in charge of that. It's a [Claude Code](https://claude.com/claude-code) plugin for social scientists: the agent works from a short plan you sign at the execution gate *before* it runs — what the work will do, why, and how you'll know it worked — then records every revision, decision, and result against that plan. You stay the author of the choices; the agent does the work and keeps the books.
 
 It's the commit-before-you-look discipline you know from preregistration, made into a living plan rather than a frozen registry entry. It won't make an analysis correct — it makes the plan you approved, and every deviation from it, something you (and a coauthor, and a reviewer) can actually see.
 
@@ -28,25 +28,25 @@ Five artifacts, each one an answer to *"what did the AI actually do, and can I s
 
 The plugin adds a handful of commands to Claude Code. A normal project moves through a loop, and the agent carries the bookkeeping at every step.
 
-**1. Opt a project in** — `/research-plans:init`. A short interview seeds the master plan: the research questions, and the components (research activities) that serve them. Everything else is opt-in; the plugin does nothing in projects you haven't initialized.
+**1. Opt a project in** — `/planboard:init`. A short interview seeds the master plan: the research questions, and the components (research activities) that serve them. Everything else is opt-in; the plugin does nothing in projects you haven't initialized.
 
-**2. Scope a plan** — `/research-plans:plan`. You and the agent scope the next component and prepare a scored draft. The board is available for reading, annotations, extra reviews, and a diff against the prior version. The draft stays pending, and the tracker marks the component `planned`.
+**2. Scope a plan** — `/planboard:plan`. You and the agent scope the next component and prepare a scored draft. The board is available for reading, annotations, extra reviews, and a diff against the prior version. The draft stays pending, and the tracker marks the component `planned`.
 
-**3. Sign and execute the loop** — `/research-plans:execute`. A slim sign session shows the pending plan exactly as it will be committed. You approve it or request changes. Then one prompt asks whether to run now, which model to use, and whether to make a report. The agent commits the signed plan, executes it, captures and validates the bundle, reports when requested, updates the tracker and log, suggests one commit, opens the board, and proposes the next component. The plan is the spine it works against, not a cage; interpretive choices still come back to you before the agent acts. Run `/research-plans:sign` when you want to sign pending plans without starting execution.
+**3. Sign and execute the loop** — `/planboard:execute`. A slim sign session shows the pending plan exactly as it will be committed. You approve it or request changes. Then one prompt asks whether to run now, which model to use, and whether to make a report. The agent commits the signed plan, executes it, captures and validates the bundle, reports when requested, updates the tracker and log, suggests one commit, opens the board, and proposes the next component. The plan is the spine it works against, not a cage; interpretive choices still come back to you before the agent acts. Run `/planboard:sign` when you want to sign pending plans without starting execution.
 
-**4. Recover work outside the loop** — `/research-plans:sync`. This manual checkpoint handles work done outside `/execute`, crashed sessions, hosted comments, and decisions that did not get logged. It updates the tracker and records an amendment automatically when confirmed execution deviated from the plan. The amendment says what changed and why; the old version is never edited. Re-execution must sign a new commitment first. Deviation is not failure; unrecorded deviation is.
+**4. Recover work outside the loop** — `/planboard:sync`. This manual checkpoint handles work done outside `/execute`, crashed sessions, hosted comments, and decisions that did not get logged. It updates the tracker and records an amendment automatically when confirmed execution deviated from the plan. The amendment says what changed and why; the old version is never edited. Re-execution must sign a new commitment first. Deviation is not failure; unrecorded deviation is.
 
 ![A plan's version 1 to version 2 diff on the board, with an amber banner stating the reason for the revision and the added and removed lines highlighted](docs/images/plan-diff.png)
 
 <sub>A revision is a new version, not an edit. The banner records *why* v2 replaced v1 — here, validation found the decomposition wasn't reported the way the plan promised.</sub>
 
-**5. Capture results manually when needed** — `/research-plans:results`. The execution loop normally does this for you. The direct command seals a versioned, immutable bundle for out-of-loop work or a recapture: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing the governing signed plan or recorded amendment against what actually ran.
+**5. Capture results manually when needed** — `/planboard:results`. The execution loop normally does this for you. The direct command seals a versioned, immutable bundle for out-of-loop work or a recapture: an agent-drafted report, snapshot copies of the figures and tables (checksum-verified against the scripts that made them), the code, the key numbers as tiles, and an automatic validation — an independent check comparing the governing signed plan or recorded amendment against what actually ran.
 
 ![The Output & Validation view showing key-number tiles and a coefficient-plot figure, with a link reading "produced by code/02_wage_gaps.py"](docs/images/results-figure.png)
 
 <sub>Every figure carries its numbers and a link straight to the script that produced it. Nothing on the board is a claim you can't trace back to code.</sub>
 
-**6. Review, reopen, share** — `/research-plans:board`. Open the dashboard. Read a plan and its revision history, annotate a draft, or review a results bundle: validation compares the governing plan with what executed, step by step, and defines the bundle's standing state. Reopen any finalized bundle with comments to drive a fix and a new capture. Share the whole thing with a collaborator who only has a browser. Plan approval stays in the slim sign session.
+**6. Review, reopen, share** — `/planboard:board`. Open the dashboard. Read a plan and its revision history, annotate a draft, or review a results bundle: validation compares the governing plan with what executed, step by step, and defines the bundle's standing state. Reopen any finalized bundle with comments to drive a fix and a new capture. Share the whole thing with a collaborator who only has a browser. Plan approval stays in the slim sign session.
 
 ![The Results review surface with a plan-vs-execution validation panel flagging a deviation, each step marked met, partial, or deviated](docs/images/results-review.png)
 
@@ -56,7 +56,7 @@ The board runs on `python3` alone — nothing to install — as a small local se
 
 ## Who it's for
 
-research-plans is for a specific kind of work, not everyone who touches an AI.
+planboard is for a specific kind of work, not everyone who touches an AI.
 
 It pays off when you are **already using a coding agent for real analysis** — data cleaning, modeling, simulation — and the project is one you'll have to **explain, revisit, or hand off**: a paper headed for review, a dissertation chapter, a collaboration, a grant deliverable, anything you'll still need to defend six months from now. The plan-and-sign step costs you something up front; its value grows with every revision, every session, and every person who later has to understand what the agent did. The longer the project, the more it earns its keep.
 
@@ -78,11 +78,11 @@ The workflow comes out of a methods paper on plan-based human–AI research part
 In Claude Code:
 
 ```
-/plugin marketplace add letitbk/research-plans
-/plugin install research-plans@research-plans
+/plugin marketplace add letitbk/planboard
+/plugin install planboard@planboard
 ```
 
-Then restart Claude Code, and run `/research-plans:init` in a project to opt it in. See [QUICKSTART.md](QUICKSTART.md) for a walkthrough.
+Then restart Claude Code, and run `/planboard:init` in a project to opt it in. See [QUICKSTART.md](QUICKSTART.md) for a walkthrough.
 
 The core plan-review-execute-tail workflow needs only `python3` (no dependencies); `/sync` is the manual recovery checkpoint. The optional private web sharing additionally needs Node.js. Updating, pinning to a specific version, silencing update notices, and everything else is in the [reference](docs/reference.md).
 

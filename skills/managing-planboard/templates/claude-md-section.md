@@ -1,7 +1,7 @@
 <!-- planboard:start -->
 ## Research plans workflow
 
-This project uses the research-plans workflow (https://github.com/letitbk/research-plans). These rules apply to every session in this repository:
+This project uses the planboard workflow (https://github.com/letitbk/planboard). These rules apply to every session in this repository:
 
 1. At session start, read `plans/master-plan.md`, then the latest version of the execution plan for whichever component the work touches (`plans/execution/<NN-slug>/`).
 2. Execution plans are versioned `v1.md, v2.md, ...` and are **never overwritten or edited**. A revision is a new file with a `Supersedes` line explaining what changed and why.
@@ -17,5 +17,5 @@ This project uses the research-plans workflow (https://github.com/letitbk/resear
 9. Evidence before claims. Run substantive analysis with output captured to `logs/` (e.g. `2>&1 | tee logs/<date>_<step>.log`; `logs/` stays gitignored). Never report a result — in chat, a results bundle, or a report — without the log, notebook output, or artifact that shows the code actually ran. Logs are local, temporary evidence: never write row-level personal data, credentials, or secrets into them.
 10. Assumptions and restraint. State working assumptions before acting on them; when an instruction has multiple readings, present them rather than picking silently. Keep changes minimal and surgical — nothing beyond what the current plan step needs.
 
-The `managing-planboard` skill (from the research-plans plugin) has these conventions in depth. The primary loop is plan → draft review → execute gate → tail. If work happened outside that loop or mid-session logging was missed, `/research-plans:sync` is the recovery checkpoint.
+The `managing-planboard` skill (from the planboard plugin) has these conventions in depth. The primary loop is plan → draft review → execute gate → tail. If work happened outside that loop or mid-session logging was missed, `/planboard:sync` is the recovery checkpoint.
 <!-- planboard:end -->

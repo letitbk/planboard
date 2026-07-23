@@ -151,32 +151,32 @@ class TestChangelog(unittest.TestCase):
 
 class TestMarketplaceResolution(unittest.TestCase):
     def test_finds_marketplace_by_repo(self):
-        known = {"my-mkt": {"source": {"source": "github", "repo": "letitbk/research-plans"}}}
+        known = {"my-mkt": {"source": {"source": "github", "repo": "letitbk/planboard"}}}
         self.assertEqual(cu.resolve_marketplace_name(known), "my-mkt")
 
     def test_case_insensitive_repo_match(self):
-        known = {"rp": {"source": {"repo": "LetItBK/Research-Plans"}}}
+        known = {"rp": {"source": {"repo": "LetItBK/PlanBoard"}}}
         self.assertEqual(cu.resolve_marketplace_name(known), "rp")
 
     def test_supports_marketplaces_wrapper_key(self):
-        known = {"marketplaces": {"rp": {"source": {"repo": "letitbk/research-plans"}}}}
+        known = {"marketplaces": {"rp": {"source": {"repo": "letitbk/planboard"}}}}
         self.assertEqual(cu.resolve_marketplace_name(known), "rp")
 
     def test_fallback_when_absent(self):
-        self.assertEqual(cu.resolve_marketplace_name({}), "research-plans")
+        self.assertEqual(cu.resolve_marketplace_name({}), "planboard")
 
 
 class TestNoticeAndOutput(unittest.TestCase):
     def test_notice_has_versions_highlights_and_command(self):
         notice = cu.format_notice("0.11.0", "0.12.0",
-                                  ["Update reminders.", "Version pinning."], "research-plans")
+                                  ["Update reminders.", "Version pinning."], "planboard")
         self.assertIn("v0.12.0 available (you have v0.11.0)", notice)
         self.assertIn("Update reminders.", notice)
-        self.assertIn("/plugin update research-plans@research-plans", notice)
+        self.assertIn("/plugin update planboard@planboard", notice)
         self.assertIn("/reload-plugins", notice)
 
     def test_notice_without_highlights_still_valid(self):
-        notice = cu.format_notice("0.11.0", "0.12.0", [], "research-plans")
+        notice = cu.format_notice("0.11.0", "0.12.0", [], "planboard")
         self.assertIn("v0.12.0 available", notice)
         self.assertIn("/plugin update", notice)
 
@@ -215,12 +215,12 @@ class TestMain(unittest.TestCase):
         root = Path(d) / "root"
         (root / ".claude-plugin").mkdir(parents=True)
         (root / ".claude-plugin" / "plugin.json").write_text(
-            json.dumps({"name": "research-plans", "version": version})
+            json.dumps({"name": "planboard", "version": version})
         )
         return root
 
-    MANIFEST_URL = "https://raw.githubusercontent.com/letitbk/research-plans/main/.claude-plugin/plugin.json"
-    CHANGELOG_URL = "https://raw.githubusercontent.com/letitbk/research-plans/main/CHANGELOG.md"
+    MANIFEST_URL = "https://raw.githubusercontent.com/letitbk/planboard/main/.claude-plugin/plugin.json"
+    CHANGELOG_URL = "https://raw.githubusercontent.com/letitbk/planboard/main/CHANGELOG.md"
 
     def test_notifies_when_newer_available(self):
         with tempfile.TemporaryDirectory() as d:
@@ -277,6 +277,15 @@ class TestMain(unittest.TestCase):
             data = Path(d) / "data"
             env = {"CLAUDE_PLUGIN_ROOT": str(root), "CLAUDE_PLUGIN_DATA": str(data),
                    "RESEARCH_PLANS_NO_UPDATE_CHECK": "1"}
+            rc, out = self._run(env, {self.MANIFEST_URL: json.dumps({"version": "0.12.0"})})
+            self.assertEqual(out, "")
+
+    def test_opt_out_new_env_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._plugin_root(d, "0.11.0")
+            data = Path(d) / "data"
+            env = {"CLAUDE_PLUGIN_ROOT": str(root), "CLAUDE_PLUGIN_DATA": str(data),
+                   "PLANBOARD_NO_UPDATE_CHECK": "1"}
             rc, out = self._run(env, {self.MANIFEST_URL: json.dumps({"version": "0.12.0"})})
             self.assertEqual(out, "")
 

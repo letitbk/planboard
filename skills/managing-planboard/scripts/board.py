@@ -690,7 +690,7 @@ def detail_level(master_content):
 def collect_payload(root, mode, focus):
     plans = root / "plans"
     if not (plans / "master-plan.md").is_file():
-        die("no plans/master-plan.md under %s — run /research-plans:init first" % root)
+        die("no plans/master-plan.md under %s — run /planboard:init first" % root)
 
     exec_groups = []
     exec_dir = plans / "execution"
@@ -860,7 +860,7 @@ def inject(template, payload):
 def template_path():
     p = Path(__file__).resolve().parent.parent / "assets" / "board-template.html"
     if not p.is_file():
-        die("board template missing at %s — reinstall the research-plans plugin" % p)
+        die("board template missing at %s — reinstall the planboard plugin" % p)
     return p
 
 
@@ -1848,7 +1848,7 @@ def publish_web(root, args):
     cfg = read_web_config(root)
     if cfg is None:
         die("No web board configured yet. First-run setup is interactive (it needs "
-            "`vercel login` in your own terminal). Run /research-plans:board --publish-web "
+            "`vercel login` in your own terminal). Run /planboard:board --publish-web "
             "in Claude Code, which walks you through signup, login, and the first deploy.")
     out = materialize_web_dir(root)
     rc, deploy_out = _vercel(["deploy", "--prod", "--yes"], cwd=str(out))
@@ -1859,7 +1859,7 @@ def publish_web(root, args):
     print("Published to %s" % url)
     print("  password: the one you set (share it in a separate message)")
     if unpulled:
-        print("  %d new comment%s waiting — run /research-plans:board --pull"
+        print("  %d new comment%s waiting — run /planboard:board --pull"
               % (unpulled, "" if unpulled == 1 else "s"))
 
 
@@ -1876,17 +1876,17 @@ def pull(root, args):
             p.unlink()
     cfg = read_web_config(root)
     if cfg is None:
-        die("No web board configured. Run /research-plans:board --publish-web first.")
+        die("No web board configured. Run /planboard:board --publish-web first.")
     if not cfg.get("url"):
         die("The local config has no board URL (BOARD_URL was missing from the project "
-            "env when --web-connect ran). Run /research-plans:board --publish-web once — "
+            "env when --web-connect ran). Run /planboard:board --publish-web once — "
             "it records the URL — then retry.")
     url = cfg["url"].rstrip("/") + "/api/comments"
     try:
         data = _http_get_json(url, {"x-board-key": cfg["pullKey"]})
     except urllib.error.HTTPError as e:
         if e.code == 401:
-            die("Pull key rejected (rotated or reset). Run /research-plans:board --web-connect.")
+            die("Pull key rejected (rotated or reset). Run /planboard:board --web-connect.")
         die("Web board returned %s. It may be misconfigured; try --publish-web again." % e.code)
     except (urllib.error.URLError, OSError):
         die("Web board unreachable (the project may be deleted). Run --publish-web to recreate, "
@@ -1993,7 +1993,7 @@ def web_clear(root, args):
         die("This deletes ALL collaborator comments on the hosted board. Re-run with --force.")
     if not cfg.get("url"):
         die("The local config has no board URL (BOARD_URL was missing from the project "
-            "env when --web-connect ran). Run /research-plans:board --publish-web once — "
+            "env when --web-connect ran). Run /planboard:board --publish-web once — "
             "it records the URL — then retry.")
     url = cfg["url"].rstrip("/") + "/api/clear"
     try:
@@ -2013,7 +2013,7 @@ def set_password(root, args):
         die("No web board configured. Run --publish-web first.")
     print("Rotate the passphrase from the conversational flow: it generates a new "
           "passphrase and BOARD_SESSION_SECRET, sets them with `vercel env add` "
-          "(reading from stdin), and redeploys. See /research-plans:board.")
+          "(reading from stdin), and redeploys. See /planboard:board.")
 
 
 def export(root, args):
@@ -2884,7 +2884,7 @@ def main():
             if (Path.cwd() / "plans" / "master-plan.md").is_file():
                 root = Path.cwd()
             else:
-                die("no plans/master-plan.md found — run /research-plans:init first")
+                die("no plans/master-plan.md found — run /planboard:init first")
 
     if args.collect is not None:
         if args.collect == "PENDING":

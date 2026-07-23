@@ -187,12 +187,12 @@ class MigrateLegacyAgents(unittest.TestCase):
         return (
             "---\n"
             "name: %s\n"
-            "description: Review. Dispatched by /research-plans:review.\n"
+            "description: Review. Dispatched by /planboard:review.\n"
             "model: opus\n"
             "effort: max\n"
             "tools: Read\n"
             "---\n"
-            "%s\n\nBody: run /research-plans:review.\n" % (name, self.MARKER)
+            "%s\n\nBody: run /planboard:review.\n" % (name, self.MARKER)
         )
 
     def _agents_dir(self, tmp):

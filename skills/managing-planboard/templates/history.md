@@ -8,7 +8,7 @@ Reconstructed at adoption on <YYYY-MM-DD>; covers <first commit date> – <Initi
      plan's `Initialized:` timestamp and is unaffected by anything here.
 
      Scope: entries record only events dated BEFORE `Initialized:`. Anything at or after the
-     cutoff belongs in decision-log.md (via `/research-plans:sync` if late) — never here.
+     cutoff belongs in decision-log.md (via `/planboard:sync` if late) — never here.
      You may append to this file at any time (whenever more of the past is recovered), but
      never to log the present. Date-granularity headers only; never fabricate a clock time. -->
 
