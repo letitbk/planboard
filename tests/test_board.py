@@ -2145,6 +2145,18 @@ class BootIdPayloadTest(unittest.TestCase):
             board.payload_generation(changed),
         )
 
+    def test_payload_generation_excludes_generated_at(self):
+        base = {"files": {"x": 1}, "generatedAt": "2026-07-23T10:00:00+00:00"}
+        later = {"files": {"x": 1}, "generatedAt": "2026-07-23T11:11:11+00:00"}
+        self.assertEqual(
+            board.payload_generation(base), board.payload_generation(later))
+
+    def test_payload_generation_excludes_self_stamp(self):
+        base = {"files": {"x": 1}}
+        stamped = {"files": {"x": 1}, "generation": "f" * 64}
+        self.assertEqual(
+            board.payload_generation(base), board.payload_generation(stamped))
+
 
 class TestServeHTTP(unittest.TestCase):
     def setUp(self):

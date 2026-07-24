@@ -1061,9 +1061,12 @@ def token_ok(body, expected):
 
 
 def payload_generation(payload):
-    """Content identity of the served payload, excluding per-boot secrets."""
+    """Content identity of the served payload, excluding per-boot secrets and
+    volatile stamps (generatedAt is wall-clock; generation is this hash itself,
+    stamped back into the payload for the client)."""
     trimmed = {k: v for k, v in payload.items()
-               if k not in ("publishToken", "boardToken", "bootId")}
+               if k not in ("publishToken", "boardToken", "bootId",
+                            "generatedAt", "generation")}
     return hashlib.sha256(
         json.dumps(trimmed, sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()
