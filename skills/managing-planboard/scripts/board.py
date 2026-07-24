@@ -1371,18 +1371,88 @@ def serve(root, payload, args):
     ticket_sign_mode = sign_transport == "ticket"
     batch_id = sign_payload.get("batchId") if sign_mode else None
     boot_id = uuid.uuid4().hex
-    amap = artifact_map(root, payload)
-    rmap = report_map(root, payload)
     publish_token = hashlib.sha256(os.urandom(32)).hexdigest()
-    payload["publishToken"] = publish_token  # board reads publishToken from the payload JSON
-    payload["projectId"] = project_id(root)
-    proj_id = payload["projectId"]
     board_token = hashlib.sha256(os.urandom(32)).hexdigest()
-    payload["boardToken"] = board_token
-    payload["bootId"] = boot_id  # client reconnect baseline; excluded from generation
-    generation = payload_generation(payload)
-    html = inject(template_path().read_text(encoding="utf-8"), payload)
-    html_bytes = html.encode("utf-8")
+    proj_id = project_id(root)
+    template_text = template_path().read_text(encoding="utf-8")
+    refreshable = not sign_mode
+    git_paths = resolve_git_paths(root) if refreshable else []
+    boot_focus = payload.get("focus")
+    boot_focus_results = payload.get("focusResults")
+    boot_focus_view = payload.get("focusView")
+    boot_seeds = payload.get("seededAnnotations")
+
+    def prepare_snapshot(p, fp):
+        """Stamp process identity into a prepared live payload, inject, and
+        derive the routing maps. Snapshots are immutable by convention: swapped
+        by reference under state_lock, never edited in place."""
+        p["publishToken"] = publish_token
+        p["projectId"] = proj_id
+        p["boardToken"] = board_token
+        p["bootId"] = boot_id
+        gen = payload_generation(p)
+        p["generation"] = gen
+        return {
+            "payload": p,
+            "generation": gen,
+            "html": inject(template_text, p).encode("utf-8"),
+            "amap": artifact_map(root, p),
+            "rmap": report_map(root, p),
+            "fingerprint": fp,
+        }
+
+    state_lock = threading.Lock()    # guards the state["snap"] reference only
+    refresh_lock = threading.Lock()  # serializes fingerprint + rebuild;
+                                     # ordering: refresh_lock -> state_lock
+    state = {"snap": prepare_snapshot(
+        payload, plans_fingerprint(root, git_paths) if refreshable else None)}
+    candidate = {"fp": None, "snap": None}  # built-but-unpromoted; refresh_lock
+
+    def current_snapshot():
+        with state_lock:
+            return state["snap"]
+
+    def disk_snapshot(promote=False):
+        """The snapshot matching current disk state. Never raises: any failure
+        while rebuilding keeps the served snapshot and is NOT cached, so the
+        next call retries. promote=True (root GET) swaps a differing snapshot
+        in as the served one; health reads without promoting."""
+        if not refreshable:
+            return current_snapshot()
+        with refresh_lock:
+            snap = current_snapshot()
+            try:
+                fp = plans_fingerprint(root, git_paths)
+            except OSError:
+                return snap
+            if fp == snap["fingerprint"]:
+                return snap
+            if candidate["fp"] == fp and candidate["snap"] is not None:
+                cand = candidate["snap"]
+            else:
+                try:
+                    cand = prepare_snapshot(build_live_payload(
+                        root, boot_focus, boot_focus_results,
+                        boot_focus_view, boot_seeds), fp)
+                except BaseException:  # SystemExit from die() included
+                    return snap
+            if cand["generation"] == snap["generation"]:
+                # Content-identical (fingerprint false positive, e.g. a touch):
+                # adopt the fingerprint so this cadence stops rebuilding.
+                adopted = dict(snap)
+                adopted["fingerprint"] = fp
+                with state_lock:
+                    state["snap"] = adopted
+                candidate["fp"] = candidate["snap"] = None
+                return adopted
+            if promote:
+                with state_lock:
+                    state["snap"] = cand
+                candidate["fp"] = candidate["snap"] = None
+            else:
+                candidate["fp"], candidate["snap"] = fp, cand
+            return cand
+
     done = threading.Event()
     result = {"approved": [], "rejected": []}
     if ticket_sign_mode:
@@ -1466,8 +1536,10 @@ def serve(root, payload, args):
                 self.end_headers()
                 return
             if self.path == "/api/health":
+                snap = disk_snapshot()
                 self._json(200, {"ok": True, "app": "planboard-board",
-                                 "bootId": boot_id, "generation": generation,
+                                 "bootId": boot_id,
+                                 "generation": snap["generation"],
                                  "projectId": proj_id}, no_store=True)
                 return
             if self.path == "/api/model-profile":
@@ -1478,12 +1550,17 @@ def serve(root, payload, args):
                            no_store=True)
                 return
             if self.path.startswith("/artifact/"):
-                f = amap.get(self.path)
+                f = current_snapshot()["amap"].get(self.path)
                 if f is None:
                     self.send_response(404)
                     self.end_headers()
                     return
-                data = f.read_bytes()
+                try:
+                    data = f.read_bytes()
+                except OSError:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 mime, dispo = artifact_headers(f.name)
                 self.send_response(200)
                 self.send_header("Content-Type", mime)
@@ -1495,12 +1572,17 @@ def serve(root, payload, args):
                 self.wfile.write(data)
                 return
             if self.path.startswith("/report/"):
-                f = rmap.get(self.path)
+                f = current_snapshot()["rmap"].get(self.path)
                 if f is None:
                     self.send_response(404)
                     self.end_headers()
                     return
-                data = f.read_bytes()
+                try:
+                    data = f.read_bytes()
+                except OSError:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
                 self.send_response(200)
                 self.send_header("Content-Type", mime)
@@ -1510,14 +1592,16 @@ def serve(root, payload, args):
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            snap = disk_snapshot(promote=True)
+            body = snap["html"]
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(html_bytes)))
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
             self.end_headers()
-            self.wfile.write(html_bytes)
+            self.wfile.write(body)
 
         def _read_body(self):
             length = int(self.headers.get("Content-Length", "0"))
@@ -1577,7 +1661,8 @@ def serve(root, payload, args):
                 return
             if self.path == "/api/feedback" and not sign_mode:
                 aid = accept_order(
-                    lambda aid: document_from_body(body, payload, action_id=aid),
+                    lambda aid: document_from_body(
+                        body, current_snapshot()["payload"], action_id=aid),
                     0, True)
                 if aid is pending_order:
                     self._json(409, {"error": "pending-order",
@@ -1617,7 +1702,8 @@ def serve(root, payload, args):
                 return
             if self.path == "/api/deny" and gate_mode:
                 aid = accept_order(
-                    lambda aid: document_from_body(body, payload, action_id=aid),
+                    lambda aid: document_from_body(
+                        body, current_snapshot()["payload"], action_id=aid),
                     3, True)
                 if aid is pending_order:
                     self._json(409, {"error": "pending-order",

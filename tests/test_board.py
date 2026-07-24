@@ -3500,3 +3500,93 @@ class TestPlansFingerprint(unittest.TestCase):
             (web / "index.html").write_text("v2 rewritten", encoding="utf-8")
             (web / "extra.js").write_text("x", encoding="utf-8")
             self.assertEqual(f0, self._fp(root), "republishing .board-web must not register")
+
+
+class TestLiveRefreshHTTP(unittest.TestCase):
+    def _health(self, url):
+        with urllib.request.urlopen(url + "/api/health", timeout=5) as r:
+            return json.loads(r.read())
+
+    def _root_html(self, url):
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return r.read().decode("utf-8")
+
+    def test_health_reports_new_generation_after_draft_write(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            g1 = self._health(url)["generation"]
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# Other v2 draft\n\nNew direction.\n", encoding="utf-8")
+            g2 = self._health(url)["generation"]
+            self.assertNotEqual(g1, g2)
+            self.assertEqual(self._health(url)["generation"], g2)  # stable now
+
+    def test_health_generation_stable_when_nothing_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            self.assertEqual(self._health(url)["generation"],
+                             self._health(url)["generation"])
+
+    def test_root_get_serves_fresh_content_with_same_boot_identity(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            h1 = self._health(url)
+            payload1 = extract_payload(self._root_html(url))
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# Other v2 draft\n\nFRESH-MARKER-XYZ\n", encoding="utf-8")
+            html2 = self._root_html(url)
+            payload2 = extract_payload(html2)
+            self.assertIn("FRESH-MARKER-XYZ", html2)
+            self.assertEqual(payload1["bootId"], payload2["bootId"])
+            self.assertEqual(payload1["boardToken"], payload2["boardToken"])
+            self.assertNotEqual(payload1["generation"], payload2["generation"])
+            self.assertEqual(self._health(url)["bootId"], h1["bootId"])
+
+    def test_post_token_still_valid_after_swap(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# v2\n", encoding="utf-8")
+            self._root_html(url)  # forces the swap
+            status, body, _ = http_json(url, "/api/feedback", body={
+                "boardToken": info["boardToken"],
+                "feedbackDocument": "# Feedback\n\nfine\n",
+                "annotations": [],
+            })
+            self.assertEqual(status, 200)
+
+    def test_new_artifact_served_after_regeneration(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            adir = (root / "plans" / "execution" / "01-data-prep"
+                    / "results" / "r1" / "artifacts")
+            (adir / "fig2.png").write_bytes(b"\x89PNG r1 fig2")
+            html = self._root_html(url)
+            self.assertIn("/artifact/01-data-prep/r1/fig2.png", html)
+            with urllib.request.urlopen(
+                    url + "/artifact/01-data-prep/r1/fig2.png", timeout=5) as r:
+                self.assertEqual(r.status, 200)
+
+    def test_deleted_artifact_returns_404(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            (root / "plans" / "execution" / "01-data-prep" / "results" / "r1"
+             / "artifacts" / "fig1.png").unlink()
+            try:
+                urllib.request.urlopen(
+                    url + "/artifact/01-data-prep/r1/fig1.png", timeout=5)
+                self.fail("expected HTTPError")
+            except urllib.error.HTTPError as e:
+                self.assertEqual(e.code, 404)
