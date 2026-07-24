@@ -77,4 +77,11 @@ describe("FeedbackPanel edit unsent comments", () => {
     );
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
+
+  it("holds the reload guard only while an edit form is open", () => {
+    const { container } = render(<FeedbackPanel {...props()} />);
+    expect(container.querySelector("[data-reload-guard]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(container.querySelector("[data-reload-guard]")).toBeTruthy();
+  });
 });

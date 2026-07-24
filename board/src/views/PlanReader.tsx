@@ -412,7 +412,10 @@ export default function PlanReader({
         </div>
 
         {annotatable && globalOpen && !diffOn && (
-          <div className="mb-3 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-sm">
+          <div
+            data-reload-guard=""
+            className="mb-3 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-sm"
+          >
             <textarea
               autoFocus
               value={globalText}

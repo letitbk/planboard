@@ -132,7 +132,10 @@ export default function ScriptViewer({
         })}
       </pre>
       {canAnnotate && lo !== null && hi !== null && (
-        <div className="border-t border-stone-200 dark:border-stone-800 p-2">
+        <div
+          data-reload-guard=""
+          className="border-t border-stone-200 dark:border-stone-800 p-2"
+        >
           <div className="mb-1 text-[11px] text-stone-500">
             Comment on lines {lo}
             {hi !== lo ? `–${hi}` : ""}

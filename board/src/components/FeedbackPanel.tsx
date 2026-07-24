@@ -181,7 +181,11 @@ export function AnnotationCard({
         </pre>
       )}
       {editing ? (
-        <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <div
+          data-reload-guard=""
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           <textarea
             autoFocus
             value={draft ?? ""}

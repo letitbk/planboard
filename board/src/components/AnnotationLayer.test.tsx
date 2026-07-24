@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import AnnotationLayer from "./AnnotationLayer";
+import AnnotationLayer, { GeneralCommentBox } from "./AnnotationLayer";
 
 afterEach(() => {
   window.getSelection()?.removeAllRanges();
@@ -109,5 +109,49 @@ describe("AnnotationLayer composer survives clicks inside itself", () => {
     fireEvent.click(save);
     expect(onAdd).toHaveBeenCalledTimes(1);
     expect(onAdd.mock.calls[0][0]).toMatchObject({ comment: "keep me" });
+  });
+});
+
+describe("AnnotationLayer reload guard", () => {
+  it("holds the reload guard only while the composer is open", () => {
+    const { container } = render(
+      <AnnotationLayer
+        docKey="doc"
+        annotations={[]}
+        onAdd={vi.fn()}
+        onPaintResult={vi.fn()}
+      >
+        <p>Reload guard target</p>
+      </AnnotationLayer>,
+    );
+    expect(container.querySelector("[data-reload-guard]")).toBeNull();
+
+    const textNode = screen.getByText("Reload guard target").firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 6);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent(document, new Event("selectionchange"));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Comment on selected text" }),
+    );
+    expect(container.querySelector("[data-reload-guard]")).toBeTruthy();
+  });
+});
+
+describe("GeneralCommentBox reload guard", () => {
+  it("holds the reload guard only while open", () => {
+    const { container } = render(
+      <GeneralCommentBox view="tracker" onAdd={vi.fn()} />,
+    );
+    expect(container.querySelector("[data-reload-guard]")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "+ General comment on this view" }),
+    );
+    expect(container.querySelector("[data-reload-guard]")).toBeTruthy();
   });
 });
