@@ -1832,7 +1832,7 @@ def _free_port():
 
 
 def live_payload(root):
-    return board.collect_payload(root, "live", None)
+    return board.build_live_payload(root, None, None, None, None)
 
 
 def _swallow_exit(fn, *a):
@@ -3393,3 +3393,39 @@ class TestLauncherArgs(unittest.TestCase):
         self.assertEqual(args.project_root, "/x")
         self.assertTrue(args.reuse)
         board.check_action_exclusivity(args)  # no raise — neither is an action
+
+
+class TestBuildLivePayload(unittest.TestCase):
+    def test_builder_prepares_boot_equivalent_payload(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            p = board.build_live_payload(root, None, None, None, None)
+            self.assertEqual(p["mode"], "live")
+            self.assertIn("focusResults", p)
+            self.assertIn("focusView", p)
+            self.assertNotIn("seededAnnotations", p)
+            # build_assets ran: the r1 bundle has a live artifact URL
+            b = p["files"]["executionPlans"][0]["results"][0]
+            self.assertEqual(b["assets"]["fig1.png"],
+                             "/artifact/01-data-prep/r1/fig1.png")
+
+    def test_builder_attaches_seeds_and_focus(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            seeds = [{"planPath": "plans/execution/01-data-prep/v1.md",
+                      "quote": "thing", "comment": "hm", "author": "rev"}]
+            p = board.build_live_payload(root, "01-data-prep", 1, "reports", seeds)
+            self.assertEqual(p["focus"], "01-data-prep")
+            self.assertEqual(p["focusResults"], 1)
+            self.assertEqual(p["focusView"], "reports")
+            self.assertEqual(p["seededAnnotations"], seeds)
+
+    def test_builder_generation_is_stable_across_calls(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            g1 = board.payload_generation(board.build_live_payload(root, None, None, None, None))
+            g2 = board.payload_generation(board.build_live_payload(root, None, None, None, None))
+            self.assertEqual(g1, g2)

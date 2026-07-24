@@ -437,6 +437,19 @@ def split_focus(focus):
     return focus, None, None
 
 
+def build_live_payload(root, slug, focus_results, focus_view, seeds):
+    """Canonical live-board payload: exactly the preparation cmd_serve does at
+    boot, so a regeneration hashes comparably to the served payload. Any step
+    added to live boot preparation MUST be added here, never inline."""
+    payload = collect_payload(root, "live", slug)
+    payload["focusResults"] = focus_results
+    payload["focusView"] = focus_view
+    build_assets(root, payload)
+    if seeds:
+        payload["seededAnnotations"] = seeds
+    return payload
+
+
 def collect_drift(root, exec_groups, master_content="", archive_contents=()):
     """Filesystem/git hygiene flags for the Tracker: a stale exported board.html,
     leftover results staging dirs, and bundles whose sources drifted since capture.
@@ -2937,16 +2950,12 @@ def main():
                             pass
                     return
         slug, focus_results, focus_view = split_focus(args.focus)
-        payload = collect_payload(root, "live", slug)
-        payload["focusResults"] = focus_results
-        payload["focusView"] = focus_view
-        build_assets(root, payload)
-        if args.seed_annotations:
-            # Agent plan review (v0.9): reviewer-produced comments, seeded as
-            # pending annotations for the researcher to curate and Send to Claude.
-            seeds = load_seed_annotations(args.seed_annotations)
-            if seeds:
-                payload["seededAnnotations"] = seeds
+        # Agent plan review (v0.9): reviewer-produced comments, seeded as
+        # pending annotations for the researcher to curate and Send to Claude.
+        seeds = (load_seed_annotations(args.seed_annotations)
+                 if args.seed_annotations else None)
+        payload = build_live_payload(root, slug, focus_results, focus_view,
+                                     seeds or None)
         if args.gate:
             payload = apply_gate(root, payload, args.gate)
         elif args.sign is not None:
