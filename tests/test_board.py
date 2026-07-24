@@ -3033,6 +3033,20 @@ class TestModelProfileWrite(unittest.TestCase):
                                       body={"boardToken": info["boardToken"], "create": True})
             self.assertEqual(status2, 409)
 
+    def test_profile_save_returns_fresh_payload_generation(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            _, boot_health, _ = http_json(url, "/api/health")
+            status, out, _ = http_json(url, "/api/model-profile", body={
+                "boardToken": info["boardToken"], "create": True})
+            self.assertEqual(status, 200)
+            self.assertEqual(len(out.get("payloadGeneration", "")), 64)
+            self.assertNotEqual(out["payloadGeneration"], boot_health["generation"])
+            _, health, _ = http_json(url, "/api/health")
+            self.assertEqual(out["payloadGeneration"], health["generation"])
+
     def test_user_owned_agent_refused_but_save_succeeds(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)

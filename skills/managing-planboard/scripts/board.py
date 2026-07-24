@@ -1818,6 +1818,12 @@ def serve(root, payload, args):
             if self.path == "/api/model-profile" and not sign_mode:
                 with profile_lock:
                     status, out = apply_model_profile(root, body)
+                # Saving wrote plans/model-profile.md: hand the saving tab the
+                # post-save disk generation so it advances its baseline instead
+                # of self-reloading ~6s later. (profile_lock -> refresh_lock is
+                # the one-way lock order; nothing acquires them reversed.)
+                if status == 200:
+                    out["payloadGeneration"] = disk_snapshot()["generation"]
                 self._json(status, out)
                 return
             self.send_response(404)
