@@ -3487,3 +3487,16 @@ class TestPlansFingerprint(unittest.TestCase):
     def test_git_paths_empty_outside_repo(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(board.resolve_git_paths(Path(d)), [])
+
+    def test_board_web_directory_is_excluded_entirely(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            plans = make_project(root)
+            f0 = self._fp(root)
+            web = plans / ".board-web"
+            web.mkdir()
+            (web / "index.html").write_text("v1", encoding="utf-8")
+            self.assertEqual(f0, self._fp(root), "creating .board-web must not register")
+            (web / "index.html").write_text("v2 rewritten", encoding="utf-8")
+            (web / "extra.js").write_text("x", encoding="utf-8")
+            self.assertEqual(f0, self._fp(root), "republishing .board-web must not register")

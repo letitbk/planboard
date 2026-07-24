@@ -934,7 +934,9 @@ def plans_fingerprint(root, git_paths):
     entries = []
     plans = str(root / "plans")
     for dirpath, dirnames, filenames in os.walk(plans):
-        dirnames.sort()
+        # Prune excluded names from recursion too: .board-web is a DIRECTORY
+        # of server-written bookkeeping (rewritten wholesale on web publish).
+        dirnames[:] = sorted(d for d in dirnames if not fingerprint_excluded(d))
         rel = os.path.relpath(dirpath, plans)
         for dname in dirnames:
             entries.append(("d", os.path.join(rel, dname)))
