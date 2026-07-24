@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: planboard-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main with tags
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+      - name: Check release state
+        id: policy
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          python scripts/check_pr_policy.py \
+            "$BEFORE_SHA" "$AFTER_SHA" \
+            --github-output "$GITHUB_OUTPUT" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+      - name: Create the release tag
+        if: steps.policy.outputs.version_changed == 'true'
+        env:
+          TAG: ${{ steps.policy.outputs.tag }}
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            tagged_commit="$(git rev-list -n 1 "$TAG")"
+            if [ "$tagged_commit" != "$GITHUB_SHA" ]; then
+              echo "Tag $TAG already points to $tagged_commit, not $GITHUB_SHA." >&2
+              echo "The workflow will not move an existing release tag." >&2
+              exit 1
+            fi
+            echo "Tag $TAG already points to this commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" "$GITHUB_SHA" -m "$TAG"
+            git push origin "refs/tags/$TAG"
+          fi
+      - name: Create the GitHub release
+        if: steps.policy.outputs.version_changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.policy.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub release $TAG already exists."
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
