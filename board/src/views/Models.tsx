@@ -92,11 +92,13 @@ export default function Models({
   modelProfile,
   onProfileChange,
   onOutline,
+  onPayloadGeneration,
 }: {
   data: BoardData;
   modelProfile?: ModelProfile;
   onProfileChange: (mp: ModelProfile | undefined) => void;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onPayloadGeneration?: (g: string) => void;
 }) {
   const live = data.mode === "live";
   const canEdit = actionsVisible(data) && modelProfile?.editable === true;
@@ -199,6 +201,7 @@ export default function Models({
       if (res.status === 200) {
         const result = json as ModelProfileSaveResult;
         onProfileChange(result.modelProfile);
+        if (result.payloadGeneration) onPayloadGeneration?.(result.payloadGeneration);
         const refused = (result.generation?.results ?? [])
           .filter((r) => r.outcome === "refused-user" || r.outcome === "refused-unreadable")
           .map((r) => r.agent);

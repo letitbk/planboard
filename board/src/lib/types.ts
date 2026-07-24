@@ -105,6 +105,7 @@ export interface ModelProfileSaveResult {
     results: { agent: string; stage: string; outcome: string }[];
     error?: string;
   };
+  payloadGeneration?: string; // disk generation after the save (auto-refresh baseline)
 }
 
 // An archived master plan under plans/archive/ — immutable renewal record.

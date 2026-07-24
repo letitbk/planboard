@@ -1308,6 +1308,11 @@ export default function App({ data }: { data: BoardData }) {
             modelProfile={modelProfile}
             onProfileChange={setModelProfile}
             onOutline={setOutline}
+            onPayloadGeneration={(g) => {
+              pageGenRef.current = g;
+              staleRef.current = initialStale;
+              setStaleHeld(false);
+            }}
           />
         )}
         {tab === "timeline" && (

@@ -149,6 +149,24 @@ describe("Models view (editing, live)", () => {
     expect(postBody!.baselineHash).toBe(PROFILE.baselineHash);
   });
 
+  it("reports the fresh payloadGeneration after a save", async () => {
+    postResponse = savedResponse({ payloadGeneration: "f".repeat(64) });
+    const onPayloadGeneration = vi.fn();
+    render(
+      <Models
+        data={base("live")}
+        modelProfile={PROFILE}
+        onProfileChange={noop}
+        onPayloadGeneration={onPayloadGeneration}
+      />,
+    );
+    await waitFor(() => expect(selects().length).toBe(12));
+    fireEvent.change(selects()[6], { target: { value: "sonnet" } });
+    fireEvent.click(saveBtn());
+    await waitFor(() =>
+      expect(onPayloadGeneration).toHaveBeenCalledWith("f".repeat(64)));
+  });
+
   it("a nudge-only edit says 'take effect immediately', no restart", async () => {
     postResponse = savedResponse({ restartNeeded: false, changedAgentStages: [] });
     render(<Models data={base("live")} modelProfile={PROFILE} onProfileChange={noop} />);
