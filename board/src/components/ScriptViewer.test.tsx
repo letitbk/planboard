@@ -92,3 +92,24 @@ describe("ScriptViewer keyboard line selection", () => {
     expect(screen.queryByText(/Comment on lines/)).toBeNull();
   });
 });
+
+describe("ScriptViewer reload guard", () => {
+  it("holds the reload guard only while the line-comment box is open", () => {
+    const { container } = render(
+      <ScriptViewer
+        file={{ path: "plans/results/script.py", content: "one\ntwo\n" }}
+        canAnnotate
+        onAddLineComment={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("[data-reload-guard]")).toBeNull();
+
+    const lineOne = screen.getByRole("button", {
+      name: "Select line 1 for comment",
+    });
+    lineOne.focus();
+    fireEvent.keyDown(lineOne, { key: "Enter" });
+
+    expect(container.querySelector("[data-reload-guard]")).toBeTruthy();
+  });
+});

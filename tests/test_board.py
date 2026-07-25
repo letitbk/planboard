@@ -2,6 +2,7 @@
     python3 -m unittest tests.test_board -v
 """
 import argparse
+import hashlib
 import http.client
 import json
 import os
@@ -1832,7 +1833,7 @@ def _free_port():
 
 
 def live_payload(root):
-    return board.collect_payload(root, "live", None)
+    return board.build_live_payload(root, None, None, None, None)
 
 
 def _swallow_exit(fn, *a):
@@ -2144,6 +2145,18 @@ class BootIdPayloadTest(unittest.TestCase):
             board.payload_generation(base),
             board.payload_generation(changed),
         )
+
+    def test_payload_generation_excludes_generated_at(self):
+        base = {"files": {"x": 1}, "generatedAt": "2026-07-23T10:00:00+00:00"}
+        later = {"files": {"x": 1}, "generatedAt": "2026-07-23T11:11:11+00:00"}
+        self.assertEqual(
+            board.payload_generation(base), board.payload_generation(later))
+
+    def test_payload_generation_excludes_self_stamp(self):
+        base = {"files": {"x": 1}}
+        stamped = {"files": {"x": 1}, "generation": "f" * 64}
+        self.assertEqual(
+            board.payload_generation(base), board.payload_generation(stamped))
 
 
 class TestServeHTTP(unittest.TestCase):
@@ -3020,6 +3033,20 @@ class TestModelProfileWrite(unittest.TestCase):
                                       body={"boardToken": info["boardToken"], "create": True})
             self.assertEqual(status2, 409)
 
+    def test_profile_save_returns_fresh_payload_generation(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            _, boot_health, _ = http_json(url, "/api/health")
+            status, out, _ = http_json(url, "/api/model-profile", body={
+                "boardToken": info["boardToken"], "create": True})
+            self.assertEqual(status, 200)
+            self.assertEqual(len(out.get("payloadGeneration", "")), 64)
+            self.assertNotEqual(out["payloadGeneration"], boot_health["generation"])
+            _, health, _ = http_json(url, "/api/health")
+            self.assertEqual(out["payloadGeneration"], health["generation"])
+
     def test_user_owned_agent_refused_but_save_succeeds(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)
@@ -3381,3 +3408,308 @@ class TestLauncherArgs(unittest.TestCase):
         self.assertEqual(args.project_root, "/x")
         self.assertTrue(args.reuse)
         board.check_action_exclusivity(args)  # no raise — neither is an action
+
+
+class TestBuildLivePayload(unittest.TestCase):
+    def test_builder_prepares_boot_equivalent_payload(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            p = board.build_live_payload(root, None, None, None, None)
+            self.assertEqual(p["mode"], "live")
+            self.assertIn("focusResults", p)
+            self.assertIn("focusView", p)
+            self.assertNotIn("seededAnnotations", p)
+            # build_assets ran: the r1 bundle has a live artifact URL
+            b = p["files"]["executionPlans"][0]["results"][0]
+            self.assertEqual(b["assets"]["fig1.png"],
+                             "/artifact/01-data-prep/r1/fig1.png")
+
+    def test_builder_attaches_seeds_and_focus(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            seeds = [{"planPath": "plans/execution/01-data-prep/v1.md",
+                      "quote": "thing", "comment": "hm", "author": "rev"}]
+            p = board.build_live_payload(root, "01-data-prep", 1, "reports", seeds)
+            self.assertEqual(p["focus"], "01-data-prep")
+            self.assertEqual(p["focusResults"], 1)
+            self.assertEqual(p["focusView"], "reports")
+            self.assertEqual(p["seededAnnotations"], seeds)
+
+    def test_builder_generation_is_stable_across_calls(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            g1 = board.payload_generation(board.build_live_payload(root, None, None, None, None))
+            g2 = board.payload_generation(board.build_live_payload(root, None, None, None, None))
+            self.assertEqual(g1, g2)
+
+
+class TestPlansFingerprint(unittest.TestCase):
+    def _fp(self, root):
+        return board.plans_fingerprint(root, [])
+
+    def test_draft_write_changes_fingerprint(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            f1 = self._fp(root)
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# v2\n", encoding="utf-8")
+            self.assertNotEqual(f1, self._fp(root))
+
+    def test_bookkeeping_writes_do_not_change_fingerprint(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            plans = make_project(root)
+            f1 = self._fp(root)
+            (plans / ".board.lock").write_text("{}", encoding="utf-8")
+            (plans / ".board-feedback.md").write_text("x", encoding="utf-8")
+            (plans / ".board-feedback.md.tmp").write_text("x", encoding="utf-8")
+            (plans / ".import-approved-01-data-prep-v2").write_text("h", encoding="utf-8")
+            (plans / "execution" / "01-data-prep" / ".sign-feedback-v2.md"
+             ).write_text("no", encoding="utf-8")
+            self.assertEqual(f1, self._fp(root))
+
+    def test_new_empty_directory_changes_fingerprint(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            f1 = self._fp(root)
+            (root / "plans" / "execution" / "02-other" / "results" / ".staging-a"
+             ).mkdir(parents=True)
+            self.assertNotEqual(f1, self._fp(root))
+
+    def test_git_paths_resolve_in_linked_worktree(self):
+        with tempfile.TemporaryDirectory() as d:
+            main = Path(d) / "main"
+            main.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=main, check=True)
+            subprocess.run(["git", "-C", str(main), "commit", "-q",
+                            "--allow-empty", "-m", "x"], check=True,
+                           env={**os.environ, "GIT_AUTHOR_NAME": "t",
+                                "GIT_AUTHOR_EMAIL": "t@t",
+                                "GIT_COMMITTER_NAME": "t",
+                                "GIT_COMMITTER_EMAIL": "t@t"})
+            wt = Path(d) / "wt"
+            subprocess.run(["git", "-C", str(main), "worktree", "add", "-q",
+                            str(wt)], check=True)
+            paths = board.resolve_git_paths(wt)
+            self.assertTrue(paths, "expected git paths in a linked worktree")
+            self.assertTrue(paths[0].name == "HEAD" and paths[0].is_file())
+            names = [p.name for p in paths]
+            # shared ref inputs resolve to the COMMON dir from a worktree
+            self.assertIn("heads", names)
+            heads = paths[names.index("heads")]
+            self.assertTrue(heads.is_dir(), heads)
+            self.assertNotIn("worktrees", heads.parts)
+
+    def test_git_paths_empty_outside_repo(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(board.resolve_git_paths(Path(d)), [])
+
+    def test_branch_ref_update_changes_fingerprint(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                   "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "x"],
+                           check=True, env=env)
+            git_paths = board.resolve_git_paths(root)
+            f1 = board.plans_fingerprint(root, git_paths)
+            # a pure ref write: touches neither plans/, HEAD, nor the index
+            subprocess.run(["git", "-C", str(root), "branch", "side"], check=True)
+            self.assertNotEqual(f1, board.plans_fingerprint(root, git_paths))
+
+    def test_board_web_directory_is_excluded_entirely(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            plans = make_project(root)
+            f0 = self._fp(root)
+            web = plans / ".board-web"
+            web.mkdir()
+            (web / "index.html").write_text("v1", encoding="utf-8")
+            self.assertEqual(f0, self._fp(root), "creating .board-web must not register")
+            (web / "index.html").write_text("v2 rewritten", encoding="utf-8")
+            (web / "extra.js").write_text("x", encoding="utf-8")
+            self.assertEqual(f0, self._fp(root), "republishing .board-web must not register")
+
+
+class TestLiveRefreshHTTP(unittest.TestCase):
+    def _health(self, url):
+        with urllib.request.urlopen(url + "/api/health", timeout=5) as r:
+            return json.loads(r.read())
+
+    def _root_html(self, url):
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return r.read().decode("utf-8")
+
+    def test_health_reports_new_generation_after_draft_write(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            g1 = self._health(url)["generation"]
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# Other v2 draft\n\nNew direction.\n", encoding="utf-8")
+            g2 = self._health(url)["generation"]
+            self.assertNotEqual(g1, g2)
+            self.assertEqual(self._health(url)["generation"], g2)  # stable now
+
+    def test_health_generation_stable_when_nothing_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            self.assertEqual(self._health(url)["generation"],
+                             self._health(url)["generation"])
+
+    def test_root_get_serves_fresh_content_with_same_boot_identity(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            h1 = self._health(url)
+            payload1 = extract_payload(self._root_html(url))
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# Other v2 draft\n\nFRESH-MARKER-XYZ\n", encoding="utf-8")
+            html2 = self._root_html(url)
+            payload2 = extract_payload(html2)
+            self.assertIn("FRESH-MARKER-XYZ", html2)
+            self.assertEqual(payload1["bootId"], payload2["bootId"])
+            self.assertEqual(payload1["boardToken"], payload2["boardToken"])
+            self.assertNotEqual(payload1["generation"], payload2["generation"])
+            self.assertEqual(self._health(url)["bootId"], h1["bootId"])
+
+    def test_post_token_still_valid_after_swap(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# v2\n", encoding="utf-8")
+            self._root_html(url)  # forces the swap
+            status, body, _ = http_json(url, "/api/feedback", body={
+                "boardToken": info["boardToken"],
+                "feedbackDocument": "# Feedback\n\nfine\n",
+                "annotations": [],
+            })
+            self.assertEqual(status, 200)
+
+    def test_new_artifact_served_after_regeneration(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            adir = (root / "plans" / "execution" / "01-data-prep"
+                    / "results" / "r1" / "artifacts")
+            (adir / "fig2.png").write_bytes(b"\x89PNG r1 fig2")
+            html = self._root_html(url)
+            self.assertIn("/artifact/01-data-prep/r1/fig2.png", html)
+            with urllib.request.urlopen(
+                    url + "/artifact/01-data-prep/r1/fig2.png", timeout=5) as r:
+                self.assertEqual(r.status, 200)
+
+    def test_deleted_artifact_returns_404(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            (root / "plans" / "execution" / "01-data-prep" / "results" / "r1"
+             / "artifacts" / "fig1.png").unlink()
+            try:
+                urllib.request.urlopen(
+                    url + "/artifact/01-data-prep/r1/fig1.png", timeout=5)
+                self.fail("expected HTTPError")
+            except urllib.error.HTTPError as e:
+                self.assertEqual(e.code, 404)
+
+    def test_sign_modes_never_regenerate(self):
+        for transport in ("hook", "ticket"):
+            with tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                make_project(root)
+                payload = live_payload(root)
+                item = {"component": "01-data-prep", "proposedVersion": 2,
+                        "path": "plans/execution/01-data-prep/.draft-v2.md",
+                        "content": "# Data prep v2 draft\n\nDo it better.\n",
+                        "contentHash": hashlib.sha256(
+                            "# Data prep v2 draft\n\nDo it better.\n"
+                            .encode("utf-8")).hexdigest(),
+                        "ticketed": False}
+                payload["sign"] = {"batchId": "t1", "transport": transport,
+                                   "items": [item]}
+                url, info, t = serve_in_thread(root, payload=payload)
+                g1 = self._health(url)["generation"]
+                (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+                 ).write_text("# v2\n", encoding="utf-8")
+                self.assertEqual(self._health(url)["generation"], g1,
+                                 "transport %s regenerated" % transport)
+
+    def test_build_failure_keeps_serving_then_recovers(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            g1 = self._health(url)["generation"]
+            mp = root / "plans" / "master-plan.md"
+            saved = mp.read_text(encoding="utf-8")
+            mp.unlink()  # collect_payload die()s without a master plan
+            self.assertEqual(self._health(url)["generation"], g1)
+            self.assertIn("bootId", extract_payload(self._root_html(url)))
+            mp.write_text(saved + "\nRECOVERED\n", encoding="utf-8")
+            self.assertNotEqual(self._health(url)["generation"], g1,
+                                "failed fingerprint must not be cached")
+
+    def test_boot_fields_survive_regeneration(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            seeds = [{"planPath": "plans/execution/01-data-prep/v1.md",
+                      "quote": "thing", "comment": "hm", "author": "rev"}]
+            payload = board.build_live_payload(
+                root, "01-data-prep", 1, "reports", seeds)
+            url, info, t = serve_in_thread(root, payload=payload)
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# v2\n", encoding="utf-8")
+            fresh = extract_payload(self._root_html(url))
+            self.assertEqual(fresh["focus"], "01-data-prep")
+            self.assertEqual(fresh["focusResults"], 1)
+            self.assertEqual(fresh["focusView"], "reports")
+            self.assertEqual(fresh["seededAnnotations"], seeds)
+            self.assertEqual(fresh["projectId"], board.project_id(root))
+
+    def test_concurrent_gets_and_health_stay_coherent(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            url, info, t = serve_in_thread(root)
+            g1 = self._health(url)["generation"]
+            (root / "plans" / "execution" / "02-other" / ".draft-v2.md"
+             ).write_text("# v2\n", encoding="utf-8")
+            results, errors = [], []
+
+            def hit(i):
+                try:
+                    if i % 2:
+                        results.append(self._health(url)["generation"])
+                    else:
+                        p = extract_payload(self._root_html(url))
+                        # a served page is internally coherent
+                        results.append(p["generation"])
+                except Exception as e:  # noqa: BLE001
+                    errors.append(e)
+
+            threads = [threading.Thread(target=hit, args=(i,)) for i in range(8)]
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
+            self.assertEqual(errors, [])
+            g2 = self._health(url)["generation"]
+            self.assertNotEqual(g1, g2)
+            self.assertTrue(set(results) <= {g1, g2}, results)

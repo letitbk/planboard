@@ -49,4 +49,14 @@ describe("PlanReader global comment", () => {
     draw(false);
     expect(screen.queryByRole("button", { name: "Global comment" })).toBeNull();
   });
+
+  it("holds the reload guard only while the global comment box is open", () => {
+    const { container } = render(
+      <PlanReader data={data()} canAnnotate selectedComponent="01-x"
+        annotations={[]} onAddPlanComment={vi.fn()} onPaintResult={vi.fn()} onOpenResults={vi.fn()} />,
+    );
+    expect(container.querySelector("[data-reload-guard]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Global comment" }));
+    expect(container.querySelector("[data-reload-guard]")).toBeTruthy();
+  });
 });
