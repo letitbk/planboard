@@ -17,6 +17,7 @@ import unittest
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler
+from unittest import mock
 from pathlib import Path
 
 SCRIPTS = (
@@ -3713,3 +3714,79 @@ class TestLiveRefreshHTTP(unittest.TestCase):
             g2 = self._health(url)["generation"]
             self.assertNotEqual(g1, g2)
             self.assertTrue(set(results) <= {g1, g2}, results)
+
+
+class TestSignIdleTimeout(unittest.TestCase):
+    """A sign session must outlive its 3600s wall clock while the researcher's
+    tab is open, and must not squat the port once that tab is gone. The sign
+    view polls /api/health every 3s (SignOffView.tsx), so that traffic is the
+    liveness signal."""
+
+    def _sign_payload(self, root):
+        payload = live_payload(root)
+        content = "# Data prep v2 draft\n\nDo it better.\n"
+        payload["sign"] = {
+            "batchId": "t1", "transport": "ticket",
+            "items": [{"component": "01-data-prep", "proposedVersion": 2,
+                       "path": "plans/execution/01-data-prep/.draft-v2.md",
+                       "content": content,
+                       "contentHash": hashlib.sha256(
+                           content.encode("utf-8")).hexdigest(),
+                       "ticketed": False}]}
+        return payload
+
+    def test_polled_sign_session_outlives_the_idle_grace(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            with mock.patch.object(board, "SIGN_IDLE_GRACE", 0.6):
+                url, info, t = serve_in_thread(
+                    root, payload=self._sign_payload(root), timeout=None)
+                deadline = time.time() + 1.8  # 3x the grace
+                while time.time() < deadline:
+                    try:
+                        with urllib.request.urlopen(
+                                url + "/api/health", timeout=5) as r:
+                            self.assertEqual(r.status, 200)
+                    except (urllib.error.URLError, OSError) as e:
+                        self.fail("sign session died under an open, polling "
+                                  "tab — the grace must reset on /api/health, "
+                                  "not run from boot (%s)" % e)
+                    time.sleep(0.1)
+                self.assertTrue(
+                    t.is_alive(),
+                    "an open, polling sign tab must keep the session alive")
+
+    def test_unpolled_sign_session_expires_after_the_idle_grace(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            with mock.patch.object(board, "SIGN_IDLE_GRACE", 0.6):
+                url, info, t = serve_in_thread(
+                    root, payload=self._sign_payload(root), timeout=None)
+                t.join(timeout=10)
+                self.assertFalse(
+                    t.is_alive(),
+                    "a sign session with no tab polling must not squat")
+
+    def test_explicit_timeout_still_hard_bounds_the_wait(self):
+        """The hook transport always passes --timeout (signoff_gate.py:451);
+        polling must not extend that bound."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            payload = self._sign_payload(root)
+            payload["sign"]["transport"] = "hook"
+            with mock.patch.object(board, "SIGN_IDLE_GRACE", 30):
+                url, info, t = serve_in_thread(root, payload=payload, timeout=1)
+                deadline = time.time() + 3
+                while time.time() < deadline and t.is_alive():
+                    try:
+                        urllib.request.urlopen(url + "/api/health", timeout=1)
+                    except Exception:  # noqa: BLE001
+                        break
+                    time.sleep(0.1)
+                t.join(timeout=5)
+                self.assertFalse(
+                    t.is_alive(),
+                    "an explicit --timeout must stay a hard bound")

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1] - 2026-07-24
+
+A sign session no longer expires while you are looking at it.
+
+### Fixed
+- **Sign session died after an hour of thinking.** `/planboard:sign` served the approval board on a blind 3600-second wall clock, so a plan left open while you read it could hit a dead port: the browser showed a connection error, which reads as a broken machine or network rather than an expired session. The wait is now keyed on the sign tab itself, which already polls `/api/health` every three seconds — an open tab holds the session open for as long as you need, and a closed one releases the port after fifteen idle minutes instead of squatting for the rest of the hour. Nothing was ever lost when this fired (drafts, valid tickets, and saved feedback survive, and `/planboard:sign` resumes), but the interruption was avoidable. An explicit `--timeout` remains a hard bound, so the blocking sign-off hook keeps its existing behaviour.
+
 ## [1.1.0] - 2026-07-24
 
 The model-profile nudge now fires deterministically, and a new `/planboard:handoff` command lets a cooperative codex run the plan/execute/results loop from a project's AGENTS.md.

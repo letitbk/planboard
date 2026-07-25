@@ -53,6 +53,11 @@ from results import changed_sources  # noqa: E402
 import models  # noqa: E402  (model-profile parse/view/generate — Models tab)
 
 TICKET_TTL = 7 * 24 * 3600  # 7 days — sized to a resumable multi-session adoption
+# A sign session ends this long after its tab stops polling /api/health, not at
+# a fixed wall clock. The sign view polls every 3s, so an open tab holds the
+# session open indefinitely; 15 minutes then absorbs a laptop sleep or a
+# network blip without leaving an abandoned server squatting the port.
+SIGN_IDLE_GRACE = 900
 
 
 def _host_is_local(value):
@@ -1383,6 +1388,9 @@ def serve(root, payload, args):
     ticket_sign_mode = sign_transport == "ticket"
     batch_id = sign_payload.get("batchId") if sign_mode else None
     boot_id = uuid.uuid4().hex
+    # Last /api/health hit, in a one-slot list so the handler closure can write
+    # it. Boot counts as activity: the tab has not had a chance to poll yet.
+    last_seen = [time.monotonic()]
     publish_token = hashlib.sha256(os.urandom(32)).hexdigest()
     board_token = hashlib.sha256(os.urandom(32)).hexdigest()
     proj_id = project_id(root)
@@ -1548,6 +1556,9 @@ def serve(root, payload, args):
                 self.end_headers()
                 return
             if self.path == "/api/health":
+                # The open tab polls this every 3s; it is the sign session's
+                # only liveness signal (see the idle wait in serve()).
+                last_seen[0] = time.monotonic()
                 snap = disk_snapshot()
                 self._json(200, {"ok": True, "app": "planboard-board",
                                  "bootId": boot_id,
@@ -1863,17 +1874,29 @@ def serve(root, payload, args):
         signal.signal(signal.SIGTERM, lambda *a: (_ for _ in ()).throw(SystemExit(130)))
 
     # Plain live serving has NO idle timeout — the board stays open until the
-    # researcher acts or closes it. Sign modes (and any explicit --timeout)
-    # keep a bounded wait; ticket sessions preserve decisions and exit 0 while
-    # the blocking hook transport retains its timeout exit 2.
+    # researcher acts or closes it. An explicit --timeout is always a hard
+    # bound; the blocking hook transport passes one and relies on its exit 2.
+    # A sign session without one waits on the tab instead of a wall clock: the
+    # sign view polls /api/health every 3s, so an open tab holds the session
+    # open for as long as the researcher needs, and a closed one releases the
+    # port after SIGN_IDLE_GRACE. Ticket sessions preserve decisions and exit 0.
     if args.timeout is not None:
         wait_timeout = args.timeout
     elif sign_mode:
-        wait_timeout = 3600
+        wait_timeout = SIGN_IDLE_GRACE
     else:
         wait_timeout = None
     try:
-        got = done.wait(timeout=wait_timeout)
+        if args.timeout is None and sign_mode:
+            tick = min(5.0, max(0.05, SIGN_IDLE_GRACE / 4.0))
+            got = False
+            while not got:
+                got = done.wait(timeout=tick)
+                if (not got
+                        and time.monotonic() - last_seen[0] > SIGN_IDLE_GRACE):
+                    break
+        else:
+            got = done.wait(timeout=wait_timeout)
         server.shutdown()
         if result.get("shutdown"):
             print("board: closed by sign-session handoff", file=sys.stderr)
