@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import Results from "./Results";
 import type { BoardData, ResultsVerdict, ValidationBlock } from "../lib/types";
 
@@ -101,6 +101,15 @@ describe("Results bundle state", () => {
   it("offers Reopen on a verdictless finalized bundle", () => {
     renderResults(data(null));
     expect(screen.getByPlaceholderText(/Reopen — why/i)).toBeTruthy();
+  });
+
+  it("typing a reopen reason marks the control with data-reload-guard", () => {
+    renderResults(data(null));
+    expect(document.querySelector("[data-reload-guard]")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText(/Reopen — why/i), {
+      target: { value: "needs a rerun" },
+    });
+    expect(document.querySelector("[data-reload-guard]")).toBeTruthy();
   });
 
   it("still displays a legacy verdict read-only", () => {

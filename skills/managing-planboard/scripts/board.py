@@ -911,19 +911,31 @@ def fingerprint_excluded(name):
 
 
 def resolve_git_paths(root):
-    """HEAD and index inside the repository's REAL git directory ([] when git
-    is unavailable). Resolved via rev-parse because in a linked worktree .git
-    is a file, not a directory."""
+    """Git state inputs for the fingerprint ([] when git is unavailable):
+    the per-worktree HEAD and index, plus the shared refs/heads directory and
+    packed-refs file, so a branch-ref update that touches neither HEAD nor
+    this checkout's index (a commit or reset in another checkout, a soft
+    reset) still registers — loose-ref writes are atomic renames, which bump
+    the refs/heads directory mtime for any branch. Resolved via
+    rev-parse --git-path because in a linked worktree .git is a file and the
+    shared paths live in the common dir."""
     try:
-        r = subprocess.run(["git", "rev-parse", "--absolute-git-dir"],
-                           capture_output=True, text=True, cwd=str(root),
-                           timeout=10)
+        r = subprocess.run(
+            ["git", "rev-parse", "--git-path", "HEAD", "--git-path", "index",
+             "--git-path", "refs/heads", "--git-path", "packed-refs"],
+            capture_output=True, text=True, cwd=str(root), timeout=10)
     except Exception:
         return []
     if r.returncode != 0:
         return []
-    gd = Path(r.stdout.strip())
-    return [gd / "HEAD", gd / "index"]
+    paths = []
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        p = Path(line)
+        paths.append(p if p.is_absolute() else root / p)
+    return paths
 
 
 def plans_fingerprint(root, git_paths):

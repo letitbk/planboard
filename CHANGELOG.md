@@ -5,7 +5,7 @@
 The live board now follows the plans directory: a change written by another session (a new draft, a results bundle, a commit) shows up on its own within a few seconds, and a browser refresh always serves current disk state. Previously the board froze its content at launch and only a process restart picked up changes.
 
 ### Fixed
-- **Stale live board.** The board server re-reads `plans/` when it changes (cheap fingerprint gate, full rebuild only on a real change) and the open tab reloads itself after the change settles, same as it already did after a relaunch. A reload never fires while a comment editor is open: a notice with a "Refresh now" button appears instead, and unsent drawer comments survive reloads as before. Sign-off, gate, and batch sessions keep their frozen transactional snapshots. Saving the model profile no longer counts as foreign disk change for the saving tab.
+- **Stale live board.** The board server re-reads `plans/` when it changes (cheap fingerprint gate, full rebuild only on a real change) and the open tab reloads itself after the change settles, same as it already did after a relaunch. A reload never fires while an editor holds unsaved input (an open comment composer, an edited model profile, a typed reopen reason, or a focused form field): a notice with a "Refresh now" button appears instead, and unsent drawer comments survive reloads as before. Sign-off, gate, and batch sessions keep their frozen transactional snapshots. Saving the model profile no longer counts as foreign disk change for the saving tab.
 
 ## [1.0.0] - 2026-07-23
 

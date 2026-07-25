@@ -309,7 +309,10 @@ export default function Models({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
+      <div
+        data-reload-guard={dirty ? "" : undefined}
+        className="overflow-x-auto rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900"
+      >
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-stone-200 dark:border-stone-800 text-left text-[11px] uppercase tracking-wide text-stone-500 dark:text-stone-400">

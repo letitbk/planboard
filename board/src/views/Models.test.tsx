@@ -130,6 +130,14 @@ describe("Models view (editing, live)", () => {
     expect(screen.getByText("Revert")).toBeTruthy();
   });
 
+  it("marks the table with data-reload-guard while edits are unsaved", async () => {
+    render(<Models data={base("live")} modelProfile={PROFILE} onProfileChange={noop} />);
+    await waitFor(() => expect(selects().length).toBe(12));
+    expect(document.querySelector("[data-reload-guard]")).toBeNull();
+    fireEvent.change(selects()[6], { target: { value: "sonnet" } });
+    expect(document.querySelector("[data-reload-guard]")).toBeTruthy();
+  });
+
   it("Save is disabled until an edit is made", async () => {
     render(<Models data={base("live")} modelProfile={PROFILE} onProfileChange={noop} />);
     await waitFor(() => expect(selects().length).toBe(12));

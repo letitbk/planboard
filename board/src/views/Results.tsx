@@ -554,7 +554,10 @@ export default function Results({
             </span>
           )}
           {actionsVisible(data) && onReopen && (
-            <span className="ml-auto flex items-center gap-2">
+            <span
+              data-reload-guard={reopenReason.trim() ? "" : undefined}
+              className="ml-auto flex items-center gap-2"
+            >
               <input
                 className="w-56 rounded-md border border-stone-300 dark:border-stone-600 px-2 py-1 text-xs"
                 placeholder="Reopen — why? (required)"

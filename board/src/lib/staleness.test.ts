@@ -64,6 +64,28 @@ describe("reloadGuardHeld", () => {
     expect(reloadGuardHeld(document)).toBe(false);
   });
 
+  it("holds for a focused select or free-text input, not for a checkbox", () => {
+    const sel = document.createElement("select");
+    document.body.appendChild(sel);
+    sel.focus();
+    expect(reloadGuardHeld(document)).toBe(true);
+    sel.remove();
+
+    const email = document.createElement("input");
+    email.type = "email";
+    document.body.appendChild(email);
+    email.focus();
+    expect(reloadGuardHeld(document)).toBe(true);
+    email.remove();
+
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    document.body.appendChild(box);
+    box.focus();
+    expect(reloadGuardHeld(document)).toBe(false);
+    box.remove();
+  });
+
   it("holds while a textarea is focused", () => {
     const ta = document.createElement("textarea");
     document.body.appendChild(ta);

@@ -31,16 +31,26 @@ export function shouldStaleReload(s: StaleState): boolean {
   return s.count >= STALE_POLLS_TO_FIRE;
 }
 
-/** True while reloading would destroy transient text: any open editor marked
- * data-reload-guard, or a focused free-text field (fallback for fields that
- * predate the convention). */
+// Input types that hold no free-form draft state a reload could destroy.
+const INERT_INPUT_TYPES = new Set([
+  "checkbox",
+  "radio",
+  "button",
+  "submit",
+  "reset",
+  "range",
+  "color",
+  "file",
+]);
+
+/** True while reloading would destroy transient edits: any editor marked
+ * data-reload-guard (open composers, dirty forms), or a focused form field
+ * (fallback for fields that predate the convention). */
 export function reloadGuardHeld(doc: Document): boolean {
   if (doc.querySelector("[data-reload-guard]")) return true;
   const ae = doc.activeElement;
   if (!ae) return false;
   const tag = ae.tagName.toLowerCase();
-  return (
-    tag === "textarea" ||
-    (tag === "input" && (ae as HTMLInputElement).type === "text")
-  );
+  if (tag === "textarea" || tag === "select") return true;
+  return tag === "input" && !INERT_INPUT_TYPES.has((ae as HTMLInputElement).type);
 }

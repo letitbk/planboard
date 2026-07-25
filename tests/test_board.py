@@ -3498,10 +3498,32 @@ class TestPlansFingerprint(unittest.TestCase):
             paths = board.resolve_git_paths(wt)
             self.assertTrue(paths, "expected git paths in a linked worktree")
             self.assertTrue(paths[0].name == "HEAD" and paths[0].is_file())
+            names = [p.name for p in paths]
+            # shared ref inputs resolve to the COMMON dir from a worktree
+            self.assertIn("heads", names)
+            heads = paths[names.index("heads")]
+            self.assertTrue(heads.is_dir(), heads)
+            self.assertNotIn("worktrees", heads.parts)
 
     def test_git_paths_empty_outside_repo(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(board.resolve_git_paths(Path(d)), [])
+
+    def test_branch_ref_update_changes_fingerprint(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_project(root)
+            env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                   "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "x"],
+                           check=True, env=env)
+            git_paths = board.resolve_git_paths(root)
+            f1 = board.plans_fingerprint(root, git_paths)
+            # a pure ref write: touches neither plans/, HEAD, nor the index
+            subprocess.run(["git", "-C", str(root), "branch", "side"], check=True)
+            self.assertNotEqual(f1, board.plans_fingerprint(root, git_paths))
 
     def test_board_web_directory_is_excluded_entirely(self):
         with tempfile.TemporaryDirectory() as d:
