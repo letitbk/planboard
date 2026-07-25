@@ -92,11 +92,13 @@ export default function Models({
   modelProfile,
   onProfileChange,
   onOutline,
+  onPayloadGeneration,
 }: {
   data: BoardData;
   modelProfile?: ModelProfile;
   onProfileChange: (mp: ModelProfile | undefined) => void;
   onOutline?: (entries: OutlineEntry[]) => void;
+  onPayloadGeneration?: (g: string) => void;
 }) {
   const live = data.mode === "live";
   const canEdit = actionsVisible(data) && modelProfile?.editable === true;
@@ -199,6 +201,7 @@ export default function Models({
       if (res.status === 200) {
         const result = json as ModelProfileSaveResult;
         onProfileChange(result.modelProfile);
+        if (result.payloadGeneration) onPayloadGeneration?.(result.payloadGeneration);
         const refused = (result.generation?.results ?? [])
           .filter((r) => r.outcome === "refused-user" || r.outcome === "refused-unreadable")
           .map((r) => r.agent);
@@ -306,7 +309,10 @@ export default function Models({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
+      <div
+        data-reload-guard={dirty ? "" : undefined}
+        className="overflow-x-auto rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900"
+      >
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-stone-200 dark:border-stone-800 text-left text-[11px] uppercase tracking-wide text-stone-500 dark:text-stone-400">

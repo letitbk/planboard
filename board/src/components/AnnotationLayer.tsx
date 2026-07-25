@@ -158,6 +158,7 @@ export default function AnnotationLayer({
 
       {pending && composing && (
         <div
+          data-reload-guard=""
           className="absolute z-20 w-72 -translate-x-1/2 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-xl"
           style={{ left: Math.max(150, pending.x), top: pending.y }}
         >
@@ -222,7 +223,10 @@ export function GeneralCommentBox({
     );
   }
   return (
-    <div className="mt-6 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-sm">
+    <div
+      data-reload-guard=""
+      className="mt-6 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 p-2 shadow-sm"
+    >
       <textarea
         autoFocus
         value={text}

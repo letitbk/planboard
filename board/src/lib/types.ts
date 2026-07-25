@@ -20,6 +20,7 @@ export interface BoardData {
   projectId?: string; // live: stable server identity (draft storage + reconnect)
   boardToken?: string; // live: per-boot token required on mutating routes
   bootId?: string; // live: per-boot identity seeding the reconnect baseline (excluded from generation)
+  generation?: string; // live: content identity of this served payload; compared against /api/health for auto-refresh
   sign?: SignPayload; // one-shot sign session; absent on the persistent board
   modelProfile?: ModelProfile; // per-stage model profile (Models tab); present-only
   detailLevel?: "compact" | "standard" | "full"; // master-plan "Detail level:"; default "standard"
@@ -104,6 +105,7 @@ export interface ModelProfileSaveResult {
     results: { agent: string; stage: string; outcome: string }[];
     error?: string;
   };
+  payloadGeneration?: string; // disk generation after the save (auto-refresh baseline)
 }
 
 // An archived master plan under plans/archive/ — immutable renewal record.

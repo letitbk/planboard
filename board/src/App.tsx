@@ -37,6 +37,13 @@ import {
   POLL_MS,
   type ConnEvent,
 } from "./lib/reconnect";
+import {
+  initialStale,
+  reduceStale,
+  reloadGuardHeld,
+  shouldStaleReload,
+  type StaleState,
+} from "./lib/staleness";
 import { navTargetFor, type NavTarget } from "./lib/navTarget";
 import { buildFilesTree, type ActiveFileRef } from "./lib/filesTree";
 import type { OutlineEntry } from "./lib/outline";
@@ -734,6 +741,12 @@ export default function App({ data }: { data: BoardData }) {
   const connRef = useRef(conn);
   connRef.current = conn;
   const dispatchConn = (e: ConnEvent) => setConn((st) => reduceConn(st, e));
+  // Content staleness (auto-refresh): the page's generation baseline is a ref
+  // because a model-profile save advances it without any re-render need.
+  const pageGenRef = useRef<string | null>(data.generation ?? null);
+  const staleRef = useRef<StaleState>(initialStale);
+  const [staleHeld, setStaleHeld] = useState(false);
+  const pollBusy = useRef(false);
   // Every new send starts clean: recovery notice and (Task 5) close-arming reset.
   useEffect(() => {
     if (submitState === "sending") {
@@ -744,18 +757,42 @@ export default function App({ data }: { data: BoardData }) {
   useEffect(() => {
     if (!canPost) return;
     const t = setInterval(async () => {
+      if (pollBusy.current) return; // a slow collect must not overlap polls
+      pollBusy.current = true;
       try {
         const r = await fetch("/api/health", { cache: "no-store" });
         if (!r.ok) throw new Error("bad health");
-        const h = (await r.json()) as { bootId: string; projectId: string };
+        const h = (await r.json()) as {
+          bootId: string;
+          projectId: string;
+          generation?: string;
+        };
         if (shouldReload(connRef.current, h)) {
           location.reload();
           return;
         }
         dispatchConn({ type: "health", bootId: h.bootId,
                        projectId: h.projectId, now: Date.now() });
+        staleRef.current = reduceStale(
+          staleRef.current,
+          h,
+          { generation: pageGenRef.current, projectId: data.projectId ?? "" },
+          connRef.current.phase.kind,
+        );
+        if (shouldStaleReload(staleRef.current)) {
+          if (reloadGuardHeld(document)) {
+            setStaleHeld(true);
+          } else {
+            location.reload();
+            return;
+          }
+        } else {
+          setStaleHeld(false);
+        }
       } catch {
         dispatchConn({ type: "health-miss", now: Date.now() });
+      } finally {
+        pollBusy.current = false;
       }
     }, POLL_MS);
     return () => clearInterval(t);
@@ -1000,6 +1037,17 @@ export default function App({ data }: { data: BoardData }) {
       {syncNotice && (
         <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-3 py-1.5 text-xs text-stone-700 dark:text-stone-200 shadow-lg">
           {syncNotice}
+        </div>
+      )}
+      {canPost && staleHeld && (
+        <div className="fixed bottom-12 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 px-3 py-1.5 text-xs text-stone-700 dark:text-stone-200 shadow-lg">
+          <span>Plans changed on disk. The board will refresh when you finish.</span>
+          <button
+            className="rounded bg-stone-900 dark:bg-stone-200 px-2 py-0.5 text-[11px] font-medium text-white dark:text-stone-900 hover:bg-stone-700 dark:hover:bg-stone-400"
+            onClick={() => location.reload()}
+          >
+            Refresh now
+          </button>
         </div>
       )}
       {canPost && submitState === "sent" && closeArmed && (
@@ -1260,6 +1308,11 @@ export default function App({ data }: { data: BoardData }) {
             modelProfile={modelProfile}
             onProfileChange={setModelProfile}
             onOutline={setOutline}
+            onPayloadGeneration={(g) => {
+              pageGenRef.current = g;
+              staleRef.current = initialStale;
+              setStaleHeld(false);
+            }}
           />
         )}
         {tab === "timeline" && (
