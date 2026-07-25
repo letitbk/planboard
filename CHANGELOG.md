@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0] - 2026-07-24
+
+The model-profile nudge now fires deterministically, and a new `/planboard:handoff` command lets a cooperative codex run the plan/execute/results loop from a project's AGENTS.md.
+
+### Added
+- **Codex handoff.** `/planboard:handoff` writes a marked planboard block into the project's `AGENTS.md`, pointing a cooperative codex at the plugin's shipped references and stdlib scripts by absolute path so it can author plans and execute the loop. Review and signing stay in a Claude session (the sign gate is hook-enforced there); provenance records the codex model as self-attested. The block is machine-local — re-run to refresh after a plugin upgrade.
+
+### Changed
+- **Deterministic model nudge.** The per-stage model nudge no longer depends on the model guessing its own identity; it fires from the profile row alone. The execute prompt always pre-selects the profile's `execute` model when the profile names one.
+
 ## [1.0.1] - 2026-07-24
 
 The live board now follows the plans directory: a change written by another session (a new draft, a results bundle, a commit) shows up on its own within a few seconds, and a browser refresh always serves current disk state. Previously the board froze its content at launch and only a process restart picked up changes.

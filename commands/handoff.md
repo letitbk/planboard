@@ -1,0 +1,12 @@
+---
+description: Write or refresh the codex handoff — a planboard AGENTS.md block so a cooperative codex can run the plan/execute/results loop
+allowed-tools: Read, AskUserQuestion, Bash(python3:*), Bash(git:*), Bash(ls:*)
+---
+
+Generate the codex handoff for this project: a marked planboard block in `AGENTS.md` pointing a cooperative codex at the plugin's shipped references and stdlib scripts by absolute path. Script: `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/handoff.py` (python3, stdlib only). Requires an initialized project with BOTH opt-in markers — a marked `plans/master-plan.md` and the planboard block in `CLAUDE.md`; without both, even the Claude sign gate is inactive, so the script refuses. If either is absent, say so and point to `/planboard:init`, then stop.
+
+1. **Ask for the codex model id.** Use AskUserQuestion (one question): which codex model will author/execute — e.g. `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, or a custom id. This is recorded as self-attested provenance in the plan's `pb-model` marker; do not infer it yourself.
+
+2. **Generate.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/handoff.py generate --codex-model <id>` and relay its output faithfully: `wrote/appended/refreshed AGENTS.md …` on success, or the exit-2 refusal reason (missing markers, unreadable or malformed-marker AGENTS.md) verbatim. A marker-less `AGENTS.md` is appended to; an existing planboard block is refreshed in place; nothing outside the markers is touched.
+
+3. **Machine-local note.** The block bakes absolute plugin-cache paths, so it is machine- and version-specific and should not be committed. First check whether `AGENTS.md` is already tracked: `git ls-files --error-unmatch AGENTS.md` (exit 0 = tracked). If it is tracked, warn the researcher plainly that a `.gitignore` rule will NOT help an already-tracked file (`git check-ignore` is index-aware) — the machine-local paths will still be committed; they should untrack it with `git rm --cached AGENTS.md` (keeps the working copy) or take care not to commit this change. If it is NOT tracked, run `git check-ignore -q AGENTS.md`; if it is not ignored, tell the researcher the file is machine-local and suggest gitignoring it (a collaborator regenerates with `/planboard:handoff` on their own machine). Either way, re-running this command refreshes the paths after a plugin upgrade, and codex is instructed to fail closed and ask for a rerun if any baked path is missing.
