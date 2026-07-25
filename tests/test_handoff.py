@@ -109,6 +109,19 @@ class TestGenerate(unittest.TestCase):
             self.assertIn("same file as CLAUDE.md", err)
             self.assertEqual(claude.read_text(), before)
 
+    def test_refuses_when_agents_md_symlinks_to_unrelated_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            shared = root / "shared-agents.md"
+            shared.write_text("# team instructions\nkeep me\n", encoding="utf-8")
+            (root / "AGENTS.md").symlink_to(shared)
+            code, out, err = run_generate(root)
+            self.assertEqual(code, 2)
+            self.assertIn("symlink", err)
+            # the symlink and its target are left untouched
+            self.assertTrue((root / "AGENTS.md").is_symlink())
+            self.assertEqual(shared.read_text(), "# team instructions\nkeep me\n")
+
 
 if __name__ == "__main__":
     unittest.main()

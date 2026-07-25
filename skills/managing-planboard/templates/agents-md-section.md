@@ -8,7 +8,7 @@ Read these planboard reference files by absolute path before working (if any is 
 - Execution loop: `{{SKILL_DIR}}/references/execution-loop.md`
 - Sign-off contract: `{{SKILL_DIR}}/references/sign-off.md`
 - Rubric: `{{SKILL_DIR}}/references/plan-rubric.md`, split criteria: `{{SKILL_DIR}}/references/split-criteria.md`
-- Loop delegates to these command specs — read the one for the step you are on: results capture `{{SKILL_DIR}}/../../commands/results.md`, report `{{SKILL_DIR}}/../../commands/report.md`, amendments `{{SKILL_DIR}}/../../commands/sync.md`, board `{{SKILL_DIR}}/../../commands/board.md`, review `{{SKILL_DIR}}/../../commands/review.md`
+- Loop delegates to these command specs — read the one for the step you are on: plan authoring `{{SKILL_DIR}}/../../commands/plan.md`, results capture `{{SKILL_DIR}}/../../commands/results.md`, report `{{SKILL_DIR}}/../../commands/report.md`, amendments `{{SKILL_DIR}}/../../commands/sync.md`, board `{{SKILL_DIR}}/../../commands/board.md`, review `{{SKILL_DIR}}/../../commands/review.md`
 
 Run planboard's stdlib scripts by absolute path (python3):
 - `{{SKILL_DIR}}/scripts/models.py stage <plan|execute|sync>` — the per-stage model row
@@ -16,8 +16,8 @@ Run planboard's stdlib scripts by absolute path (python3):
 - `{{SKILL_DIR}}/scripts/board.py` — the board (read-only viewing / sign server)
 
 The loop:
-1. Author the execution plan per the plan template and doctrine. Make the very first line the provenance marker `<!-- pb-model {"prescribed":P,"reported":{"model":"{{CODEX_MODEL}}","effort":null}} -->`, where `P` is the `plan` row from `models.py stage plan` as `{"model":...,"effort":...}` or `null`. Carry this line UNCHANGED into every draft snapshot and the final version — it is hashed at sign-off and cannot be added afterward.
-2. Hand off to the researcher for review and signing IN A CLAUDE SESSION: `/planboard:review` then `/planboard:sign`. Signing is a browser-approved, hook-enforced human commitment that only Claude can perform. Do not append a `Signed off:` trailer yourself and do not write the signed `vN.md`.
+1. Author the execution plan as a DRAFT, following `commands/plan.md` for the mechanics: write it to `plans/execution/<NN-slug>/.draft-v<N>.md` (a draft — NOT `v<N>.md`, which only the Claude sign session may create), keep the `v<N>-draft-<K>.md` review snapshots plan.md describes, and set the component's tracker row to `planned`. Make the very first line the provenance marker `<!-- pb-model {"prescribed":P,"reported":{"model":"{{CODEX_MODEL}}","effort":null}} -->`, where `P` is the `plan` row from `models.py stage plan` as `{"model":...,"effort":...}` or `null`. Carry this line UNCHANGED into every draft snapshot and the final version — it is hashed at sign-off and cannot be added afterward.
+2. Hand the DRAFT off to the researcher for review and signing IN A CLAUDE SESSION: `/planboard:review` then `/planboard:sign`. Signing is a browser-approved, hook-enforced human commitment that only Claude can perform, and it is what turns `.draft-v<N>.md` into the signed `v<N>.md`. Do not append a `Signed off:` trailer yourself and do not write the signed `v<N>.md`.
 3. After the plan is signed, execute the analysis under it per the execution loop. Do not modify the signed plan or any finalized results bundle.
 4. Capture results with `results.py stage` then `results.py finalize`.
 

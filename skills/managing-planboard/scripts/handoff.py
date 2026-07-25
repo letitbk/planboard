@@ -105,6 +105,14 @@ def cmd_generate(root, codex_model):
             file=sys.stderr,
         )
         return 2
+    if target.is_symlink():
+        print(
+            "handoff: AGENTS.md is a symlink (to %s) — the handoff block bakes machine-local "
+            "absolute paths and must not be written through a symlink onto a shared or tracked "
+            "target; replace AGENTS.md with a regular file, then rerun" % os.path.realpath(str(target)),
+            file=sys.stderr,
+        )
+        return 2
     if not target.exists():
         _atomic_write(target, block + "\n")
         print("wrote AGENTS.md (planboard block, model %s)" % codex_model)
