@@ -10,238 +10,53 @@
 
 **Source spec:** `docs/specs/2026-07-24-plan-audit-channel-design.md` (revised 2026-07-25 after Codex review).
 
+**Revision:** This plan was re-cut on 2026-07-25 after a Codex review of its first draft found 6 crashing defects, 13 weak or failing tests, 19 broken existing tests, and a task order whose suite could not go green. See "Why the task boundaries are cut this way" below.
+
 ## Scope
 
-This plan implements **seam 1 only**, in 13 tasks: the audit service, the contract, `pb-plan-auditor`, the profile row and its migration, the artifact, the audit panel, and the manual reviewer repoint. Seam 2 (currency pre-flight at the gates, in-transaction revalidation inside `sign_lock`, blocker dispositions, decision-log entries) is a separate plan. After this plan, audits run and are visible; nothing blocks and no disposition is collected.
+Seam 1 only, in 13 tasks: the audit service, the contract, `pb-plan-auditor`, the profile row and its migration, the artifact, the audit panel, the manual reviewer repoint, and the release. Seam 2 (currency pre-flight at the gates, in-transaction revalidation inside `sign_lock`, blocker dispositions, decision-log entries) is a separate plan. After this plan, audits run and are visible; nothing blocks and no disposition is collected.
+
+## Why the task boundaries are cut this way
+
+Adding a seventh stage to `STAGE_LABELS` is not a local change. `board.py:_validate_profile_rows` derives its required stage set from `STAGE_LABELS` (`board.py:575`) and demands an exact bijection (`board.py:602-603`), so the moment the constant changes, every model-profile save returns HTTP 400. `board/src/lib/types.ts:60` types `mechanism` as `"nudge" | "agent"`, so a migrated profile breaks the Models view's types. Nine tests in `tests/test_models.py` and two in `tests/test_board.py` assert the six-stage shape directly.
+
+**Task 1 therefore lands all of that at once** — constant, server validator, board types, view, template, and every affected existing test — because there is no intermediate state where the suite is green. It is deliberately the largest task in this plan. Splitting it is the mistake the first draft made.
+
+One consequence worth knowing: `rewrite_rows` skips any stage absent from `edits` (`models.py:228`), so narrowing the server's canonical set to the *editable* stages preserves the reviewer row verbatim on every save. That keeps the eight POST tests in `tests/test_board.py:2942-3106` passing untouched. Only the two row-count tests need updating.
 
 ## Global Constraints
 
 - **Python: standard library only.** Every existing script in `skills/managing-planboard/scripts/` is stdlib-only. Do not add dependencies.
 - **Board: no new npm dependencies.** Use the existing React + Tailwind idiom.
-- **Never `npm run build`.** It rewrites the 460KB tracked `skills/managing-planboard/assets/board-template.html`. Only the final ship task rebuilds the template, and this plan contains no such task.
+- **`npm run build` runs exactly once, in Task 13.** `AGENTS.md:31-33` requires that any change under `board/src/` be followed by `cd board && npm run build` with the regenerated `skills/managing-planboard/assets/board-template.html` committed. Tasks 8-12 therefore leave the template stale on purpose, and Task 13 rebuilds it. Do not run the build in any other task: it rewrites a tracked 460KB artifact and will pollute an unrelated commit.
 - **Explicit `git add <paths>` on every commit.** Never `git add .`, `git add -A`, or `git commit -a`.
 - **The auditor is read-only** against the repository: `codex exec --sandbox read-only`. A review must never mutate the repo.
 - **Reviewer tokens:** `codex-sol`, `codex-terra`, `codex-luna`, `subagent`. `gemini-pro` is deliberately absent (its board path has no repository access).
 - **Severity tags** are exactly `[blocker]`, `[major]`, `[minor]`.
 - Python tests run with `python3 -m unittest tests.<module> -v` from the repo root. Board tests run with `npx vitest run <file>` from `board/`.
-- Full suites before any task is considered done: `python3 -m unittest discover -s tests -v` and, in `board/`, `npm test` plus `npx tsc --noEmit`.
+- Full suites before any task is considered done: `python3 -m unittest discover -s tests` and, in `board/`, `npm test` plus `npx tsc --noEmit`.
 
 ---
 
-### Task 1: Audit identity primitives
+### Task 1: The profile change, atomically
 
-The two halves of "is this audit current": a plan hash invariant across both canonical trailers, and a context identity over the evidence paths a finding cites.
-
-**Files:**
-- Create: `skills/managing-planboard/scripts/audit.py`
-- Create: `tests/test_audit.py`
-
-**Interfaces:**
-- Consumes: `normalize_plan` and `strip_trailer` from `signoff_gate.py` (same directory).
-- Produces:
-  - `audit_plan_hash(text: str) -> str` — 64-char hex sha256.
-  - `context_identity(root: Path, evidence_paths: list[str]) -> dict` — `{"head": str|None, "paths": {relpath: str|None}}`. A path that does not exist maps to `None`, which is a meaningful value (the audit observed its absence), not an error.
-
-- [ ] **Step 1: Write the failing tests**
-
-Create `tests/test_audit.py`:
-
-```python
-"""Tests for audit.py. Run:
-    python3 -m unittest tests.test_audit -v
-"""
-import subprocess
-import sys
-import tempfile
-import unittest
-from pathlib import Path
-
-SCRIPTS = (
-    Path(__file__).resolve().parents[1]
-    / "skills" / "managing-planboard" / "scripts"
-)
-sys.path.insert(0, str(SCRIPTS))
-import audit  # noqa: E402
-
-PLAN = "# Component 03 v2\n\nGoal: test the hash.\n\n## Steps\n\n1. Do the thing.\n"
-
-
-class TestAuditPlanHash(unittest.TestCase):
-    def test_hash_is_hex_sha256(self):
-        h = audit.audit_plan_hash(PLAN)
-        self.assertEqual(len(h), 64)
-        self.assertRegex(h, r"^[0-9a-f]{64}$")
-
-    def test_invariant_across_signed_trailer(self):
-        signed = PLAN + "\n---\n\nSigned off: BK, 2026-07-25\n"
-        self.assertEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(signed))
-
-    def test_invariant_across_amendment_trailer(self):
-        # normalize_plan alone does NOT strip this trailer; strip_trailer does.
-        # This is the case that makes a /sync amendment keep its draft's audit.
-        amended = PLAN + "\n---\n\nAmendment recorded, 2026-07-25\n"
-        self.assertEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(amended))
-
-    def test_content_change_changes_hash(self):
-        other = PLAN.replace("Do the thing", "Do a different thing")
-        self.assertNotEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(other))
-
-    def test_crlf_and_trailing_whitespace_are_normalized(self):
-        noisy = PLAN.replace("\n", "\r\n").rstrip() + "   \r\n\r\n"
-        self.assertEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(noisy))
-
-
-class TestContextIdentity(unittest.TestCase):
-    def _repo(self, tmp):
-        root = Path(tmp)
-        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-        (root / "analysis").mkdir()
-        (root / "analysis" / "load.py").write_text("print('load')\n")
-        return root
-
-    def test_records_head_and_path_hashes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = self._repo(tmp)
-            ident = audit.context_identity(root, ["analysis/load.py"])
-            self.assertIn("head", ident)
-            self.assertEqual(len(ident["paths"]), 1)
-            self.assertRegex(ident["paths"]["analysis/load.py"], r"^[0-9a-f]{64}$")
-
-    def test_missing_path_records_none_not_error(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = self._repo(tmp)
-            ident = audit.context_identity(root, ["analysis/gone.py"])
-            self.assertIsNone(ident["paths"]["analysis/gone.py"])
-
-    def test_renamed_evidence_changes_identity(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = self._repo(tmp)
-            before = audit.context_identity(root, ["analysis/load.py"])
-            (root / "analysis" / "load.py").rename(root / "analysis" / "loader.py")
-            after = audit.context_identity(root, ["analysis/load.py"])
-            self.assertNotEqual(before["paths"], after["paths"])
-
-    def test_no_evidence_paths_yields_empty_map(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = self._repo(tmp)
-            ident = audit.context_identity(root, [])
-            self.assertEqual(ident["paths"], {})
-
-    def test_escaping_path_is_refused(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = self._repo(tmp)
-            with self.assertRaises(ValueError):
-                audit.context_identity(root, ["../outside.py"])
-
-
-if __name__ == "__main__":
-    unittest.main()
-```
-
-- [ ] **Step 2: Run the tests to verify they fail**
-
-Run: `python3 -m unittest tests.test_audit -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'audit'`
-
-- [ ] **Step 3: Write the implementation**
-
-Create `skills/managing-planboard/scripts/audit.py`:
-
-```python
-"""Audit identity, artifact writing, and reviewer dispatch for the planboard
-audit channel. Standard library only.
-
-The audit channel answers "will this plan actually work?" against the
-repository, separately from the rubric scorecard, which answers "is this a
-checkable contract?" from the plan text alone. See
-docs/specs/2026-07-24-plan-audit-channel-design.md.
-"""
-import hashlib
-import subprocess
-from pathlib import Path
-
-from signoff_gate import normalize_plan, strip_trailer
-
-
-def audit_plan_hash(text):
-    """The audit's plan identity.
-
-    Composes strip_trailer with normalize_plan so the hash is invariant across
-    BOTH canonical trailers. normalize_plan alone strips only `Signed off:`, so
-    an audit taken on a draft would go stale the moment /sync appends
-    `Amendment recorded`. Composing them means one audit survives sign-off AND
-    the amendment write.
-    """
-    return hashlib.sha256(
-        normalize_plan(strip_trailer(text)).encode("utf-8")
-    ).hexdigest()
-
-
-def _git_head(root):
-    """Current HEAD sha, or None outside a git repo / in an empty one."""
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(root), capture_output=True, text=True, timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out.stdout.strip() if out.returncode == 0 else None
-
-
-def context_identity(root, evidence_paths):
-    """Identity of the repository state an audit's findings rest on.
-
-    Scoped to the paths the audit's own evidence cites, NOT a whole-worktree
-    fingerprint: during active work the tree is always dirty, so a broad
-    fingerprint would invalidate every audit immediately and the cache would
-    buy nothing. A missing path hashes to None, which is a real observation
-    (the audit saw it absent), not a failure.
-    """
-    root = Path(root)
-    paths = {}
-    for rel in evidence_paths:
-        p = (root / rel).resolve()
-        if root.resolve() not in p.parents and p != root.resolve():
-            raise ValueError("evidence path escapes the repository: %s" % rel)
-        if p.is_file():
-            paths[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
-        else:
-            paths[rel] = None
-    return {"head": _git_head(root), "paths": paths}
-```
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `python3 -m unittest tests.test_audit -v`
-Expected: PASS, 11 tests
-
-- [ ] **Step 5: Run the full Python suite**
-
-Run: `python3 -m unittest discover -s tests -v 2>&1 | tail -5`
-Expected: no new failures against the pre-task baseline
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add skills/managing-planboard/scripts/audit.py tests/test_audit.py
-git commit -m "audit: plan hash invariant across both trailers, scoped context identity"
-```
-
----
-
-### Task 2: The `reviewer` mechanism and the `plan-audit` stage
+Everything that must move together when `STAGE_LABELS` gains a seventh entry.
 
 **Files:**
-- Modify: `skills/managing-planboard/scripts/models.py:23-58` (constants), and the row-validation branch around `models.py:103-126`
+- Modify: `skills/managing-planboard/scripts/models.py:23-58` (constants) and the row-validation branch at `models.py:103-126`
+- Modify: `skills/managing-planboard/scripts/board.py:570-604` (`_validate_profile_rows`)
 - Modify: `skills/managing-planboard/templates/model-profile.md`
-- Test: `tests/test_models.py` (new class)
+- Modify: `board/src/lib/types.ts:55-61`
+- Modify: `board/src/views/Models.tsx:35-44` (`DraftRow`), `:62-70` (`MechChip`), `:173` (`allValid`), `:294-303` (the notice), and the row render
+- Modify: `tests/test_models.py:34`, `:414`, `:472`
+- Modify: `tests/test_board.py:2835`, `:2875`
+- Test: `tests/test_models.py` (new `TestReviewerMechanism`), `board/src/views/Models.reviewer.test.tsx`
 
 **Interfaces:**
-- Consumes: nothing from Task 1.
-- Produces: stage key `"plan-audit"`, mechanism `"reviewer"`, and `models.REVIEWER_TOKENS`. Task 3 reads `EXPECTED_MECHANISM["plan-audit"]`; Task 4 reads `STAGE_LABELS`; Task 6 reads the resolved row via `models.py stage plan-audit`.
+- Consumes: nothing.
+- Produces: stage key `"plan-audit"`, mechanism `"reviewer"`, `models.REVIEWER_TOKENS`, `models.EDITABLE_STAGES`. Task 2 reads `EXPECTED_MECHANISM["plan-audit"]`; Task 3 reads `STAGE_LABELS`; Task 7 reads the row via `models.load_profile`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing Python tests**
 
 Append to `tests/test_models.py`:
 
@@ -256,7 +71,7 @@ class TestReviewerMechanism(unittest.TestCase):
     def test_default_template_parses_with_seven_stages(self):
         stages, warnings = models.parse_profile(DEFAULT_PROFILE)
         self.assertEqual(warnings, [])
-        self.assertIn("plan-audit", stages)
+        self.assertEqual(len(stages), 7)
         self.assertEqual(stages["plan-audit"]["model"], "codex-sol")
         self.assertEqual(stages["plan-audit"]["effort"], "xhigh")
         self.assertEqual(stages["plan-audit"]["mechanism"], "reviewer")
@@ -266,50 +81,56 @@ class TestReviewerMechanism(unittest.TestCase):
         self.assertTrue(models.profile_canonical(stages, warnings))
 
     def test_reviewer_row_accepts_every_token(self):
-        for token in ("codex-sol", "codex-terra", "codex-luna", "subagent"):
+        for token in sorted(models.REVIEWER_TOKENS):
             stages, warnings = models.parse_profile(self._profile(model=token))
             self.assertEqual(warnings, [], token)
             self.assertEqual(stages["plan-audit"]["model"], token)
 
-    def test_reviewer_row_rejects_claude_alias(self):
-        # `opus` is a valid model for an agent row but not a reviewer token.
+    def test_reviewer_row_rejects_a_claude_alias(self):
         stages, warnings = models.parse_profile(self._profile(model="opus"))
         self.assertNotIn("plan-audit", stages)
-        self.assertTrue(any("plan-audit" in w or "opus" in w for w in warnings))
+        self.assertTrue(warnings)
 
     def test_reviewer_row_rejects_gemini(self):
-        stages, warnings = models.parse_profile(self._profile(model="gemini-pro"))
+        stages, _ = models.parse_profile(self._profile(model="gemini-pro"))
         self.assertNotIn("plan-audit", stages)
 
-    def test_agent_row_still_rejects_reviewer_token(self):
+    def test_agent_row_rejects_a_reviewer_token(self):
         p = DEFAULT_PROFILE.replace(
             "| plan review (verdict + grade) | opus | medium | agent |",
             "| plan review (verdict + grade) | codex-sol | medium | agent |",
         )
-        stages, warnings = models.parse_profile(p)
+        stages, _ = models.parse_profile(p)
         self.assertNotIn("plan-review", stages)
 
     def test_flipped_mechanism_is_non_canonical(self):
-        stages, warnings = models.parse_profile(self._profile(mech="agent"))
+        # model MUST be a valid Claude alias here, or the row is dropped as an
+        # invalid model before profile_canonical ever sees its mechanism.
+        stages, warnings = models.parse_profile(self._profile(model="opus", mech="agent"))
+        self.assertIn("plan-audit", stages)
         self.assertFalse(models.profile_canonical(stages, warnings))
+
+    def test_editable_stages_excludes_the_reviewer_stage(self):
+        self.assertNotIn("plan-audit", models.EDITABLE_STAGES)
+        self.assertEqual(len(models.EDITABLE_STAGES), 6)
 
     def test_stage_cli_returns_the_audit_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
                 models.main(["--root", str(root), "stage", "plan-audit"])
-            self.assertIn("codex-sol", buf.getvalue())
+            self.assertIn("codex-sol", out.getvalue())
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run them to verify they fail**
 
 Run: `python3 -m unittest tests.test_models.TestReviewerMechanism -v`
-Expected: FAIL — the default template has no `plan audit (deep)` row, so `test_default_template_parses_with_seven_stages` fails on `assertIn`
+Expected: FAIL — the template has no `plan audit (deep)` row, so `assertEqual(len(stages), 7)` gets 6
 
-- [ ] **Step 3: Add the constants**
+- [ ] **Step 3: Change the constants**
 
-In `skills/managing-planboard/scripts/models.py`, extend the constant block at lines 23-58:
+In `models.py`, extend the block at lines 23-58:
 
 ```python
 STAGE_LABELS = {
@@ -321,21 +142,17 @@ STAGE_LABELS = {
     "board reviewer panel": "board-reviewer",
     "plan audit": "plan-audit",
 }
-MODEL_ALIASES = {"inherit", "opus", "sonnet", "haiku", "fable"}
-MODEL_ID_RE = re.compile(r"^claude-[a-z0-9.-]+$")
+```
+
+The key is `"plan audit"`, not `"plan audit (deep)"`. `_norm` (`models.py:85-86`) runs `re.sub(r"\([^)]*\)", "", cell)` before lowercasing, so the row's first cell normalizes to `plan audit` — the same mechanism that already maps `plan review (verdict + grade)`.
+
+```python
 # Reviewer tokens name WHO audits, not a Claude model. `gemini-pro` is
 # deliberately absent: the board's Gemini path is self-contained and has no
 # repository access, so it cannot ground an audit, and shipping the token
 # would produce confident ungrounded audits that read like grounded ones.
 REVIEWER_TOKENS = {"codex-sol", "codex-terra", "codex-luna", "subagent"}
-EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
-NO_EFFORT = {"", "-", "—", "–"}  # blank, hyphen, em dash, en dash
 MECHANISMS = {"nudge", "agent", "reviewer"}
-```
-
-and extend `EXPECTED_MECHANISM`:
-
-```python
 EXPECTED_MECHANISM = {
     "plan": "nudge",
     "execute": "nudge",
@@ -345,89 +162,178 @@ EXPECTED_MECHANISM = {
     "board-reviewer": "agent",
     "plan-audit": "reviewer",
 }
+# Stages the board's Models editor may write. A reviewer row holds a token, not
+# a Claude model, so the editor's vocabulary cannot express it; the server
+# preserves such rows from the base text instead (rewrite_rows skips any stage
+# absent from `edits`, models.py:228).
+EDITABLE_STAGES = frozenset(
+    k for k, m in EXPECTED_MECHANISM.items() if m != "reviewer"
+)
 ```
-
-The `STAGE_LABELS` key is `"plan audit"`, not `"plan audit (deep)"`. `_norm` (`models.py:85-86`) runs `re.sub(r"\([^)]*\)", "", cell)` before lowercasing, so the row's first cell `plan audit (deep)` normalizes to `plan audit` — the same mechanism that already maps `plan review (verdict + grade)` to `plan review`.
 
 - [ ] **Step 4: Branch model validation on mechanism**
 
-In the row parser near `models.py:103-126`, the model cell is currently validated against `MODEL_ALIASES`/`MODEL_ID_RE` unconditionally. Make it depend on the row's mechanism:
+Read `models.py:103-126` first and preserve its existing warning wording and control flow. The model check becomes mechanism-dependent:
 
 ```python
-    if mech not in MECHANISMS:
-        warnings.append(
-            f"model-profile: skipping row {rownum} (unknown mechanism {raw_mech!r})"
-        )
-        return
     if mech == "reviewer":
         if model not in REVIEWER_TOKENS:
             warnings.append(
-                f"model-profile: skipping row {rownum} — '{model}' is not a reviewer "
+                f"model-profile: skipping row {rownum} — {model!r} is not a reviewer "
                 f"token (expected one of {', '.join(sorted(REVIEWER_TOKENS))})"
             )
             return
     elif model not in MODEL_ALIASES and not MODEL_ID_RE.match(model):
-        warnings.append(
-            f"model-profile: skipping row {rownum} (unknown model {model!r})"
-        )
+        warnings.append(f"model-profile: skipping row {rownum} (unknown model {model!r})")
         return
-    stages[key] = {"stage": key, "model": model, "effort": effort, "mechanism": mech}
 ```
-
-Read the surrounding lines first and preserve the existing warning wording and control flow; the block above shows the shape of the change, not a verbatim replacement.
 
 - [ ] **Step 5: Add the row to the template**
 
-In `skills/managing-planboard/templates/model-profile.md`, add the row to the table and update the prose. The table becomes:
+In `skills/managing-planboard/templates/model-profile.md`, append to the table:
 
 ```
-| stage | model | effort | mechanism |
-|---|---|---|---|
-| plan (co-authoring) | opus | max | nudge |
-| execute (analysis) | sonnet | — | nudge |
-| sync | inherit | — | nudge |
-| plan review (verdict + grade) | opus | medium | agent |
-| results validation | opus | low | agent |
-| board reviewer panel | opus | low | agent |
 | plan audit (deep) | codex-sol | xhigh | reviewer |
 ```
 
-Change the opening sentence from "How each planboard stage picks a Claude model" to "How each planboard stage picks its model or reviewer", and add a third mechanism to the list after **agent**:
+Change the opening sentence from "How each planboard stage picks a Claude model" to "How each planboard stage picks its model or reviewer", and add a third mechanism after **agent**:
 
-> **reviewer**: this stage runs an independent auditor rather than a Claude model. The model cell holds a reviewer token (`codex-sol`, `codex-terra`, `codex-luna`, or `subagent`), and the effort cell applies to whichever reviewer runs.
+> **reviewer**: this stage runs an independent auditor rather than a Claude model. The model cell holds a reviewer token (`codex-sol`, `codex-terra`, `codex-luna`, or `subagent`), the effort cell applies to whichever reviewer runs, and the row is edited with `/planboard:models` rather than on the board.
 
-Add to the "Why these defaults" paragraph:
+Append to the "Why these defaults" paragraph:
 
 > The plan audit is the one stage deliberately run by a different model family. Its whole value is that an independent auditor sees what the model that wrote the plan cannot, so it defaults to Codex at `xhigh`.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [ ] **Step 6: Narrow the server's canonical set**
 
-Run: `python3 -m unittest tests.test_models -v`
-Expected: PASS, including the 8 new tests and all 65 pre-existing ones
+In `board.py:_validate_profile_rows`, line 575 becomes:
 
-- [ ] **Step 7: Commit**
+```python
+    canonical = set(models.EDITABLE_STAGES)
+```
+
+and the completeness check at line 602-603 becomes:
+
+```python
+    if set(edits) != canonical:
+        return None, "expected exactly the six editable stages"
+```
+
+Nothing else in `apply_model_profile` changes: `rewrite_rows` already leaves the reviewer row's bytes untouched because its stage is absent from `edits`.
+
+- [ ] **Step 7: Update the three existing `test_models.py` expectations**
+
+- `tests/test_models.py:34` — rename `test_default_template_parses_all_six_stages` to `..._all_seven_stages` and change its expected key set to include `plan-audit`.
+- `tests/test_models.py:414` `test_locate_default` — expects six data rows; expect seven.
+- `tests/test_models.py:472` `test_rows_in_stage_order_with_labels` — append `plan audit (deep)` / `plan-audit` to the expected ordered list. `profile_view` iterates `STAGE_LABELS.values()` (`models.py:252`), so the new row appears last.
+
+- [ ] **Step 8: Update the two existing `test_board.py` expectations**
+
+- `tests/test_board.py:2835` `test_present_with_six_rows_when_file_exists` — rename to `..._seven_rows...` and expect seven rows including `plan-audit`.
+- `tests/test_board.py:2875` `test_noncanonical_file_not_editable_but_present` — it removes one row and expects five remaining; expect six.
+
+Do **not** touch `DEFAULT_ROW_VALUES` or `profile_rows()` (`tests/test_board.py:2907-2916`). They post the six editable stages, which is exactly what the narrowed validator now requires, so the eight POST tests at `:2942-3106` keep passing unchanged. If any of them fails, the Step 6 change is wrong — fix Step 6, not the fixture.
+
+- [ ] **Step 9: Write the failing board test**
+
+Create `board/src/views/Models.reviewer.test.tsx`. Read `board/src/views/Models.test.tsx` first and mirror its `BoardData` + `ModelProfile` fixture exactly, adding a seventh row:
+
+```ts
+{ stage: "plan-audit", label: "plan audit (deep)", model: "codex-sol", effort: "xhigh", mechanism: "reviewer" }
+```
+
+Assert five behaviours. Use the accessible names the existing editor actually gives its controls — read `Models.tsx:326-359` and match them; if a control has no accessible name today, add one as part of this task, because a control a test cannot name is one a screen reader cannot name either.
+
+```tsx
+it("renders the reviewer row's label and token", () => { /* both appear as text */ });
+it("renders the reviewer row's model as static text, not a control", () => { /* no editable control for that row */ });
+it("explains why the reviewer row is not editable", () => { /* title mentions /planboard:models */ });
+it("still exposes controls for the six Claude rows", () => { /* one per editable stage */ });
+it("keeps Save enabled with a reviewer row present", () => {
+  // The regression that matters: `allValid` must not run the Claude model
+  // validator over `codex-sol`, or Save is permanently dead.
+});
+```
+
+- [ ] **Step 10: Run it to verify it fails**
+
+Run (from `board/`): `npx vitest run src/views/Models.reviewer.test.tsx`
+Expected: FAIL, and `npx tsc --noEmit` reports the `mechanism` union error
+
+- [ ] **Step 11: Widen the board types**
+
+`board/src/lib/types.ts:55-61`:
+
+```ts
+export interface ModelProfileRow {
+  stage: string; // canonical key: plan | execute | sync | plan-review | results-validation | board-reviewer | plan-audit
+  label: string;
+  model: string; // inherit | opus | sonnet | haiku | fable | claude-* id, OR a reviewer token
+  effort: string | null; // low | medium | high | xhigh | max | null
+  // `reviewer` rows name an auditor token (codex-sol | codex-terra |
+  // codex-luna | subagent) rather than a Claude model, so the board renders
+  // them read-only: its editor's vocabulary is Claude aliases only.
+  mechanism: "nudge" | "agent" | "reviewer";
+}
+```
+
+- [ ] **Step 12: Make the Models view tolerate the row**
+
+In `Models.tsx`, four changes:
+
+1. `DraftRow.mechanism` (line 40) becomes `ModelProfileRow["mechanism"]` so it cannot drift from the source type again.
+2. `MechChip`'s prop (line 62) becomes `ModelProfileRow["mechanism"]`, with a third branch — reuse the stone palette from `SELECT_CLS`'s border colours and the title `"Runs an independent auditor — edit with /planboard:models"`.
+3. `allValid` (line 173) becomes:
+
+```tsx
+  const allValid = draft.every((r) => r.mechanism === "reviewer" || modelValid(r.model));
+```
+
+4. Gate the per-row controls: `const rowEditable = canEdit && row.mechanism !== "reviewer";`. A non-editable row renders its model and effort as static text with `title="Reviewer rows are edited with /planboard:models — the board's editor only knows Claude models."`. Leave `canEdit`, `changedStages`, the save path, and the 409 rebase untouched; this is a per-row render gate, not a new permission concept.
+
+Also update the notice at `Models.tsx:297` — "canonical six-row form" becomes "canonical form".
+
+- [ ] **Step 13: Exclude reviewer rows from the POST body**
+
+Wherever `Models.tsx` builds the save payload, filter them out so the server never receives a row it now rejects:
+
+```tsx
+  rows: draft.filter((r) => r.mechanism !== "reviewer").map(({ stage, model, effort }) => ({ stage, model, effort })),
+```
+
+- [ ] **Step 14: Run everything**
+
+Run: `python3 -m unittest discover -s tests`
+Run (from `board/`): `npm test && npx tsc --noEmit`
+Expected: PASS on both. This task is not done until both suites are green — it is the whole reason the task is this size.
+
+- [ ] **Step 15: Commit**
 
 ```bash
-git add skills/managing-planboard/scripts/models.py skills/managing-planboard/templates/model-profile.md tests/test_models.py
-git commit -m "models: add the plan-audit stage and the reviewer mechanism"
+git add skills/managing-planboard/scripts/models.py skills/managing-planboard/scripts/board.py \
+        skills/managing-planboard/templates/model-profile.md \
+        board/src/lib/types.ts board/src/views/Models.tsx board/src/views/Models.reviewer.test.tsx \
+        tests/test_models.py tests/test_board.py
+git commit -m "models: add the plan-audit stage and reviewer mechanism across script, server, and board"
 ```
 
 ---
 
-### Task 3: Generate `pb-plan-auditor`
+### Task 2: Generate `pb-plan-auditor`
 
-The spec says the audit's subagent and fallback path must NOT reuse `pb-board-reviewer`, which caps at five comments and requires a verbatim quote on every finding. Reusing it would re-impose both the cap the audit removes and the anchor rule that deletes the entire `gaps` class, producing a fallback that structurally cannot report a missing missingness rule.
+The audit's subagent and fallback path must NOT reuse `pb-board-reviewer`, which caps at five comments and requires a verbatim quote on every finding (`templates/agents/pb-board-reviewer.md:12,27-30`). Reusing it would re-impose both the cap the audit removes and the anchor rule that deletes the entire `gaps` class, producing a fallback that structurally cannot report a missing missingness rule — and a clean-looking audit reads as safety.
 
-**Resolving a spec incoherence:** the spec says `pb-plan-auditor` "is generated from the audit row", but `generate()` refuses any row whose mechanism is not `agent` (`models.py:435`), and when the token is `codex-sol` the row's model cell holds no Claude model to render into the agent's frontmatter. Resolution implemented here: the agent's **model is fixed at `opus`**, because the row's model cell is spent naming the primary reviewer; its **effort comes from the audit row**, because both scales are identical (`low`..`max`). Setting the token to `subagent` makes this same agent the primary auditor.
+A `reviewer` row's model cell is spent naming the primary auditor, so it holds no Claude model for the generated agent. The agent's model is therefore pinned to `opus` and its effort comes from the row; the two effort scales are identical, so only the model is token-specific.
 
 **Files:**
 - Create: `skills/managing-planboard/templates/agents/pb-plan-auditor.md`
-- Modify: `skills/managing-planboard/scripts/models.py:36-47` (`AGENT_STAGES`) and the generation loop at `models.py:426-456`
-- Test: `tests/test_models.py` (new class)
+- Modify: `skills/managing-planboard/scripts/models.py:36-47` (`AGENT_STAGES`), the generation loop at `:426-456`, and `cmd_check` at `:508-533`
+- Modify: `tests/test_models.py:191` (`test_default_profile_writes_three_marked_agents`), `:501` (`test_first_generate_creates_all_three`)
+- Test: `tests/test_models.py` (new `TestPlanAuditorGeneration`)
 
 **Interfaces:**
-- Consumes: `STAGE_LABELS`, `EXPECTED_MECHANISM`, `REVIEWER_TOKENS` from Task 2.
-- Produces: `.claude/agents/pb-plan-auditor.md` in an initialized project, carrying the section 2 audit contract. Task 11 dispatches it by name on the fallback path.
+- Consumes: `STAGE_LABELS`, `EXPECTED_MECHANISM`, `REVIEWER_TOKENS` (Task 1).
+- Produces: `.claude/agents/pb-plan-auditor.md`, and `models.AGENT_MODEL_OVERRIDE`. Task 11 dispatches the agent by name on the fallback path.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -435,56 +341,64 @@ Append to `tests/test_models.py`:
 
 ```python
 class TestPlanAuditorGeneration(unittest.TestCase):
+    def _generate(self, root):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = models.main(["--root", str(root), "generate"])
+        return code, out.getvalue(), err.getvalue()
+
     def test_auditor_is_generated_from_a_reviewer_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
-            models.main(["--root", str(root), "generate"])
-            agent = root / ".claude" / "agents" / "pb-plan-auditor.md"
-            self.assertTrue(agent.is_file())
+            self._generate(root)
+            self.assertTrue((root / ".claude" / "agents" / "pb-plan-auditor.md").is_file())
 
     def test_auditor_model_is_opus_and_effort_comes_from_the_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
-            models.main(["--root", str(root), "generate"])
+            self._generate(root)
             text = (root / ".claude" / "agents" / "pb-plan-auditor.md").read_text()
             self.assertIn("model: opus", text)
             self.assertIn("effort: xhigh", text)
             self.assertNotIn("codex-sol", text)
 
-    def test_auditor_contract_admits_gaps_and_has_no_cap(self):
+    def test_auditor_contract_admits_gaps_requires_evidence_and_has_no_cap(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
-            models.main(["--root", str(root), "generate"])
+            self._generate(root)
             text = (root / ".claude" / "agents" / "pb-plan-auditor.md").read_text()
-            self.assertIn("gaps", text)
-            self.assertIn("evidence", text)
+            self.assertIn('"gaps"', text)
+            self.assertIn('"evidence"', text)
             self.assertNotIn("at most 5", text)
 
-    def test_three_existing_agents_still_generate(self):
+    def test_check_is_silent_after_a_fresh_generation(self):
+        # The regression that matters: cmd_check must accept the reviewer
+        # mechanism and apply the same model override, or every check prints a
+        # false drift hint.
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
-            models.main(["--root", str(root), "generate"])
-            for name in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer"):
-                self.assertTrue((root / ".claude" / "agents" / f"{name}.md").is_file(), name)
+            self._generate(root)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                models.main(["--root", str(root), "check"])
+            self.assertEqual(out.getvalue().strip(), "")
 
     def test_flipped_mechanism_removes_the_marked_auditor(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
-            models.main(["--root", str(root), "generate"])
+            self._generate(root)
             agent = root / ".claude" / "agents" / "pb-plan-auditor.md"
             self.assertTrue(agent.is_file())
-            profile = (root / "plans" / "model-profile.md").read_text()
-            (root / "plans" / "model-profile.md").write_text(
-                profile.replace(
-                    "| plan audit (deep) | codex-sol | xhigh | reviewer |",
-                    "| plan audit (deep) | opus | xhigh | agent |",
-                )
-            )
-            models.main(["--root", str(root), "generate"])
+            p = root / "plans" / "model-profile.md"
+            p.write_text(p.read_text().replace(
+                "| plan audit (deep) | codex-sol | xhigh | reviewer |",
+                "| plan audit (deep) | opus | xhigh | agent |",
+            ))
+            self._generate(root)
             self.assertFalse(agent.is_file())
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run them to verify they fail**
 
 Run: `python3 -m unittest tests.test_models.TestPlanAuditorGeneration -v`
 Expected: FAIL — `pb-plan-auditor.md` is not generated
@@ -528,7 +442,7 @@ Review only; never modify anything.
 }
 ```
 
-**`anchored` versus `gaps`.** A finding about text that IS in the plan goes in `anchored` with a short verbatim quote, markdown stripped (no `**`, backticks, or `[]()`), so it matches the rendered text a reader sees. A finding about something the plan NEVER says goes in `gaps` and carries no quote. The gaps bucket exists because omissions are where plans and outputs diverge, and a quote-anchored contract cannot express them. Do not force a gap into an anchor by quoting a nearby line.
+**`anchored` versus `gaps`.** A finding about text that IS in the plan goes in `anchored` with a short verbatim `quote`, markdown stripped (no `**`, backticks, or `[]()`), so it matches the rendered text a reader sees. A finding about something the plan NEVER says goes in `gaps` and carries no quote. The gaps bucket exists because omissions are where plans and outputs diverge, and a quote-anchored contract cannot express them. Do not force a gap into an anchor by quoting a nearby line.
 
 **There is no cap on findings.** Return every material finding. Two requirements replace a cap:
 
@@ -544,7 +458,7 @@ Review only; never modify anything.
 
 - [ ] **Step 4: Wire generation**
 
-In `models.py`, add the auditor to `AGENT_STAGES` and its legacy map neighbour stays untouched (there is no pre-rename `rp-plan-auditor`):
+In `models.py`:
 
 ```python
 AGENT_STAGES = {
@@ -553,61 +467,73 @@ AGENT_STAGES = {
     "board-reviewer": "pb-board-reviewer",
     "plan-audit": "pb-plan-auditor",
 }
-# A `reviewer` row's model cell names WHO audits (a Codex token or `subagent`),
-# so it holds no Claude model for the generated agent. The agent that backs the
-# subagent and fallback paths is therefore pinned here; the row's effort cell
-# still reaches it, because the Codex and Claude effort scales are identical.
+# A `reviewer` row's model cell names WHO audits, so it holds no Claude model
+# for the generated agent. The agent backing the subagent and fallback paths is
+# pinned here; the row's effort still reaches it, because the Codex and Claude
+# effort scales are identical.
 AGENT_MODEL_OVERRIDE = {"plan-audit": "opus"}
 ```
 
-In the generation loop (`models.py:426-456`), replace the hardcoded mechanism guard and the model argument:
+`LEGACY_AGENT_NAMES` gains nothing: there is no pre-rename `rp-plan-auditor`.
+
+In the generation loop (`models.py:435`), the guard becomes mechanism-aware, and the render uses the override:
 
 ```python
         if row["mechanism"] != EXPECTED_MECHANISM[key]:
-            stderr.append(
-                f"model-profile: '{key}' row has mechanism '{row['mechanism']}' — {agent}.md not regenerated"
-            )
-            outcome = _remove_if_marked(target, rel, key, stdout)
-            results.append({"agent": agent, "stage": key, "outcome": outcome})
-            continue
 ```
-
-and further down, where the template is rendered:
 
 ```python
             model = AGENT_MODEL_OVERRIDE.get(key, row["model"])
             rendered = _render(template, model, row["effort"], checksum)
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 5: Apply the identical fix to `cmd_check`**
 
-Run: `python3 -m unittest tests.test_models -v`
-Expected: PASS.
+This is the step whose omission broke five existing tests in the first draft. `cmd_check` re-renders each template to detect drift and has its own copy of both the guard and the render (`models.py:523`, `:533`):
 
-Two pre-existing tests may need updating, and both should be updated rather than weakened:
-- `TestCheckTemplateDrift` — if it enumerates the template directory, add `pb-plan-auditor` to its expected set.
-- `TestGenerate.test_default_profile_writes_three_marked_agents` (`tests/test_models.py:192`) — it asserts three named agents exist, which still passes, but the name is now wrong. Rename it to `test_default_profile_writes_four_marked_agents` and add `pb-plan-auditor` to its loop.
+```python
+        row = stages.get(key)
+        if row is None or row["mechanism"] != EXPECTED_MECHANISM[key]:
+```
 
-- [ ] **Step 6: Commit**
+```python
+        rendered = _render(template, AGENT_MODEL_OVERRIDE.get(key, row["model"]),
+                           row["effort"], checksum)
+```
+
+Without both, every `check` prints `MISMATCH_HINT` against a freshly generated tree.
+
+- [ ] **Step 6: Update the two stale existing tests**
+
+- `tests/test_models.py:191` `test_default_profile_writes_three_marked_agents` — rename to `..._four_marked_agents` and add `pb-plan-auditor` to its name loop.
+- `tests/test_models.py:501` `test_first_generate_creates_all_three` — rename to `..._all_four` and expect four `changedStages`.
+
+- [ ] **Step 7: Run the full Python suite**
+
+Run: `python3 -m unittest discover -s tests`
+Expected: PASS. Watch specifically for `TestCheck.test_fresh_generation_is_silent` (`:282`), the two `TestOrphanRemovalAndGuards` checks (`:325`, `:372`), and the two `TestCheckTemplateDrift` checks (`:644`, `:687`) — all five go red if Step 5 was skipped. `TestCheckTemplateDrift` copies the template directory dynamically (`tests/test_models.py:648-662`), so it needs no new template registration.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add skills/managing-planboard/templates/agents/pb-plan-auditor.md skills/managing-planboard/scripts/models.py tests/test_models.py
+git add skills/managing-planboard/templates/agents/pb-plan-auditor.md \
+        skills/managing-planboard/scripts/models.py tests/test_models.py
 git commit -m "models: generate pb-plan-auditor with the gaps-admitting audit contract"
 ```
 
 ---
 
-### Task 4: Self-healing profile migration
+### Task 3: Self-healing profile migration
 
-Adding a seventh stage makes every existing six-row profile non-canonical, which silently turns the board's Models view read-only. Worse, `cmd_check` only inspects stages that generate agents in the project, so an upgraded project can reach a mandatory audit with no row at all.
+`profile_canonical` requires the stage set to equal `STAGE_LABELS` exactly (`models.py:170-180`), so an unmigrated six-row profile is non-canonical and its board editor goes read-only. And `cmd_check` only inspects stages whose agent exists in the project, so before `pb-plan-auditor` is generated it cannot report the missing row at all. The migration therefore runs from every lookup, not only from `/planboard:models`.
 
 **Files:**
-- Modify: `skills/managing-planboard/scripts/models.py` (new function + `cmd_check` and `cmd_generate` call sites)
-- Test: `tests/test_models.py` (new class)
+- Modify: `skills/managing-planboard/scripts/models.py` (new function; call sites in `cmd_generate`, `cmd_check`, `cmd_stage`)
+- Test: `tests/test_models.py` (new `TestEnsureAuditStage`)
 
 **Interfaces:**
-- Consumes: `STAGE_LABELS`, `EXPECTED_MECHANISM` (Task 2), `atomic_write` (`models.py:311`), `locate_table` (`models.py:186`).
-- Produces: `ensure_audit_stage(root) -> dict` — `{"changed": bool, "reason": str}`. Task 6 calls it before every audit lookup.
+- Consumes: `STAGE_LABELS` (Task 1), `atomic_write` (`models.py:311`), `locate_table` (`models.py:183`), `_norm` (`models.py:85`), `_row_cells` (`models.py:89`).
+- Produces: `ensure_audit_stage(root) -> {"changed": bool, "reason": str}`. Task 7 calls it before every audit lookup.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -637,43 +563,53 @@ class TestEnsureAuditStage(unittest.TestCase):
     def test_splices_the_missing_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=SIX_ROW_PROFILE)
-            result = models.ensure_audit_stage(root)
-            self.assertTrue(result["changed"])
+            self.assertTrue(models.ensure_audit_stage(root)["changed"])
             text = (root / "plans" / "model-profile.md").read_text()
             self.assertIn("| plan audit (deep) | codex-sol | xhigh | reviewer |", text)
+
+    def test_result_is_byte_exact(self):
+        # Substring checks would pass a migration that reformatted the file.
+        expected = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | xhigh | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            models.ensure_audit_stage(root)
+            self.assertEqual((root / "plans" / "model-profile.md").read_text(), expected)
 
     def test_migrated_profile_is_canonical(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=SIX_ROW_PROFILE)
             models.ensure_audit_stage(root)
-            text = (root / "plans" / "model-profile.md").read_text()
-            stages, warnings = models.parse_profile(text)
+            stages, warnings = models.parse_profile(
+                (root / "plans" / "model-profile.md").read_text())
             self.assertTrue(models.profile_canonical(stages, warnings))
-
-    def test_surrounding_bytes_are_preserved(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = make_project(tmp, profile=SIX_ROW_PROFILE)
-            models.ensure_audit_stage(root)
-            text = (root / "plans" / "model-profile.md").read_text()
-            self.assertIn("Prose that must survive the splice.", text)
-            self.assertIn("Trailing prose that must also survive.", text)
-            self.assertIn("| plan (co-authoring) | opus | max | nudge |", text)
 
     def test_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=SIX_ROW_PROFILE)
             models.ensure_audit_stage(root)
             first = (root / "plans" / "model-profile.md").read_text()
-            second_result = models.ensure_audit_stage(root)
-            self.assertFalse(second_result["changed"])
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
             self.assertEqual(first, (root / "plans" / "model-profile.md").read_text())
+
+    def test_prose_only_file_does_not_crash(self):
+        # The first draft's comprehension raised IndexError on "# Model profile"
+        # because it split before checking the pipe count.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile="# Model profile\n\nNo table here.\n")
+            result = models.ensure_audit_stage(root)
+            self.assertFalse(result["changed"])
+            self.assertIn("no stage", result["reason"])
 
     def test_refuses_a_duplicated_audit_row(self):
         dupe = SIX_ROW_PROFILE.replace(
-            "| board reviewer panel | opus | low | agent |",
+            "| board reviewer panel | opus | low | agent |\n",
             "| board reviewer panel | opus | low | agent |\n"
             "| plan audit (deep) | codex-sol | xhigh | reviewer |\n"
-            "| plan audit (deep) | codex-luna | low | reviewer |",
+            "| plan audit (deep) | codex-luna | low | reviewer |\n",
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=dupe)
@@ -683,28 +619,28 @@ class TestEnsureAuditStage(unittest.TestCase):
             self.assertIn("ambiguous", result["reason"])
             self.assertEqual(before, (root / "plans" / "model-profile.md").read_text())
 
-    def test_refuses_a_profile_with_no_table(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = make_project(tmp, profile="# Model profile\n\nNo table here.\n")
-            result = models.ensure_audit_stage(root)
-            self.assertFalse(result["changed"])
-            self.assertIn("no", result["reason"].lower())
-
     def test_missing_profile_file_is_not_an_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=None)
-            result = models.ensure_audit_stage(root)
-            self.assertFalse(result["changed"])
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+
+    def test_crlf_profile_keeps_its_line_endings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE.replace("\n", "\r\n"))
+            models.ensure_audit_stage(root)
+            raw = (root / "plans" / "model-profile.md").read_bytes()
+            self.assertIn(b"| plan audit (deep) | codex-sol | xhigh | reviewer |\r\n", raw)
+            self.assertNotIn(b"reviewer |\n\r", raw)
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run them to verify they fail**
 
 Run: `python3 -m unittest tests.test_models.TestEnsureAuditStage -v`
 Expected: FAIL with `AttributeError: module 'models' has no attribute 'ensure_audit_stage'`
 
 - [ ] **Step 3: Write the implementation**
 
-Add to `models.py`, next to the other profile-writing helpers:
+Add to `models.py` beside the other profile-writing helpers:
 
 ```python
 AUDIT_ROW = "| plan audit (deep) | codex-sol | xhigh | reviewer |"
@@ -713,17 +649,16 @@ AUDIT_ROW = "| plan audit (deep) | codex-sol | xhigh | reviewer |"
 def ensure_audit_stage(root):
     """Splice the plan-audit row into a pre-audit profile, atomically.
 
-    Adding a seventh stage makes every existing six-row profile non-canonical,
-    which silently downgrades the board's Models view to read-only, and
+    Runs from every audit lookup, not only /planboard:models: an unmigrated
+    profile is non-canonical (so the board's editor goes read-only) and
     cmd_check cannot report a missing reviewer-only row before its agent exists
-    in the project. So this runs from every audit lookup, not only from
-    /planboard:models: an upgraded project must not be able to reach a
-    mandatory audit with no reviewer row.
+    in the project. An upgraded project must not reach a mandatory audit with
+    no reviewer row.
 
     Splices ONLY the missing row and preserves every surrounding byte. Refuses
-    to touch an ambiguous file rather than guessing.
+    an ambiguous file rather than guessing.
     """
-    path = Path(root) / "plans" / "model-profile.md"
+    path = Path(root) / PROFILE_REL
     if not path.is_file():
         return {"changed": False, "reason": "no model-profile.md"}
     try:
@@ -732,211 +667,552 @@ def ensure_audit_stage(root):
         return {"changed": False, "reason": "unreadable model-profile.md (%s)" % e}
 
     lines = text.splitlines(keepends=True)
-    audit_rows = [
-        i for i, ln in enumerate(lines)
-        if _norm(ln.split("|")[1]) == "plan audit" if ln.count("|") >= 4
-    ]
+    audit_rows = []
+    for i, ln in enumerate(lines):
+        cells = _row_cells(ln)
+        # _row_cells returns None for any non-table line, so this never indexes
+        # into a prose line — the first draft's bug.
+        if cells and len(cells) == 4 and STAGE_LABELS.get(_norm(cells[0])) == "plan-audit":
+            audit_rows.append(i)
     if len(audit_rows) > 1:
         return {"changed": False, "reason": "ambiguous: %d plan-audit rows" % len(audit_rows)}
-    if len(audit_rows) == 1:
+    if audit_rows:
         return {"changed": False, "reason": "already present"}
 
-    span = locate_table(text)
-    if span is None:
+    loc = locate_table(text)
+    if loc is None:
         return {"changed": False, "reason": "no stage/model/effort/mechanism table found"}
     # locate_table returns (header_idx, first_data_idx, last_data_idx) as
     # indices into splitlines(keepends=True), INCLUSIVE of the data range
     # (models.py:183-187), so the insertion point is one past the last row.
-    _header, _first, last_data = span
+    _header, _first, last_data = loc
 
-    newline = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
-    lines.insert(last_data + 1, AUDIT_ROW + newline)
+    last_line = lines[last_data]
+    ending = last_line[len(last_line.rstrip("\r\n")):] or "\n"
+    lines.insert(last_data + 1, AUDIT_ROW + ending)
     atomic_write(path, "".join(lines))
     return {"changed": True, "reason": "inserted the plan-audit row"}
 ```
 
-- [ ] **Step 4: Call it from the CLI paths**
+The line ending is copied from the row being followed, not guessed from the file's first line, so a CRLF profile stays CRLF.
 
-In `cmd_generate` and `cmd_check`, call `ensure_audit_stage(root)` before parsing the profile, and append its `reason` to stdout when `changed` is true:
+- [ ] **Step 4: Call it from all three lookup paths**
+
+`cmd_generate`, `cmd_check`, and `cmd_stage` each take `root` and `print()` directly — none of them has a `stdout` list, so use `print`:
 
 ```python
     migration = ensure_audit_stage(root)
     if migration["changed"]:
-        stdout.append("model-profile: %s" % migration["reason"])
+        print("model-profile: %s" % migration["reason"])
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+Place it as the first statement of `cmd_generate` (`models.py:481`) and `cmd_stage` (`models.py:279`). In `cmd_check` (`models.py:490`), place it **after** the `migrate_legacy_agents` early return so a legacy project still gets its rename hint first.
 
-Run: `python3 -m unittest tests.test_models -v`
+`cmd_stage` must stay silent on stdout apart from its JSON row, since callers parse it — send the migration line to `stderr` there:
+
+```python
+        print("model-profile: %s" % migration["reason"], file=sys.stderr)
+```
+
+- [ ] **Step 5: Run the full Python suite**
+
+Run: `python3 -m unittest discover -s tests`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add skills/managing-planboard/scripts/models.py tests/test_models.py
-git commit -m "models: self-healing plan-audit row migration for pre-audit profiles"
+git commit -m "models: self-healing plan-audit row migration from every lookup path"
 ```
 
 ---
 
-### Task 5: Locked, atomic audit artifact writes
+### Task 4: Audit identity primitives
+
+**Files:**
+- Create: `skills/managing-planboard/scripts/audit.py`
+- Create: `tests/test_audit.py`
+
+**Interfaces:**
+- Consumes: `normalize_plan` and `strip_trailer` from `signoff_gate.py` (same directory; both the CLI and the test harness put that directory on `sys.path`).
+- Produces:
+  - `audit_plan_hash(text) -> str` — 64-char hex sha256.
+  - `context_identity(root, evidence_paths) -> {"head": str|None, "paths": {relpath: str|None}}`. A path that does not exist maps to `None`, a meaningful observation rather than an error.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/test_audit.py`:
+
+```python
+"""Tests for audit.py. Run:
+    python3 -m unittest tests.test_audit -v
+"""
+import contextlib
+import io
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+SCRIPTS = (
+    Path(__file__).resolve().parents[1]
+    / "skills" / "managing-planboard" / "scripts"
+)
+sys.path.insert(0, str(SCRIPTS))
+import audit  # noqa: E402
+
+PLAN = "# Component 03 v2\n\nGoal: test the hash.\n\n## Steps\n\n1. Do the thing.\n"
+
+
+def git_repo(root):
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+    (root / "seed.txt").write_text("seed\n")
+    subprocess.run(["git", "add", "seed.txt"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+    return root
+
+
+class TestAuditPlanHash(unittest.TestCase):
+    def test_hash_is_hex_sha256(self):
+        self.assertRegex(audit.audit_plan_hash(PLAN), r"^[0-9a-f]{64}$")
+
+    def test_invariant_across_signed_trailer(self):
+        signed = PLAN + "\n---\n\nSigned off: BK, 2026-07-25\n"
+        self.assertEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(signed))
+
+    def test_invariant_across_amendment_trailer(self):
+        # normalize_plan alone does NOT strip this; strip_trailer does. This is
+        # the case that lets a /sync amendment keep its draft's audit.
+        amended = PLAN + "\n---\n\nAmendment recorded, 2026-07-25\n"
+        self.assertEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(amended))
+
+    def test_content_change_changes_hash(self):
+        other = PLAN.replace("Do the thing", "Do a different thing")
+        self.assertNotEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(other))
+
+    def test_crlf_and_trailing_whitespace_are_normalized(self):
+        noisy = PLAN.replace("\n", "\r\n").rstrip() + "   \r\n\r\n"
+        self.assertEqual(audit.audit_plan_hash(PLAN), audit.audit_plan_hash(noisy))
+
+
+class TestContextIdentity(unittest.TestCase):
+    def test_records_a_real_head_sha(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = git_repo(Path(tmp))
+            self.assertRegex(audit.context_identity(root, [])["head"], r"^[0-9a-f]{40}$")
+
+    def test_hashes_each_evidence_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = git_repo(Path(tmp))
+            (root / "analysis").mkdir()
+            (root / "analysis" / "load.py").write_text("print('load')\n")
+            ident = audit.context_identity(root, ["analysis/load.py"])
+            self.assertRegex(ident["paths"]["analysis/load.py"], r"^[0-9a-f]{64}$")
+
+    def test_missing_path_records_none_not_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = git_repo(Path(tmp))
+            self.assertIsNone(audit.context_identity(root, ["gone.py"])["paths"]["gone.py"])
+
+    def test_renamed_evidence_changes_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = git_repo(Path(tmp))
+            (root / "load.py").write_text("x\n")
+            before = audit.context_identity(root, ["load.py"])
+            (root / "load.py").rename(root / "loader.py")
+            self.assertNotEqual(before["paths"], audit.context_identity(root, ["load.py"])["paths"])
+
+    def test_no_evidence_paths_yields_empty_map(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = git_repo(Path(tmp))
+            self.assertEqual(audit.context_identity(root, [])["paths"], {})
+
+    def test_non_git_directory_records_none_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(audit.context_identity(Path(tmp), [])["head"])
+
+    def test_escaping_path_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = git_repo(Path(tmp))
+            with self.assertRaises(ValueError):
+                audit.context_identity(root, ["../outside.py"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `python3 -m unittest tests.test_audit -v`
+Expected: FAIL with `ModuleNotFoundError: No module named 'audit'`
+
+- [ ] **Step 3: Write the implementation**
+
+Create `skills/managing-planboard/scripts/audit.py`. All imports go at the top of the module:
+
+```python
+"""Audit identity, artifact writing, and reviewer dispatch for the planboard
+audit channel. Standard library only.
+
+The audit channel answers "will this plan actually work?" against the
+repository, separately from the rubric scorecard, which answers "is this a
+checkable contract?" from the plan text alone. See
+docs/specs/2026-07-24-plan-audit-channel-design.md.
+"""
+import argparse
+import datetime
+import errno
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+from signoff_gate import normalize_plan, strip_trailer
+
+
+def audit_plan_hash(text):
+    """The audit's plan identity.
+
+    Composes strip_trailer with normalize_plan so the hash is invariant across
+    BOTH canonical trailers. normalize_plan alone strips only `Signed off:`, so
+    an audit taken on a draft would go stale the moment /sync appends
+    `Amendment recorded`. Composing them means one audit survives sign-off AND
+    the amendment write.
+    """
+    return hashlib.sha256(
+        normalize_plan(strip_trailer(text)).encode("utf-8")
+    ).hexdigest()
+
+
+def _git_head(root):
+    """Current HEAD sha, or None outside a git repo or in one with no commits."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(root), capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def context_identity(root, evidence_paths):
+    """Identity of the repository state an audit's findings rest on.
+
+    Scoped to the paths the audit's own evidence cites, NOT a whole-worktree
+    fingerprint: during active work the tree is always dirty, so a broad
+    fingerprint would invalidate every audit immediately and the cache would
+    buy nothing. A missing path hashes to None, which is a real observation
+    (the audit saw it absent), not a failure.
+    """
+    root = Path(root).resolve()
+    paths = {}
+    for rel in evidence_paths:
+        p = (root / rel).resolve()
+        if p != root and root not in p.parents:
+            raise ValueError("evidence path escapes the repository: %s" % rel)
+        paths[rel] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
+    return {"head": _git_head(root), "paths": paths}
+```
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `python3 -m unittest tests.test_audit -v`
+Expected: PASS, 12 tests
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add skills/managing-planboard/scripts/audit.py tests/test_audit.py
+git commit -m "audit: plan hash invariant across both trailers, scoped context identity"
+```
+
+---
+
+### Task 5: Locked, atomic artifact writes
 
 **Files:**
 - Modify: `skills/managing-planboard/scripts/audit.py`
 - Modify: `tests/test_audit.py`
 
 **Interfaces:**
-- Consumes: `audit_plan_hash`, `context_identity` (Task 1).
-- Produces:
-  - `audit_path(root, component, version) -> Path` — `plans/reviews/<component>-v<N>-audit.md`
-  - `write_audit(root, component, version, payload) -> Path` — atomic, lock-held, validated.
-  - `read_audit(root, component, version) -> dict|None` — the parsed fence, or None.
-  - `is_current(audit, plan_text, root) -> bool`
-  - `AuditLocked` — raised when the per-component lock is held.
+- Consumes: Task 4.
+- Produces: `audit_path`, `render_audit`, `write_audit`, `read_audit`, `is_current`, `audit_lock`, `AuditLocked`, `SCHEMA_VERSION`, `REQUIRED_KEYS`.
 
 - [ ] **Step 1: Write the failing tests**
 
 Append to `tests/test_audit.py`:
 
 ```python
-SCHEMA = {
-    "schemaVersion": 1,
-    "component": "03-attrition",
-    "planVersion": 2,
-    "planPath": "plans/execution/03-attrition/.draft-v2.md",
-    "date": "2026-07-25",
-    "reviewer": {"token": "codex-sol", "effort": "xhigh"},
-    "overall": "Reads sound; two gaps.",
-    "anchored": [],
-    "gaps": [],
-    "dispositions": [],
-}
+def payload(**over):
+    p = {
+        "schemaVersion": 1,
+        "component": "03-attrition",
+        "planVersion": 2,
+        "planPath": "plans/execution/03-attrition/.draft-v2.md",
+        "date": "2026-07-25",
+        "reviewer": {"token": "codex-sol", "effort": "xhigh"},
+        "auditPlanHash": "a" * 64,
+        "contextIdentity": {"head": None, "paths": {}},
+        "supersedes": None,
+        "overall": "Reads sound; two gaps.",
+        "anchored": [],
+        "gaps": [],
+        "dispositions": [],
+    }
+    p.update(over)
+    return p
 
 
-def _project(tmp):
+def project(tmp):
     root = Path(tmp)
     (root / "plans" / "reviews").mkdir(parents=True)
     (root / "plans" / "execution" / "03-attrition").mkdir(parents=True)
     return root
 
 
+FINDING = {
+    "section": "Steps",
+    "evidence": {"path": "analysis/fit.R", "kind": "direct", "detail": "no seed"},
+    "comment": "[blocker] No seed. At execution: results are irreproducible.",
+}
+
+
 class TestWriteAudit(unittest.TestCase):
-    def test_writes_a_parseable_fence(self):
+    def test_writes_a_readable_fence(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            p = audit.write_audit(root, "03-attrition", 2, dict(SCHEMA))
-            self.assertTrue(p.is_file())
+            root = project(tmp)
+            p = audit.write_audit(root, "03-attrition", 2, payload())
             self.assertEqual(p.name, "03-attrition-v2-audit.md")
-            back = audit.read_audit(root, "03-attrition", 2)
-            self.assertEqual(back["component"], "03-attrition")
+            self.assertEqual(audit.read_audit(root, "03-attrition", 2)["component"], "03-attrition")
 
-    def test_write_is_atomic_no_partial_file_on_failure(self):
+    def test_rejects_a_payload_missing_a_required_key(self):
+        for key in ("overall", "auditPlanHash", "contextIdentity", "supersedes"):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = project(tmp)
+                bad = payload()
+                del bad[key]
+                with self.assertRaises(ValueError, msg=key):
+                    audit.write_audit(root, "03-attrition", 2, bad)
+
+    def test_rejects_a_bucket_that_is_not_a_list(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            audit.write_audit(root, "03-attrition", 2, dict(SCHEMA))
+            root = project(tmp)
+            with self.assertRaises(ValueError):
+                audit.write_audit(root, "03-attrition", 2, payload(gaps={"not": "a list"}))
+
+    def test_rejects_a_finding_with_no_severity_tag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            bad = dict(FINDING, comment="No tag at all.")
+            with self.assertRaises(ValueError):
+                audit.write_audit(root, "03-attrition", 2, payload(gaps=[bad]))
+
+    def test_rejects_a_finding_with_no_evidence_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            bad = {k: v for k, v in FINDING.items() if k != "evidence"}
+            with self.assertRaises(ValueError):
+                audit.write_audit(root, "03-attrition", 2, payload(gaps=[bad]))
+
+    def test_rejects_an_anchored_finding_with_no_quote(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            with self.assertRaises(ValueError):
+                audit.write_audit(root, "03-attrition", 2, payload(anchored=[FINDING]))
+
+    def test_write_is_atomic_when_the_replace_fails(self):
+        # Tests ATOMICITY, not validation order: force a failure inside the
+        # write itself and assert the old file survives with no temp left over.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload())
             good = audit.audit_path(root, "03-attrition", 2).read_text()
-            bad = dict(SCHEMA)
-            bad["anchored"] = {"not": "a list"}
-            with self.assertRaises(ValueError):
-                audit.write_audit(root, "03-attrition", 2, bad)
-            self.assertEqual(good, audit.audit_path(root, "03-attrition", 2).read_text())
+            boom = payload(auditPlanHash="b" * 64)
+            real_replace = os.replace
 
-    def test_rejects_a_payload_missing_required_keys(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            bad = dict(SCHEMA)
-            del bad["overall"]
-            with self.assertRaises(ValueError):
-                audit.write_audit(root, "03-attrition", 2, bad)
+            def fail_replace(*a, **k):
+                raise OSError("disk full")
+
+            os.replace = fail_replace
+            try:
+                with self.assertRaises(OSError):
+                    audit.write_audit(root, "03-attrition", 2, boom)
+            finally:
+                os.replace = real_replace
+            self.assertEqual(good, audit.audit_path(root, "03-attrition", 2).read_text())
+            leftovers = list((root / "plans" / "reviews").glob("*.tmp"))
+            self.assertEqual(leftovers, [])
 
     def test_refuses_to_clobber_an_audit_carrying_dispositions(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            first = dict(SCHEMA)
-            first["auditPlanHash"] = "a" * 64
-            first["dispositions"] = [{"finding": "f1", "status": "accepted", "reason": "known"}]
-            audit.write_audit(root, "03-attrition", 2, first)
-            same = dict(SCHEMA)
-            same["auditPlanHash"] = "a" * 64
+            root = project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload(
+                dispositions=[{"finding": "f1", "status": "accepted", "reason": "known"}]))
             with self.assertRaises(audit.AuditLocked):
-                audit.write_audit(root, "03-attrition", 2, same)
+                audit.write_audit(root, "03-attrition", 2, payload())
 
-    def test_replaces_an_audit_with_a_different_hash(self):
+    def test_replaces_an_audit_at_a_different_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            first = dict(SCHEMA)
-            first["auditPlanHash"] = "a" * 64
-            first["dispositions"] = [{"finding": "f1", "status": "accepted", "reason": "known"}]
-            audit.write_audit(root, "03-attrition", 2, first)
-            newer = dict(SCHEMA)
-            newer["auditPlanHash"] = "b" * 64
-            audit.write_audit(root, "03-attrition", 2, newer)
-            self.assertEqual(audit.read_audit(root, "03-attrition", 2)["auditPlanHash"], "b" * 64)
+            root = project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload(
+                dispositions=[{"finding": "f1", "status": "accepted", "reason": "known"}]))
+            audit.write_audit(root, "03-attrition", 2, payload(auditPlanHash="b" * 64))
+            self.assertEqual(
+                audit.read_audit(root, "03-attrition", 2)["auditPlanHash"], "b" * 64)
 
     def test_read_audit_returns_none_when_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            self.assertIsNone(audit.read_audit(root, "03-attrition", 2))
+            self.assertIsNone(audit.read_audit(project(tmp), "03-attrition", 2))
+
+    def test_prose_link_points_into_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload())
+            text = audit.audit_path(root, "03-attrition", 2).read_text()
+            self.assertIn("../execution/03-attrition/", text)
+            self.assertNotIn("../../", text)
+
+
+class TestAuditLock:
+    pass  # replaced below
+
+
+class TestLock(unittest.TestCase):
+    def test_second_holder_is_refused_while_the_first_holds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            with audit.audit_lock(root, "03-attrition", 2):
+                with self.assertRaises(audit.AuditLocked):
+                    with audit.audit_lock(root, "03-attrition", 2):
+                        pass
+
+    def test_lock_is_released_on_exception(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            with self.assertRaises(RuntimeError):
+                with audit.audit_lock(root, "03-attrition", 2):
+                    raise RuntimeError("boom")
+            with audit.audit_lock(root, "03-attrition", 2):
+                pass  # acquired again — no leaked lock file
+
+    def test_different_versions_do_not_block_each_other(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            with audit.audit_lock(root, "03-attrition", 2):
+                with audit.audit_lock(root, "03-attrition", 3):
+                    pass
 
 
 class TestIsCurrent(unittest.TestCase):
-    def test_matching_hash_and_context_is_current(self):
+    def test_matching_hash_head_and_paths_is_current(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            rec = dict(SCHEMA)
-            rec["auditPlanHash"] = audit.audit_plan_hash(PLAN)
-            rec["contextIdentity"] = audit.context_identity(root, [])
+            root = git_repo(Path(tmp))
+            rec = payload(auditPlanHash=audit.audit_plan_hash(PLAN),
+                          contextIdentity=audit.context_identity(root, []))
             self.assertTrue(audit.is_current(rec, PLAN, root))
 
     def test_changed_plan_text_is_stale(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            rec = dict(SCHEMA)
-            rec["auditPlanHash"] = audit.audit_plan_hash(PLAN)
-            rec["contextIdentity"] = audit.context_identity(root, [])
-            self.assertFalse(audit.is_current(rec, PLAN + "\nExtra step.\n", root))
+            root = git_repo(Path(tmp))
+            rec = payload(auditPlanHash=audit.audit_plan_hash(PLAN),
+                          contextIdentity=audit.context_identity(root, []))
+            self.assertFalse(audit.is_current(rec, PLAN + "\nExtra.\n", root))
 
-    def test_moved_evidence_is_stale_even_when_plan_is_unchanged(self):
+    def test_moved_evidence_is_stale_though_the_plan_is_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            (root / "analysis").mkdir()
-            (root / "analysis" / "load.py").write_text("print('load')\n")
-            rec = dict(SCHEMA)
-            rec["auditPlanHash"] = audit.audit_plan_hash(PLAN)
-            rec["contextIdentity"] = audit.context_identity(root, ["analysis/load.py"])
-            (root / "analysis" / "load.py").unlink()
+            root = git_repo(Path(tmp))
+            (root / "load.py").write_text("x\n")
+            rec = payload(auditPlanHash=audit.audit_plan_hash(PLAN),
+                          contextIdentity=audit.context_identity(root, ["load.py"]))
+            (root / "load.py").unlink()
             self.assertFalse(audit.is_current(rec, PLAN, root))
+
+    def test_new_head_is_stale(self):
+        # The spec defines context identity as HEAD **plus** cited paths.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = git_repo(Path(tmp))
+            rec = payload(auditPlanHash=audit.audit_plan_hash(PLAN),
+                          contextIdentity=audit.context_identity(root, []))
+            (root / "next.txt").write_text("n\n")
+            subprocess.run(["git", "add", "next.txt"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "next"], cwd=root, check=True)
+            self.assertFalse(audit.is_current(rec, PLAN, root))
+
+    def test_no_record_is_not_current(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(audit.is_current(None, PLAN, Path(tmp)))
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+Delete the placeholder `class TestAuditLock` line when writing the file; it is shown only to mark where the lock tests belong.
+
+- [ ] **Step 2: Run them to verify they fail**
 
 Run: `python3 -m unittest tests.test_audit -v`
 Expected: FAIL with `AttributeError: module 'audit' has no attribute 'write_audit'`
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `skills/managing-planboard/scripts/audit.py`:
+Append to `audit.py`:
 
 ```python
-import json
-import os
-import stat
-import tempfile
-
 SCHEMA_VERSION = 1
 REQUIRED_KEYS = (
-    "schemaVersion", "component", "planVersion", "planPath", "date",
-    "reviewer", "overall", "anchored", "gaps", "dispositions",
+    "schemaVersion", "component", "planVersion", "planPath", "date", "reviewer",
+    "auditPlanHash", "contextIdentity", "supersedes",
+    "overall", "anchored", "gaps", "dispositions",
 )
+SEVERITIES = ("[blocker]", "[major]", "[minor]")
 
 
 class AuditLocked(Exception):
-    """Raised when a write would clobber a current audit that carries
-    dispositions, or when another audit run holds this component's lock."""
+    """Raised when another audit run holds this component-version's lock, or
+    when a write would clobber a current audit that already carries
+    dispositions."""
 
 
 def audit_path(root, component, version):
     return Path(root) / "plans" / "reviews" / ("%s-v%d-audit.md" % (component, version))
+
+
+class audit_lock:
+    """Exclusive per-component-and-version lock, so two runs for the same plan
+    cannot interleave their writes. O_CREAT|O_EXCL is atomic on every platform
+    the board already supports."""
+
+    def __init__(self, root, component, version):
+        self.path = Path(root) / "plans" / "reviews" / (
+            ".%s-v%d-audit.lock" % (component, version))
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except OSError as e:
+            if e.errno == errno.EEXIST:
+                raise AuditLocked("another audit run holds %s" % self.path.name)
+            raise
+        with os.fdopen(fd, "w") as f:
+            f.write("%d %f\n" % (os.getpid(), time.time()))
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            self.path.unlink()
+        except OSError:
+            pass
+        return False
 
 
 def _validate(payload):
@@ -946,28 +1222,50 @@ def _validate(payload):
     for bucket in ("anchored", "gaps", "dispositions"):
         if not isinstance(payload[bucket], list):
             raise ValueError("audit payload '%s' must be a list" % bucket)
-    for finding in list(payload["anchored"]) + list(payload["gaps"]):
-        if not isinstance(finding, dict) or "comment" not in finding:
-            raise ValueError("every finding needs a 'comment'")
-        tag = finding["comment"].split("]")[0] + "]"
-        if tag not in ("[blocker]", "[major]", "[minor]"):
-            raise ValueError("finding has no valid severity tag: %r" % finding["comment"][:60])
+    for bucket in ("anchored", "gaps"):
+        for finding in payload[bucket]:
+            if not isinstance(finding, dict) or not isinstance(finding.get("comment"), str):
+                raise ValueError("every finding needs a string 'comment'")
+            if not any(finding["comment"].startswith(s) for s in SEVERITIES):
+                raise ValueError("finding has no severity tag: %r" % finding["comment"][:60])
+            ev = finding.get("evidence")
+            if not isinstance(ev, dict) or not ev.get("path"):
+                raise ValueError(
+                    "finding has no evidence path: %r" % finding["comment"][:60])
+            if bucket == "anchored" and not finding.get("quote"):
+                raise ValueError(
+                    "anchored finding has no quote: %r" % finding["comment"][:60])
 
 
-def render_audit(payload):
-    """The artifact: prose a human reads, then the fence the board parses."""
+def _counts(payload):
     counts = {"blocker": 0, "major": 0, "minor": 0}
     for finding in list(payload["anchored"]) + list(payload["gaps"]):
         for sev in counts:
             if finding["comment"].startswith("[%s]" % sev):
                 counts[sev] += 1
+    return counts
+
+
+def _severity_key(finding):
+    for i, s in enumerate(SEVERITIES):
+        if finding["comment"].startswith(s):
+            return i
+    return len(SEVERITIES)
+
+
+def render_audit(payload):
+    """The artifact: prose a human reads, then the fence the board parses."""
+    counts = _counts(payload)
+    # The plan lives at plans/execution/<component>/<file>; this artifact lives
+    # at plans/reviews/, so the link is ../execution/... — matching
+    # templates/review-scorecard.md:3.
+    plan_file = payload["planPath"].rsplit("/", 1)[-1]
+    link = "../execution/%s/%s" % (payload["component"], plan_file)
     lines = [
         "# Audit — %s v%s" % (payload["component"], payload["planVersion"]),
         "",
         "Plan: [%s](%s) · Reviewer: **%s** · Date: %s"
-        % (payload["planPath"].rsplit("/", 1)[-1],
-           "../../" + payload["planPath"].split("plans/", 1)[-1],
-           payload["reviewer"].get("token", "?"), payload["date"]),
+        % (plan_file, link, payload["reviewer"].get("token", "?"), payload["date"]),
         "Findings: **%d blocker · %d major · %d minor**"
         % (counts["blocker"], counts["major"], counts["minor"]),
         "",
@@ -975,30 +1273,22 @@ def render_audit(payload):
         "",
         payload["overall"],
         "",
-        "## Findings",
-        "",
     ]
     for label, bucket in (("Anchored", "anchored"), ("Gaps", "gaps")):
-        lines.append("### %s" % label)
-        lines.append("")
+        lines += ["## %s" % label, ""]
         if not payload[bucket]:
-            lines.append("None.")
-            lines.append("")
+            lines += ["None.", ""]
             continue
-        for finding in payload[bucket]:
+        for finding in sorted(payload[bucket], key=_severity_key):
             ev = finding.get("evidence") or {}
             lines.append("- %s" % finding["comment"])
             if finding.get("quote"):
                 lines.append('  - quote: "%s"' % finding["quote"])
-            if ev.get("path"):
-                lines.append("  - evidence: `%s` (%s) — %s"
-                             % (ev["path"], ev.get("kind", "direct"), ev.get("detail", "")))
+            lines.append("  - evidence: `%s` (%s) — %s"
+                         % (ev.get("path", ""), ev.get("kind", "direct"), ev.get("detail", "")))
         lines.append("")
-    lines.append("## Data")
-    lines.append("")
-    lines.append("```json board-audit")
-    lines.append(json.dumps(payload, indent=1, sort_keys=True))
-    lines.append("```")
+    lines += ["## Data", "", "```json board-audit",
+              json.dumps(payload, indent=1, sort_keys=True), "```"]
     return "\n".join(lines) + "\n"
 
 
@@ -1019,29 +1309,27 @@ def _atomic_write(target, text):
 
 
 def write_audit(root, component, version, payload):
-    """Validate, then atomically replace this component-version's audit.
+    """Validate, then atomically replace this component-version's audit under
+    the per-component lock.
 
     Validation runs BEFORE any file is touched, so a malformed payload can
-    never leave a partial fence on disk for the gate to read. An existing audit
-    with the SAME plan hash that already carries dispositions is never
-    replaced: those dispositions were made about exactly this text, and a
-    background run returning late must not silently discard them.
+    never leave a partial fence for a reader. An existing audit at the SAME
+    plan hash that already carries dispositions is never replaced: those
+    dispositions were made about exactly this text, and a background run
+    returning late must not silently discard them.
     """
     payload.setdefault("schemaVersion", SCHEMA_VERSION)
     _validate(payload)
     target = audit_path(root, component, version)
     target.parent.mkdir(parents=True, exist_ok=True)
-    existing = read_audit(root, component, version)
-    if (
-        existing
-        and existing.get("dispositions")
-        and existing.get("auditPlanHash")
-        and existing.get("auditPlanHash") == payload.get("auditPlanHash")
-    ):
-        raise AuditLocked(
-            "audit for %s v%s already carries dispositions at this plan hash" % (component, version)
-        )
-    _atomic_write(target, render_audit(payload))
+    with audit_lock(root, component, version):
+        existing = read_audit(root, component, version)
+        if (existing and existing.get("dispositions")
+                and existing.get("auditPlanHash") == payload.get("auditPlanHash")):
+            raise AuditLocked(
+                "audit for %s v%s already carries dispositions at this plan hash"
+                % (component, version))
+        _atomic_write(target, render_audit(payload))
     return target
 
 
@@ -1053,10 +1341,11 @@ def read_audit(root, component, version):
         raw = p.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-    start = raw.find("```json board-audit")
+    marker = "```json board-audit"
+    start = raw.find(marker)
     if start < 0:
         return None
-    body = raw[start + len("```json board-audit"):]
+    body = raw[start + len(marker):]
     end = body.find("```")
     if end < 0:
         return None
@@ -1069,22 +1358,18 @@ def read_audit(root, component, version):
 def is_current(audit_record, plan_text, root):
     """Current iff BOTH identities match: the plan text AND the repository
     state the findings rest on. Plan text alone is not enough — an audit that
-    confirmed a path exists goes wrong when that path is renamed, with the plan
+    confirmed a path exists goes wrong when that path is renamed with the plan
     untouched."""
     if not audit_record:
         return False
     if audit_record.get("auditPlanHash") != audit_plan_hash(plan_text):
         return False
-    recorded = audit_record.get("contextIdentity") or {"head": None, "paths": {}}
+    recorded = audit_record.get("contextIdentity") or {}
     fresh = context_identity(root, list((recorded.get("paths") or {}).keys()))
-    return recorded.get("paths") == fresh["paths"]
+    return (recorded.get("paths") or {}) == fresh["paths"] and recorded.get("head") == fresh["head"]
 ```
 
-Move the `import json`, `import os`, `import stat`, `import tempfile` lines to the module's existing import block rather than leaving them mid-file.
-
-Note `is_current` compares only the `paths` map, not `head`. HEAD moves on every commit, including commits that touch nothing the audit cited, and invalidating on that would defeat the scoping decision. `head` is recorded for forensics.
-
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Run them to verify they pass**
 
 Run: `python3 -m unittest tests.test_audit -v`
 Expected: PASS
@@ -1093,44 +1378,48 @@ Expected: PASS
 
 ```bash
 git add skills/managing-planboard/scripts/audit.py tests/test_audit.py
-git commit -m "audit: validated atomic artifact writes with disposition protection"
+git commit -m "audit: locked atomic artifact writes with evidence-enforcing validation"
 ```
 
 ---
 
-### Task 6: Codex dispatch and fallback signalling
+### Task 6: Codex dispatch, JSON recovery, and one repair re-prompt
 
-The runner lives in Python so the trigger commands need no new Bash permission beyond the `Bash(python3:*)` they already carry. When Codex cannot run, the runner reports that fact rather than silently degrading; the caller dispatches `pb-plan-auditor` (Task 11).
+The runner lives in Python so the trigger commands need no new Bash permission beyond the `Bash(python3:*)` they already carry.
 
 **Files:**
 - Modify: `skills/managing-planboard/scripts/audit.py`
 - Modify: `tests/test_audit.py`
 
 **Interfaces:**
-- Consumes: everything from Tasks 1 and 5; `models.ensure_audit_stage` (Task 4).
-- Produces:
-  - `build_prompt(plan_text, plan_path, root, contract) -> str`
-  - `parse_reviewer_json(text) -> dict` — the LAST balanced JSON object in the output.
-  - `run_codex_audit(root, token, effort, prompt_path, out_path) -> dict` — `{"ok": bool, "reason": str, "payload": dict|None}`
+- Consumes: Tasks 4 and 5.
+- Produces: `build_prompt`, `parse_reviewer_json`, `CODEX_MODELS`, `run_codex_audit(root, token, effort, prompt_path, out_path, _which=None, _run=None) -> {"ok", "reason", "payload"}`.
 
 - [ ] **Step 1: Write the failing tests**
 
 Append to `tests/test_audit.py`:
 
 ```python
+GOOD_JSON = '{"overall": "ok", "anchored": [], "gaps": []}'
+
+
 class TestParseReviewerJson(unittest.TestCase):
     def test_takes_the_last_balanced_object(self):
-        text = (
-            'Some preamble {"not": "it"} more text\n'
-            '{"overall": "ok", "anchored": [], "gaps": []}\n'
-            "trailing chatter\n"
-        )
-        got = audit.parse_reviewer_json(text)
-        self.assertEqual(got["overall"], "ok")
+        text = 'preamble {"not": "it"} more\n' + GOOD_JSON + "\ntrailing chatter\n"
+        self.assertEqual(audit.parse_reviewer_json(text)["overall"], "ok")
 
-    def test_handles_braces_inside_strings(self):
-        text = '{"overall": "a } brace in a string", "anchored": [], "gaps": []}'
-        self.assertEqual(audit.parse_reviewer_json(text)["overall"], "a } brace in a string")
+    def test_handles_a_brace_inside_a_string(self):
+        text = '{"overall": "a } brace", "anchored": [], "gaps": []}'
+        self.assertEqual(audit.parse_reviewer_json(text)["overall"], "a } brace")
+
+    def test_handles_an_escaped_quote_before_a_brace(self):
+        # The first draft's backward scan returned None for this valid JSON.
+        text = '{"overall": "a \\" } quote", "anchored": [], "gaps": []}'
+        self.assertEqual(audit.parse_reviewer_json(text)["overall"], 'a " } quote')
+
+    def test_handles_a_nested_object(self):
+        text = '{"overall": "x", "anchored": [{"evidence": {"path": "a"}}], "gaps": []}'
+        self.assertEqual(len(audit.parse_reviewer_json(text)["anchored"]), 1)
 
     def test_returns_none_on_no_json(self):
         self.assertIsNone(audit.parse_reviewer_json("no json at all"))
@@ -1140,16 +1429,12 @@ class TestParseReviewerJson(unittest.TestCase):
 
 
 class TestBuildPrompt(unittest.TestCase):
-    def test_prompt_carries_plan_path_root_and_contract(self):
-        p = audit.build_prompt("PLAN BODY", "plans/execution/03-x/.draft-v2.md", "/repo", "CONTRACT")
-        self.assertIn("PLAN BODY", p)
-        self.assertIn("plans/execution/03-x/.draft-v2.md", p)
-        self.assertIn("/repo", p)
-        self.assertIn("CONTRACT", p)
+    def test_carries_plan_path_root_and_contract(self):
+        p = audit.build_prompt("BODY", "plans/execution/03-x/.draft-v2.md", "/repo", "CONTRACT")
+        for needle in ("BODY", "plans/execution/03-x/.draft-v2.md", "/repo", "CONTRACT"):
+            self.assertIn(needle, p)
 
-    def test_plan_text_is_not_shell_interpolated(self):
-        # A plan containing backticks or $(...) must survive verbatim; the
-        # prompt is written to a FILE and never interpolated into a command.
+    def test_plan_text_survives_verbatim(self):
         hostile = "Step 1: run `rm -rf /` and $(whoami)\n"
         p = audit.build_prompt(hostile, "x.md", "/repo", "C")
         self.assertIn("`rm -rf /`", p)
@@ -1157,21 +1442,96 @@ class TestBuildPrompt(unittest.TestCase):
 
 
 class TestRunCodexAudit(unittest.TestCase):
-    def test_missing_executable_reports_fallback_not_success(self):
+    def _prompt(self, root):
+        p = root / "prompt.txt"
+        p.write_text("audit this")
+        return p
+
+    def test_missing_executable_reports_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            prompt = root / "prompt.txt"
-            prompt.write_text("audit this")
-            result = audit.run_codex_audit(
-                root, "codex-sol", "xhigh", prompt, root / "out.txt",
-                _which=lambda name: None,
-            )
-            self.assertFalse(result["ok"])
-            self.assertIn("not available", result["reason"])
-            self.assertIsNone(result["payload"])
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt", _which=lambda n: None)
+            self.assertFalse(r["ok"])
+            self.assertIn("not available", r["reason"])
+
+    def test_successful_dispatch_uses_the_right_command(self):
+        # Would pass in the first draft even if the command omitted the
+        # read-only sandbox, used the wrong model, or inherited stdin.
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["cmd"] = cmd
+            seen["kw"] = kw
+            Path(kw["cwd"], "out.txt").write_text("chatter\n" + GOOD_JSON)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-terra", "high", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertTrue(r["ok"], r["reason"])
+            self.assertEqual(r["payload"]["overall"], "ok")
+            self.assertIn("--sandbox", seen["cmd"])
+            self.assertEqual(seen["cmd"][seen["cmd"].index("--sandbox") + 1], "read-only")
+            self.assertIn("gpt-5.6-terra", seen["cmd"])
+            self.assertIn("model_reasoning_effort=high", seen["cmd"])
+            self.assertEqual(seen["kw"]["stdin"], subprocess.DEVNULL)
+
+    def test_nonzero_exit_reports_fallback(self):
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 2, "", "boom")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertFalse(r["ok"])
+            self.assertIn("exited 2", r["reason"])
+
+    def test_unparseable_output_is_retried_once_then_falls_back(self):
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            Path(kw["cwd"], "out.txt").write_text("no json here")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(len(calls), 2, "spec requires exactly one repair re-prompt")
+            self.assertFalse(r["ok"])
+
+    def test_repair_reprompt_can_succeed(self):
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            body = "garbage" if len(calls) == 1 else GOOD_JSON
+            Path(kw["cwd"], "out.txt").write_text(body)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertTrue(r["ok"])
+            self.assertEqual(len(calls), 2)
+
+    def test_unknown_token_reports_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "subagent", "xhigh", self._prompt(root),
+                                      root / "out.txt", _which=lambda n: "/usr/bin/codex")
+            self.assertFalse(r["ok"])
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run them to verify they fail**
 
 Run: `python3 -m unittest tests.test_audit -v`
 Expected: FAIL with `AttributeError: module 'audit' has no attribute 'parse_reviewer_json'`
@@ -1181,13 +1541,15 @@ Expected: FAIL with `AttributeError: module 'audit' has no attribute 'parse_revi
 Append to `audit.py`:
 
 ```python
-import shutil
-
 CODEX_MODELS = {
     "codex-sol": "gpt-5.6-sol",
     "codex-terra": "gpt-5.6-terra",
     "codex-luna": "gpt-5.6-luna",
 }
+REPAIR_SUFFIX = (
+    "\n\nYour previous reply could not be parsed. Reply with ONLY the JSON "
+    "object described in the output contract — no prose before or after it.\n"
+)
 
 
 def build_prompt(plan_text, plan_path, root, contract):
@@ -1208,90 +1570,105 @@ def build_prompt(plan_text, plan_path, root, contract):
     ) % (plan_path, root, plan_text, contract)
 
 
-def parse_reviewer_json(text):
-    """The LAST balanced JSON object in reviewer output.
-
-    Reviewers wrap their answer in prose, so a greedy or first-match scan picks
-    up the wrong object. Scans backward from the last closing brace, tracking
-    string state so a brace inside a string never changes depth.
-    """
-    end = text.rfind("}")
-    while end != -1:
+def _scan_object(text, end):
+    """Return the balanced object ending at `end`, or None. Scans FORWARD from
+    each candidate start so string and escape state is tracked in the direction
+    the grammar is written — a backward scan cannot tell an escaped quote from
+    a real one."""
+    start = text.rfind("{", 0, end + 1)
+    while start != -1:
         depth = 0
         in_str = False
         esc = False
-        for i in range(end, -1, -1):
+        for i in range(start, end + 1):
             ch = text[i]
             if esc:
                 esc = False
-                continue
-            if in_str:
+            elif in_str:
                 if ch == "\\":
                     esc = True
                 elif ch == '"':
                     in_str = False
-                continue
-            if ch == '"':
+            elif ch == '"':
                 in_str = True
-            elif ch == "}":
-                depth += 1
             elif ch == "{":
+                depth += 1
+            elif ch == "}":
                 depth -= 1
                 if depth == 0:
-                    try:
-                        return json.loads(text[i:end + 1])
-                    except ValueError:
-                        break
+                    if i == end:
+                        try:
+                            return json.loads(text[start:end + 1])
+                        except ValueError:
+                            break
+                    break
+        start = text.rfind("{", 0, start)
+    return None
+
+
+def parse_reviewer_json(text):
+    """The LAST balanced JSON object in reviewer output. Reviewers wrap their
+    answer in prose, so a first-match scan picks up the wrong object."""
+    end = text.rfind("}")
+    while end != -1:
+        got = _scan_object(text, end)
+        if got is not None:
+            return got
         end = text.rfind("}", 0, end)
     return None
-```
 
-The backward scan's escape handling is approximate for pathological inputs; `json.loads` is the real validator and a wrong split simply falls through to the next candidate.
 
-```python
 def run_codex_audit(root, token, effort, prompt_path, out_path, _which=None, _run=None):
-    """Dispatch Codex read-only. Returns ok=False with a reason on every
-    failure mode — missing executable, nonzero exit, timeout, or unparseable
-    output — so the caller can fall back to pb-plan-auditor. The audit is never
-    silently skipped: a skipped audit reads as a clean bill of health."""
+    """Dispatch Codex read-only, with exactly one repair re-prompt on
+    unparseable output. Returns ok=False with a reason on every failure mode —
+    missing executable, unknown token, nonzero exit, timeout, or still-
+    unparseable output — so the caller can fall back to pb-plan-auditor. The
+    audit is never silently skipped: a skipped audit reads as a clean bill of
+    health."""
     which = _which or shutil.which
     runner = _run or subprocess.run
     if which("codex") is None:
         return {"ok": False, "reason": "codex is not available on PATH", "payload": None}
     model = CODEX_MODELS.get(token)
     if model is None:
-        return {"ok": False, "reason": "unknown reviewer token %r" % token, "payload": None}
-    cmd = [
-        "codex", "exec", "--sandbox", "read-only",
-        "-m", model,
-        "-c", "model_reasoning_effort=%s" % effort,
-        "-o", str(out_path),
-        prompt_path.read_text(encoding="utf-8"),
-    ]
-    try:
-        proc = runner(cmd, cwd=str(root), capture_output=True, text=True,
-                      timeout=1800, stdin=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "reason": "codex timed out after 30 minutes", "payload": None}
-    except OSError as e:
-        return {"ok": False, "reason": "could not launch codex (%s)" % e, "payload": None}
-    if proc.returncode != 0:
-        return {"ok": False,
-                "reason": "codex exited %d: %s" % (proc.returncode, (proc.stderr or "")[:200]),
+        return {"ok": False, "reason": "%r is not a codex reviewer token" % token,
                 "payload": None}
-    try:
-        text = Path(out_path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as e:
-        return {"ok": False, "reason": "could not read codex output (%s)" % e, "payload": None}
-    payload = parse_reviewer_json(text)
-    if payload is None:
-        return {"ok": False, "reason": "codex output had no parseable JSON object", "payload": None}
-    return {"ok": True, "reason": "", "payload": payload}
+
+    prompt = prompt_path.read_text(encoding="utf-8")
+    for attempt in (0, 1):
+        cmd = [
+            "codex", "exec", "--sandbox", "read-only",
+            "-m", model,
+            "-c", "model_reasoning_effort=%s" % effort,
+            "-o", str(out_path),
+            prompt if attempt == 0 else prompt + REPAIR_SUFFIX,
+        ]
+        try:
+            proc = runner(cmd, cwd=str(root), capture_output=True, text=True,
+                          timeout=1800, stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "reason": "codex timed out after 30 minutes", "payload": None}
+        except OSError as e:
+            return {"ok": False, "reason": "could not launch codex (%s)" % e, "payload": None}
+        if proc.returncode != 0:
+            return {"ok": False,
+                    "reason": "codex exited %d: %s" % (proc.returncode, (proc.stderr or "")[:200]),
+                    "payload": None}
+        try:
+            text = Path(out_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            return {"ok": False, "reason": "could not read codex output (%s)" % e,
+                    "payload": None}
+        payload = parse_reviewer_json(text)
+        if payload is not None:
+            return {"ok": True, "reason": "", "payload": payload}
+    return {"ok": False, "reason": "codex output had no parseable JSON after one repair",
+            "payload": None}
 ```
 
-`stdin=subprocess.DEVNULL` is load-bearing. Codex launched from an agent harness with an inherited stdin hangs indefinitely at 0% CPU with no output.
+`stdin=subprocess.DEVNULL` is load-bearing: Codex launched from an agent harness with inherited stdin hangs indefinitely at 0% CPU with no output.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Run them to verify they pass**
 
 Run: `python3 -m unittest tests.test_audit -v`
 Expected: PASS
@@ -1300,76 +1677,190 @@ Expected: PASS
 
 ```bash
 git add skills/managing-planboard/scripts/audit.py tests/test_audit.py
-git commit -m "audit: codex dispatch, last-balanced-JSON parsing, explicit fallback reasons"
+git commit -m "audit: codex dispatch with forward-scan JSON recovery and one repair re-prompt"
 ```
 
 ---
 
-### Task 7: The `run` CLI entry point
-
-One command the trigger commands call, so the orchestration lives in Python rather than in prose.
+### Task 7: The `run` and `record-fallback` CLI
 
 **Files:**
 - Modify: `skills/managing-planboard/scripts/audit.py`
 - Modify: `tests/test_audit.py`
+- Modify: `skills/managing-planboard/scripts/board.py:85-103` (the runtime ignore list)
 
 **Interfaces:**
-- Consumes: Tasks 1, 4, 5, 6.
-- Produces: `python3 audit.py run --component <NN-slug> --version <N> --plan <path>`, printing one status line and exiting 0 on success, 3 when a subagent fallback is required, and 1 on error.
+- Consumes: Tasks 3-6.
+- Produces:
+  - `python3 audit.py --root <root> run --component <NN-slug> --version <N> --plan <path>` — exit 0 written or already current, 3 fallback required, 1 error.
+  - `python3 audit.py --root <root> record-fallback --component <NN-slug> --version <N> --plan <path> --json <file> --reason <text>` — turns a subagent's JSON into the artifact. Task 11 calls it.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_audit.py`:
+Append to `tests/test_audit.py`. Note every fixture here writes a profile, but the implementation must also survive one that does not — that is the `FileNotFoundError` the first draft shipped.
 
 ```python
+import models  # noqa: E402  (already on sys.path via SCRIPTS)
+
+TEMPLATES = SCRIPTS.parent / "templates"
+
+
+def audit_project(tmp, with_profile=True):
+    root = project(tmp)
+    (root / "plans" / "master-plan.md").write_text("<!-- planboard:master-plan -->\n")
+    if with_profile:
+        (root / "plans" / "model-profile.md").write_text(
+            (TEMPLATES / "model-profile.md").read_text(encoding="utf-8"), encoding="utf-8")
+    plan = root / "plans" / "execution" / "03-attrition" / ".draft-v2.md"
+    plan.write_text(PLAN)
+    return root, plan
+
+
+def run_cli(root, argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = audit.main(["--root", str(root)] + argv)
+    return code, out.getvalue()
+
+
 class TestRunCli(unittest.TestCase):
     def test_skips_when_a_current_audit_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            plan = root / "plans" / "execution" / "03-attrition" / ".draft-v2.md"
-            plan.write_text(PLAN)
-            rec = dict(SCHEMA)
-            rec["auditPlanHash"] = audit.audit_plan_hash(PLAN)
-            rec["contextIdentity"] = audit.context_identity(root, [])
-            audit.write_audit(root, "03-attrition", 2, rec)
-            out = []
-            code = audit.main(
-                ["run", "--component", "03-attrition", "--version", "2",
-                 "--plan", str(plan)],
-                root=root, stdout=out,
-            )
+            root, plan = audit_project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload(
+                auditPlanHash=audit.audit_plan_hash(PLAN),
+                contextIdentity=audit.context_identity(root, [])))
+            code, out = run_cli(root, ["run", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan)])
             self.assertEqual(code, 0)
-            self.assertIn("current", " ".join(out))
+            self.assertIn("current", out)
 
     def test_signals_fallback_when_codex_is_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            plan = root / "plans" / "execution" / "03-attrition" / ".draft-v2.md"
-            plan.write_text(PLAN)
-            out = []
-            code = audit.main(
-                ["run", "--component", "03-attrition", "--version", "2",
-                 "--plan", str(plan)],
-                root=root, stdout=out, _which=lambda n: None,
-            )
+            root, plan = audit_project(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: None)
             self.assertEqual(code, 3)
-            self.assertIn("fallback", " ".join(out).lower())
+            self.assertIn("fallback", out.getvalue().lower())
+
+    def test_a_project_with_no_profile_does_not_crash(self):
+        # The first draft read model-profile.md unconditionally.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp, with_profile=False)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: None)
+            self.assertIn(code, (0, 3))
+
+    def test_subagent_token_signals_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            p = root / "plans" / "model-profile.md"
+            p.write_text(p.read_text().replace("codex-sol", "subagent"))
+            code, out = run_cli(root, ["run", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan)])
+            self.assertEqual(code, 3)
 
     def test_missing_plan_file_is_an_error(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = _project(tmp)
-            out = []
-            code = audit.main(
-                ["run", "--component", "03-attrition", "--version", "2",
-                 "--plan", str(root / "nope.md")],
-                root=root, stdout=out,
-            )
+            root, _ = audit_project(tmp)
+            code, _ = run_cli(root, ["run", "--component", "03-attrition",
+                                     "--version", "2", "--plan", str(root / "nope.md")])
+            self.assertEqual(code, 1)
+
+    def test_a_plan_edited_during_the_run_is_not_published(self):
+        # A 30-minute audit must not publish findings about text that changed
+        # while it was thinking.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+
+            def fake_run(cmd, **kw):
+                plan.write_text(PLAN + "\nA step added mid-run.\n")
+                Path(kw["cwd"], out_name).write_text(GOOD_JSON)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+
+            out_name = ".pb-audit-out-03-attrition-v2.txt"
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(code, 1)
+            self.assertIn("changed during", buf.getvalue())
+            self.assertIsNone(audit.read_audit(root, "03-attrition", 2))
+
+    def test_writes_the_artifact_with_both_identities(self):
+        def fake_run(cmd, **kw):
+            Path(kw["cwd"], ".pb-audit-out-03-attrition-v2.txt").write_text(json.dumps({
+                "overall": "one gap",
+                "anchored": [],
+                "gaps": [FINDING],
+            }))
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            (root / "analysis").mkdir()
+            (root / "analysis" / "fit.R").write_text("fit\n")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(code, 0, buf.getvalue())
+            rec = audit.read_audit(root, "03-attrition", 2)
+            self.assertEqual(rec["auditPlanHash"], audit.audit_plan_hash(PLAN))
+            self.assertIn("analysis/fit.R", rec["contextIdentity"]["paths"])
+            self.assertEqual(rec["reviewer"]["token"], "codex-sol")
+
+    def test_temp_files_are_cleaned_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            with contextlib.redirect_stdout(io.StringIO()):
+                audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                            "--version", "2", "--plan", str(plan)], _which=lambda n: None)
+            self.assertEqual(list((root / "plans").glob(".pb-audit-*")), [])
+
+
+class TestRecordFallback(unittest.TestCase):
+    def test_writes_an_artifact_marked_as_a_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            (root / "analysis").mkdir()
+            (root / "analysis" / "fit.R").write_text("fit\n")
+            blob = root / "sub.json"
+            blob.write_text(json.dumps({"overall": "from the subagent",
+                                        "anchored": [], "gaps": [FINDING]}))
+            code, _ = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                     "--version", "2", "--plan", str(plan),
+                                     "--json", str(blob),
+                                     "--reason", "codex is not available on PATH"])
+            self.assertEqual(code, 0)
+            rec = audit.read_audit(root, "03-attrition", 2)
+            self.assertEqual(rec["reviewer"]["token"], "subagent")
+            self.assertEqual(rec["reviewer"]["reviewerFallback"],
+                             "codex is not available on PATH")
+            self.assertEqual(rec["auditPlanHash"], audit.audit_plan_hash(PLAN))
+
+    def test_malformed_subagent_json_is_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            blob = root / "sub.json"
+            blob.write_text("{not json")
+            code, _ = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                     "--version", "2", "--plan", str(plan),
+                                     "--json", str(blob), "--reason", "x"])
             self.assertEqual(code, 1)
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run them to verify they fail**
 
-Run: `python3 -m unittest tests.test_audit.TestRunCli -v`
+Run: `python3 -m unittest tests.test_audit -v`
 Expected: FAIL with `AttributeError: module 'audit' has no attribute 'main'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1377,114 +1868,138 @@ Expected: FAIL with `AttributeError: module 'audit' has no attribute 'main'`
 Append to `audit.py`:
 
 ```python
-import argparse
-import datetime
-
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_FALLBACK = 3  # caller must dispatch pb-plan-auditor via Task
 
-
-def _contract_text():
-    """The output contract, kept identical to pb-plan-auditor's so both
-    reviewers return the same shape."""
-    return (
-        "<output_contract>\n"
-        'Return strict JSON with exactly three keys: {"overall": "<one paragraph>", '
-        '"anchored": [...], "gaps": [...]}.\n'
-        "An `anchored` finding is about text IN the plan and carries a short verbatim "
-        "`quote` with markdown stripped. A `gap` is about something the plan NEVER says "
-        "and carries no quote. Do not force a gap into an anchor.\n"
-        "There is no cap on findings. Every finding must (1) name the concrete failure it "
-        "predicts at execution time, and (2) carry an `evidence` object "
-        '{"path", "kind": "direct"|"inferred", "detail"} naming a repository or data path '
-        "you actually opened. Drop any finding failing either test.\n"
-        "Begin each comment with exactly one of [blocker], [major], [minor]. "
-        "Order most severe first.\n"
-        "</output_contract>\n"
-    )
+CONTRACT = (
+    "<output_contract>\n"
+    'Return strict JSON with exactly three keys: {"overall": "<one paragraph>", '
+    '"anchored": [...], "gaps": [...]}.\n'
+    "An `anchored` finding is about text IN the plan and carries a short verbatim "
+    "`quote` with markdown stripped. A `gap` is about something the plan NEVER says "
+    "and carries no quote. Do not force a gap into an anchor.\n"
+    "There is no cap on findings. Every finding must (1) name the concrete failure it "
+    "predicts at execution time, and (2) carry an `evidence` object "
+    '{"path", "kind": "direct"|"inferred", "detail"} naming a repository or data path '
+    "you actually opened. Drop any finding failing either test.\n"
+    "Begin each comment with exactly one of [blocker], [major], [minor]. "
+    "Order most severe first.\n"
+    "</output_contract>\n"
+)
 
 
-def main(argv=None, root=None, stdout=None, _which=None, _run=None):
-    import models  # local import: audit.py is usable without a profile
+def _evidence_paths(payload):
+    return sorted({
+        (f.get("evidence") or {}).get("path")
+        for f in list(payload.get("anchored") or []) + list(payload.get("gaps") or [])
+        if (f.get("evidence") or {}).get("path")
+    })
 
-    out = stdout if stdout is not None else []
+
+def _finalize(root, component, version, plan_file, payload, token, effort,
+              fallback_reason, existing):
+    """Stamp identities onto a reviewer payload and write it."""
+    payload.setdefault("anchored", [])
+    payload.setdefault("gaps", [])
+    plan_text = plan_file.read_text(encoding="utf-8")
+    reviewer = {"token": token, "effort": effort}
+    if fallback_reason:
+        reviewer["reviewerFallback"] = fallback_reason
+    payload.update({
+        "component": component,
+        "planVersion": version,
+        "planPath": str(plan_file.relative_to(root)),
+        "date": datetime.date.today().isoformat(),
+        "reviewer": reviewer,
+        "auditPlanHash": audit_plan_hash(plan_text),
+        "contextIdentity": context_identity(root, _evidence_paths(payload)),
+        "supersedes": (existing or {}).get("auditPlanHash"),
+        "dispositions": [],
+    })
+    return write_audit(root, component, version, payload)
+
+
+def _resolve_row(root):
+    import models
+    models.ensure_audit_stage(root)
+    stages, _warnings, _exists = models.load_profile(root)
+    return stages.get("plan-audit") or {"model": "codex-sol", "effort": "xhigh"}
+
+
+def main(argv=None, _which=None, _run=None):
     parser = argparse.ArgumentParser(prog="audit.py")
+    parser.add_argument("--root", default=None)
     sub = parser.add_subparsers(dest="cmd", required=True)
-    run = sub.add_parser("run")
-    run.add_argument("--component", required=True)
-    run.add_argument("--version", type=int, required=True)
-    run.add_argument("--plan", required=True)
+    for name in ("run", "record-fallback"):
+        s = sub.add_parser(name)
+        s.add_argument("--component", required=True)
+        s.add_argument("--version", type=int, required=True)
+        s.add_argument("--plan", required=True)
+        if name == "record-fallback":
+            s.add_argument("--json", required=True)
+            s.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
 
-    root = Path(root) if root else Path.cwd()
+    root = Path(args.root).resolve() if args.root else Path.cwd()
     plan_file = Path(args.plan)
     if not plan_file.is_file():
-        out.append("audit: plan not found: %s" % args.plan)
-        _flush(out, stdout)
+        print("audit: plan not found: %s" % args.plan)
         return EXIT_ERROR
     plan_text = plan_file.read_text(encoding="utf-8")
-
-    models.ensure_audit_stage(root)
-    stages, _warnings = models.parse_profile(
-        (root / "plans" / "model-profile.md").read_text(encoding="utf-8")
-    )
-    row = stages.get("plan-audit") or {"model": "codex-sol", "effort": "xhigh"}
-
     existing = read_audit(root, args.component, args.version)
-    if existing and is_current(existing, plan_text, root):
-        out.append("audit: current for %s v%d — no reviewer run"
-                   % (args.component, args.version))
-        _flush(out, stdout)
+
+    if args.cmd == "record-fallback":
+        try:
+            payload = json.loads(Path(args.json).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print("audit: could not read fallback JSON (%s)" % e)
+            return EXIT_ERROR
+        row = _resolve_row(root)
+        try:
+            _finalize(root, args.component, args.version, plan_file, payload,
+                      "subagent", row["effort"], args.reason, existing)
+        except (ValueError, AuditLocked) as e:
+            print("audit: not written (%s)" % e)
+            return EXIT_ERROR
+        print("audit: wrote %s v%d from the fallback reviewer"
+              % (args.component, args.version))
         return EXIT_OK
 
-    if row["model"] == "subagent":
-        out.append("audit: profile selects subagent — fallback dispatch required")
-        _flush(out, stdout)
+    if existing and is_current(existing, plan_text, root):
+        print("audit: current for %s v%d — no reviewer run" % (args.component, args.version))
+        return EXIT_OK
+
+    row = _resolve_row(root)
+    if row["model"] not in CODEX_MODELS:
+        print("audit: profile selects %r — fallback dispatch required" % row["model"])
         return EXIT_FALLBACK
 
-    prompt_path = root / "plans" / (".pb-audit-%s-v%d.txt" % (args.component, args.version))
-    out_path = root / "plans" / (".pb-audit-out-%s-v%d.txt" % (args.component, args.version))
-    prompt_path.write_text(
-        build_prompt(plan_text, str(plan_file.relative_to(root)), str(root), _contract_text()),
-        encoding="utf-8",
-    )
+    plans_dir = root / "plans"
+    prompt_path = plans_dir / (".pb-audit-%s-v%d.txt" % (args.component, args.version))
+    out_path = plans_dir / (".pb-audit-out-%s-v%d.txt" % (args.component, args.version))
     try:
-        result = run_codex_audit(root, row["model"], row["effort"],
-                                 prompt_path, out_path, _which=_which, _run=_run)
+        prompt_path.write_text(
+            build_prompt(plan_text, str(plan_file.relative_to(root)), str(root), CONTRACT),
+            encoding="utf-8")
+        result = run_codex_audit(root, row["model"], row["effort"], prompt_path, out_path,
+                                 _which=_which, _run=_run)
         if not result["ok"]:
-            out.append("audit: %s — fallback dispatch required" % result["reason"])
-            _flush(out, stdout)
+            print("audit: %s — fallback dispatch required" % result["reason"])
             return EXIT_FALLBACK
-        payload = result["payload"]
-        evidence_paths = sorted({
-            (f.get("evidence") or {}).get("path")
-            for f in list(payload.get("anchored") or []) + list(payload.get("gaps") or [])
-            if (f.get("evidence") or {}).get("path")
-        })
-        payload.update({
-            "component": args.component,
-            "planVersion": args.version,
-            "planPath": str(plan_file.relative_to(root)),
-            "date": datetime.date.today().isoformat(),
-            "reviewer": {"token": row["model"], "effort": row["effort"]},
-            "auditPlanHash": audit_plan_hash(plan_text),
-            "contextIdentity": context_identity(root, evidence_paths),
-            "supersedes": (existing or {}).get("auditPlanHash"),
-            "dispositions": [],
-        })
-        payload.setdefault("anchored", [])
-        payload.setdefault("gaps", [])
-        try:
-            write_audit(root, args.component, args.version, payload)
-        except (ValueError, AuditLocked) as e:
-            out.append("audit: not written (%s)" % e)
-            _flush(out, stdout)
+        # Re-read before publishing: a reviewer run takes minutes, and findings
+        # about text that has since changed must never be published as current.
+        if plan_file.read_text(encoding="utf-8") != plan_text:
+            print("audit: the plan changed during the reviewer run — discarding this audit")
             return EXIT_ERROR
-        n = len(payload["anchored"]) + len(payload["gaps"])
-        out.append("audit: wrote %s v%d — %d findings"
-                   % (args.component, args.version, n))
-        _flush(out, stdout)
+        try:
+            _finalize(root, args.component, args.version, plan_file, result["payload"],
+                      row["model"], row["effort"], None, existing)
+        except (ValueError, AuditLocked) as e:
+            print("audit: not written (%s)" % e)
+            return EXIT_ERROR
+        n = len(result["payload"]["anchored"]) + len(result["payload"]["gaps"])
+        print("audit: wrote %s v%d — %d findings" % (args.component, args.version, n))
         return EXIT_OK
     finally:
         for p in (prompt_path, out_path):
@@ -1494,49 +2009,40 @@ def main(argv=None, root=None, stdout=None, _which=None, _run=None):
                 pass
 
 
-def _flush(out, stdout):
-    if stdout is None:
-        for line in out:
-            print(line)
-
-
 if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-Add `plans/.pb-audit-*` to the repository's `.gitignore` alongside the existing `plans/.pb-review-*` entry if one exists; add both if not.
+- [ ] **Step 4: Add the temp files to the runtime ignore list**
 
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `python3 -m unittest tests.test_audit -v`
-Expected: PASS
+The `.pb-audit-*` files live under a *user's* `plans/`, not this repository, so the repo `.gitignore` is the wrong place. Add the pattern where the board already ignores its own temp files, `board.py:85-103`, alongside the existing `.pb-review-*` entry. Read that list first and match its exact idiom.
 
 - [ ] **Step 5: Run the full Python suite**
 
-Run: `python3 -m unittest discover -s tests -v 2>&1 | tail -5`
-Expected: no new failures
+Run: `python3 -m unittest discover -s tests`
+Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/managing-planboard/scripts/audit.py tests/test_audit.py .gitignore
-git commit -m "audit: run CLI with currency skip and explicit fallback exit code"
+git add skills/managing-planboard/scripts/audit.py skills/managing-planboard/scripts/board.py tests/test_audit.py
+git commit -m "audit: run and record-fallback CLI with pre-publication plan re-read"
 ```
 
 ---
 
 ### Task 8: Board types and the `board-audit` parser
 
+**Warning:** `board/src/lib/parse.ts` contains a raw NUL byte at line 451, so `grep` treats the whole file as binary and silently returns nothing. Use a file-reading tool on it, not grep.
+
 **Files:**
 - Modify: `board/src/lib/types.ts` (append the audit types)
-- Modify: `board/src/lib/parse.ts` (append `parseAudit` beside `parseScorecard` at line 376)
+- Modify: `board/src/lib/parse.ts` (append `parseAudit` after `parseScorecard` at line 376)
 - Test: `board/src/lib/parse.audit.test.ts`
 
 **Interfaces:**
 - Consumes: the fence written by Task 5's `render_audit`.
-- Produces: `parseAudit(raw: string): Audit | null`, and the `Audit`, `AuditFinding`, `AuditEvidence`, `AuditSeverity` types. Tasks 9 and 10 import them.
-
-**Warning:** `board/src/lib/parse.ts` contains a raw NUL byte at line 451, so `grep` treats the whole file as binary and silently returns nothing. Use the Read tool on it, not grep.
+- Produces: `parseAudit(raw) => Audit | null`, plus `Audit`, `AuditFinding`, `AuditEvidence`, `AuditSeverity`. Tasks 9 and 10 import them.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1549,6 +2055,14 @@ import { parseAudit } from "./parse";
 const fence = (obj: unknown) =>
   `# Audit\n\nprose\n\n## Data\n\n\`\`\`json board-audit\n${JSON.stringify(obj)}\n\`\`\`\n`;
 
+const finding = (comment: string, over: Record<string, unknown> = {}) => ({
+  section: "Steps",
+  quote: "Run the model",
+  evidence: { path: "analysis/fit.R", kind: "direct", detail: "no seed set" },
+  comment,
+  ...over,
+});
+
 const VALID = {
   schemaVersion: 1,
   component: "03-attrition",
@@ -1558,36 +2072,37 @@ const VALID = {
   reviewer: { token: "codex-sol", effort: "xhigh" },
   auditPlanHash: "a".repeat(64),
   overall: "Two gaps.",
-  anchored: [
-    {
-      section: "Steps",
-      quote: "Run the model",
-      evidence: { path: "analysis/fit.R", kind: "direct", detail: "no seed set" },
-      comment: "[blocker] No random seed. At execution: results are irreproducible.",
-    },
-  ],
-  gaps: [
-    {
-      section: "",
-      evidence: { path: "data/wave3.csv", kind: "direct", detail: "12% missing" },
-      comment: "[major] No missingness rule. At execution: listwise drops the 2019 wave.",
-    },
-  ],
+  anchored: [finding("[blocker] No seed. At execution: results are irreproducible.")],
+  gaps: [finding("[major] No missingness rule. At execution: listwise drops 2019.", { quote: undefined })],
   dispositions: [],
 };
 
 describe("parseAudit", () => {
   it("parses a valid fence", () => {
-    const a = parseAudit(fence(VALID));
-    expect(a).not.toBeNull();
-    expect(a!.component).toBe("03-attrition");
-    expect(a!.anchored).toHaveLength(1);
-    expect(a!.gaps).toHaveLength(1);
+    const a = parseAudit(fence(VALID))!;
+    expect(a.component).toBe("03-attrition");
+    expect(a.anchored).toHaveLength(1);
+    expect(a.gaps).toHaveLength(1);
   });
 
   it("exposes severity counts", () => {
-    const a = parseAudit(fence(VALID))!;
-    expect(a.counts).toEqual({ blocker: 1, major: 1, minor: 0 });
+    expect(parseAudit(fence(VALID))!.counts).toEqual({ blocker: 1, major: 1, minor: 0 });
+  });
+
+  it("orders findings most severe first within each bucket", () => {
+    const many = {
+      ...VALID,
+      gaps: [
+        finding("[minor] Small. At execution: nothing breaks.", { quote: undefined }),
+        finding("[blocker] Big. At execution: it crashes.", { quote: undefined }),
+        finding("[major] Medium. At execution: wrong numbers.", { quote: undefined }),
+      ],
+    };
+    expect(parseAudit(fence(many))!.gaps.map((f) => f.severity)).toEqual([
+      "blocker",
+      "major",
+      "minor",
+    ]);
   });
 
   it("returns null with no fence", () => {
@@ -1606,22 +2121,32 @@ describe("parseAudit", () => {
     expect(parseAudit('```json board-scorecard\n{"schemaVersion":3}\n```')).toBeNull();
   });
 
-  it("tolerates a finding with no evidence", () => {
-    const noEv = { ...VALID, gaps: [{ section: "", comment: "[minor] Small thing. At execution: nothing breaks." }] };
+  it("drops a finding with no valid severity tag", () => {
+    const bad = { ...VALID, gaps: [finding("no tag here", { quote: undefined })] };
+    expect(parseAudit(fence(bad))!.gaps).toHaveLength(0);
+  });
+
+  it("keeps a finding whose evidence is missing rather than dropping it", () => {
+    // The writer enforces evidence; the reader stays tolerant so a
+    // hand-edited or older artifact still renders.
+    const noEv = {
+      ...VALID,
+      gaps: [{ section: "", comment: "[minor] Small. At execution: nothing breaks." }],
+    };
     expect(parseAudit(fence(noEv))!.gaps[0].evidence).toBeUndefined();
   });
 
-  it("drops a finding with no valid severity tag", () => {
-    const bad = { ...VALID, gaps: [{ section: "", comment: "no tag here" }] };
-    expect(parseAudit(fence(bad))!.gaps).toHaveLength(0);
+  it("exposes dispositions untouched", () => {
+    const d = { ...VALID, dispositions: [{ finding: "f1", status: "accepted", reason: "known" }] };
+    expect(parseAudit(fence(d))!.dispositions).toHaveLength(1);
   });
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run it to verify it fails**
 
 Run (from `board/`): `npx vitest run src/lib/parse.audit.test.ts`
-Expected: FAIL — `parseAudit` is not exported from `./parse`
+Expected: FAIL — `parseAudit` is not exported
 
 - [ ] **Step 3: Add the types**
 
@@ -1630,11 +2155,7 @@ Append to `board/src/lib/types.ts`:
 ```ts
 export type AuditSeverity = "blocker" | "major" | "minor";
 
-export type AuditEvidence = {
-  path: string;
-  kind: "direct" | "inferred";
-  detail?: string;
-};
+export type AuditEvidence = { path: string; kind: "direct" | "inferred"; detail?: string };
 
 export type AuditFinding = {
   section: string;
@@ -1642,6 +2163,12 @@ export type AuditFinding = {
   evidence?: AuditEvidence;
   comment: string;
   severity: AuditSeverity;
+};
+
+export type AuditDisposition = {
+  finding?: string;
+  status?: string;
+  reason?: string;
 };
 
 export type Audit = {
@@ -1656,23 +2183,23 @@ export type Audit = {
   overall: string;
   anchored: AuditFinding[];
   gaps: AuditFinding[];
-  dispositions: unknown[];
+  dispositions: AuditDisposition[];
   counts: Record<AuditSeverity, number>;
 };
 ```
 
 - [ ] **Step 4: Add the parser**
 
-Append to `board/src/lib/parse.ts`, directly after `parseScorecard`:
+Append to `board/src/lib/parse.ts`, after `parseScorecard`, adding `Audit`, `AuditFinding`, `AuditSeverity` to the existing `import type { ... } from "./types"` line:
 
 ```ts
-const SEVERITIES: AuditSeverity[] = ["blocker", "major", "minor"];
+const AUDIT_SEVERITIES: AuditSeverity[] = ["blocker", "major", "minor"];
 
-function toFinding(raw: unknown): AuditFinding | null {
+function toAuditFinding(raw: unknown): AuditFinding | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.comment !== "string") return null;
-  const severity = SEVERITIES.find((s) => (r.comment as string).startsWith(`[${s}]`));
+  const severity = AUDIT_SEVERITIES.find((s) => (r.comment as string).startsWith(`[${s}]`));
   // A finding with no valid severity tag is dropped rather than shown
   // unranked: the panel orders by severity and an untagged finding has no
   // place in that order.
@@ -1702,8 +2229,11 @@ export function parseAudit(raw: string): Audit | null {
     if (!parsed || typeof parsed !== "object") return null;
     if (!Array.isArray(parsed.anchored) || !Array.isArray(parsed.gaps)) return null;
     if (typeof parsed.overall !== "string") return null;
-    const anchored = parsed.anchored.map(toFinding).filter(Boolean) as AuditFinding[];
-    const gaps = parsed.gaps.map(toFinding).filter(Boolean) as AuditFinding[];
+    const rank = (f: AuditFinding) => AUDIT_SEVERITIES.indexOf(f.severity);
+    const clean = (xs: unknown[]) =>
+      (xs.map(toAuditFinding).filter(Boolean) as AuditFinding[]).sort((a, b) => rank(a) - rank(b));
+    const anchored = clean(parsed.anchored);
+    const gaps = clean(parsed.gaps);
     const counts: Record<AuditSeverity, number> = { blocker: 0, major: 0, minor: 0 };
     for (const f of [...anchored, ...gaps]) counts[f.severity] += 1;
     return {
@@ -1727,18 +2257,16 @@ export function parseAudit(raw: string): Audit | null {
 }
 ```
 
-Add `Audit`, `AuditFinding`, `AuditSeverity` to the existing `import type { ... } from "./types"` line at the top of `parse.ts`.
-
-- [ ] **Step 5: Run the test and the type check**
+- [ ] **Step 5: Run the test and type check**
 
 Run (from `board/`): `npx vitest run src/lib/parse.audit.test.ts && npx tsc --noEmit`
-Expected: PASS, 8 tests, no type errors
+Expected: PASS, 10 tests
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add board/src/lib/types.ts board/src/lib/parse.ts board/src/lib/parse.audit.test.ts
-git commit -m "board: parse the board-audit fence into a typed Audit"
+git commit -m "board: parse the board-audit fence into a severity-ordered Audit"
 ```
 
 ---
@@ -1751,111 +2279,43 @@ git commit -m "board: parse the board-audit fence into a typed Audit"
 
 **Interfaces:**
 - Consumes: `Audit`, `AuditFinding`, `AuditSeverity` (Task 8).
-- Produces: `<AuditPanel audit={audit} />`, a collapsed severity strip that expands to the findings list. Task 10 renders it.
+- Produces: `<AuditPanel audit={audit} />`. Task 10 renders it.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `board/src/components/AuditPanel.test.tsx`:
+Create `board/src/components/AuditPanel.test.tsx`. Build the fixture with `parseAudit`-shaped data (severity already resolved, findings already ordered) and assert:
 
 ```tsx
-import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import AuditPanel from "./AuditPanel";
-import type { Audit } from "../lib/types";
-
-const audit = (over: Partial<Audit> = {}): Audit => ({
-  schemaVersion: 1,
-  component: "03-attrition",
-  planVersion: 2,
-  planPath: "plans/execution/03-attrition/v2.md",
-  date: "2026-07-25",
-  reviewer: { token: "codex-sol", effort: "xhigh" },
-  overall: "Two material gaps.",
-  anchored: [
-    {
-      section: "Steps",
-      quote: "Run the model",
-      evidence: { path: "analysis/fit.R", kind: "direct", detail: "no seed set" },
-      comment: "[blocker] No random seed. At execution: results are irreproducible.",
-      severity: "blocker",
-    },
-  ],
-  gaps: [
-    {
-      section: "",
-      evidence: { path: "data/wave3.csv", kind: "direct", detail: "12% missing" },
-      comment: "[major] No missingness rule. At execution: listwise drops the 2019 wave.",
-      severity: "major",
-    },
-  ],
-  dispositions: [],
-  counts: { blocker: 1, major: 1, minor: 0 },
-  ...over,
-});
-
-describe("AuditPanel", () => {
-  it("shows the severity strip collapsed", () => {
-    render(<AuditPanel audit={audit()} />);
-    expect(screen.getByText(/1 blocker/)).toBeTruthy();
-    expect(screen.getByText(/1 major/)).toBeTruthy();
-    expect(screen.queryByText(/No random seed/)).toBeNull();
-  });
-
-  it("expands to show findings", () => {
-    render(<AuditPanel audit={audit()} />);
-    fireEvent.click(screen.getByRole("button", { name: /audit/i }));
-    expect(screen.getByText(/No random seed/)).toBeTruthy();
-    expect(screen.getByText(/No missingness rule/)).toBeTruthy();
-  });
-
-  it("shows the evidence path for a finding", () => {
-    render(<AuditPanel audit={audit()} />);
-    fireEvent.click(screen.getByRole("button", { name: /audit/i }));
-    expect(screen.getByText(/analysis\/fit\.R/)).toBeTruthy();
-  });
-
-  it("labels gaps distinctly from anchored findings", () => {
-    render(<AuditPanel audit={audit()} />);
-    fireEvent.click(screen.getByRole("button", { name: /audit/i }));
-    expect(screen.getByText(/Not stated in the plan/i)).toBeTruthy();
-  });
-
-  it("reads clean when there are no findings", () => {
-    render(<AuditPanel audit={audit({ anchored: [], gaps: [], counts: { blocker: 0, major: 0, minor: 0 } })} />);
-    expect(screen.getByText(/no findings/i)).toBeTruthy();
-  });
-
-  it("names the reviewer that produced it", () => {
-    render(<AuditPanel audit={audit()} />);
-    fireEvent.click(screen.getByRole("button", { name: /audit/i }));
-    expect(screen.getByText(/codex-sol/)).toBeTruthy();
-  });
-
-  it("surfaces a fallback reviewer", () => {
-    render(
-      <AuditPanel
-        audit={audit({ reviewer: { token: "subagent", reviewerFallback: "codex is not available on PATH" } })}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: /audit/i }));
-    expect(screen.getByText(/not available on PATH/)).toBeTruthy();
-  });
-});
+it("shows the severity strip collapsed", () => { /* "1 blocker" visible, finding text not */ });
+it("expands to show findings", () => { /* click the button, both comments visible */ });
+it("shows the evidence path for a finding", () => { /* analysis/fit.R visible */ });
+it("labels gaps distinctly from anchored findings", () => { /* "Not stated in the plan" */ });
+it("reads clean when there are no findings", () => { /* "no findings" */ });
+it("names the reviewer and effort", () => { /* codex-sol and xhigh */ });
+it("surfaces a fallback reviewer", () => { /* reviewerFallback text visible */ });
+it("shows a disposition when one exists", () => { /* "accepted" and its reason */ });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+Use `// @vitest-environment jsdom` as the first line and `afterEach(cleanup)`, matching `board/src/components/ScorePanel`'s neighbouring tests.
+
+- [ ] **Step 2: Run it to verify it fails**
 
 Run (from `board/`): `npx vitest run src/components/AuditPanel.test.tsx`
 Expected: FAIL — cannot resolve `./AuditPanel`
 
 - [ ] **Step 3: Write the component**
 
-Create `board/src/components/AuditPanel.tsx`:
+Create `board/src/components/AuditPanel.tsx`. Model it on `ScorePanel.tsx`: a `useState(false)` open flag, a chip-style trigger button, and an absolutely positioned panel. Requirements:
+
+- The trigger reads `audit: {blocker} blocker · {major} major · {minor} minor`, or `audit: no findings` when all three are zero. Its tone is the highest severity present.
+- `aria-label="audit findings"` on the trigger so the test can name it.
+- The expanded panel shows `overall`, then `reviewer.token`, `reviewer.effort` and `date`, then `reviewer.reviewerFallback` in a warning tone when present.
+- Findings render `anchored` first, then `gaps`, each already severity-ordered by `parseAudit`. A gap is labelled `Not stated in the plan` where an anchored finding shows its `section`.
+- Each finding shows its `comment`, its `quote` when present, and its `evidence` as `` `path` (kind) — detail ``.
+- A finding whose `comment` appears in a `dispositions` entry shows that status and reason. Dispositions are written by seam 2; this only displays them.
+- Read-only. No buttons other than the expand toggle.
 
 ```tsx
-import { useState } from "react";
-import type { Audit, AuditFinding, AuditSeverity } from "../lib/types";
-
 const SEV_CLASS: Record<AuditSeverity, string> = {
   blocker:
     "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300",
@@ -1864,90 +2324,12 @@ const SEV_CLASS: Record<AuditSeverity, string> = {
   minor:
     "border-stone-300 bg-stone-50 text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-400",
 };
-
-function Finding({ finding, gap }: { finding: AuditFinding; gap: boolean }) {
-  return (
-    <li className="border-t border-stone-200 py-2 text-xs dark:border-stone-700">
-      <div className="flex items-baseline gap-2">
-        <span className={`rounded border px-1.5 py-0.5 font-medium ${SEV_CLASS[finding.severity]}`}>
-          {finding.severity}
-        </span>
-        {gap ? (
-          <span className="text-stone-500 dark:text-stone-400">Not stated in the plan</span>
-        ) : (
-          finding.section && <span className="text-stone-500 dark:text-stone-400">{finding.section}</span>
-        )}
-      </div>
-      <p className="mt-1 text-stone-700 dark:text-stone-300">{finding.comment}</p>
-      {finding.quote && (
-        <p className="mt-1 border-l-2 border-stone-300 pl-2 italic text-stone-500 dark:border-stone-600">
-          {finding.quote}
-        </p>
-      )}
-      {finding.evidence && (
-        <p className="mt-1 text-stone-500 dark:text-stone-400">
-          <code>{finding.evidence.path}</code>
-          {finding.evidence.kind === "inferred" && " (inferred)"}
-          {finding.evidence.detail && ` — ${finding.evidence.detail}`}
-        </p>
-      )}
-    </li>
-  );
-}
-
-/**
- * The plan-header audit: a severity strip that expands to the findings list.
- * Read-only, and deliberately separate from the rubric score beside it — the
- * score asks whether the plan is a checkable contract, this asks whether it
- * will actually work. "15/15 with two blockers" is a coherent state.
- */
-export default function AuditPanel({ audit }: { audit: Audit }) {
-  const [open, setOpen] = useState(false);
-  const { blocker, major, minor } = audit.counts;
-  const total = blocker + major + minor;
-  const label = total === 0 ? "no findings" : `${blocker} blocker · ${major} major · ${minor} minor`;
-  const tone = blocker > 0 ? SEV_CLASS.blocker : major > 0 ? SEV_CLASS.major : SEV_CLASS.minor;
-
-  return (
-    <span className="relative inline-block">
-      <button
-        aria-label="audit findings"
-        className={`rounded border px-2 py-0.5 text-xs font-medium ${tone}`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        audit: {label}
-      </button>
-      {open && (
-        <div className="absolute left-0 z-20 mt-1 w-96 rounded-lg border border-stone-300 bg-white p-3 shadow-lg dark:border-stone-600 dark:bg-stone-900">
-          <p className="text-xs text-stone-700 dark:text-stone-300">{audit.overall}</p>
-          <p className="mt-1 text-[11px] text-stone-500 dark:text-stone-400">
-            {audit.reviewer.token}
-            {audit.reviewer.effort ? ` · ${audit.reviewer.effort}` : ""} · {audit.date}
-          </p>
-          {audit.reviewer.reviewerFallback && (
-            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
-              fell back: {audit.reviewer.reviewerFallback}
-            </p>
-          )}
-          <ul className="mt-2">
-            {audit.anchored.map((f, i) => (
-              <Finding key={`a${i}`} finding={f} gap={false} />
-            ))}
-            {audit.gaps.map((f, i) => (
-              <Finding key={`g${i}`} finding={f} gap />
-            ))}
-          </ul>
-        </div>
-      )}
-    </span>
-  );
-}
 ```
 
 - [ ] **Step 4: Run the test and type check**
 
 Run (from `board/`): `npx vitest run src/components/AuditPanel.test.tsx && npx tsc --noEmit`
-Expected: PASS, 7 tests
+Expected: PASS, 8 tests
 
 - [ ] **Step 5: Commit**
 
@@ -1961,16 +2343,18 @@ git commit -m "board: AuditPanel — severity strip expanding to grounded findin
 ### Task 10: Render the audit strip in `PlanReader`
 
 **Files:**
-- Modify: `board/src/views/PlanReader.tsx:308-319` (add the audit memo) and `:386` (render beside `ScorePanel`)
+- Modify: `board/src/views/PlanReader.tsx:313-319` (add the memo) and `:386` (render beside `ScorePanel`)
 - Test: `board/src/views/PlanReader.audit.test.tsx`
 
 **Interfaces:**
 - Consumes: `parseAudit` (Task 8), `AuditPanel` (Task 9).
 - Produces: nothing downstream.
 
+**Matching rule, and why it differs from the scorecard's.** `ScorePanel` matches on exact `planPath` because a draft and its signed version are different documents to the rubric. The audit is different: `audit_plan_hash` is invariant across the sign-off trailer, so an audit taken on `.draft-v2.md` is still valid for `v2.md`. Matching on exact path would make the strip vanish the moment a plan is signed, and seam 1 has no sign-off hook to rewrite the path. So the audit matches on **component and version**, which the fence carries.
+
 - [ ] **Step 1: Write the failing test**
 
-Create `board/src/views/PlanReader.audit.test.tsx`. The fixture below mirrors `PlanReader.score.test.tsx:22-57` deliberately — that file keeps its `data()`/`draw()` builders local rather than exporting them, so this test carries its own copy of the same shape instead of extracting a shared module for two callers.
+Create `board/src/views/PlanReader.audit.test.tsx`. The fixture below mirrors `PlanReader.score.test.tsx:19-57` deliberately — that file keeps its `data()`/`draw()` builders local rather than exporting them, so this test carries its own copy rather than extracting a shared module for two callers.
 
 ```tsx
 // @vitest-environment jsdom
@@ -1984,33 +2368,26 @@ afterEach(cleanup);
 const SIGNED_PATH = "plans/execution/01-x/v1.md";
 const noop = () => {};
 
-function auditFence(planPath: string): string {
-  return `# Audit\n\n\`\`\`json board-audit
-${JSON.stringify({
-  schemaVersion: 1,
-  component: "01-x",
-  planVersion: 1,
-  planPath,
-  date: "2026-07-25",
-  reviewer: { token: "codex-sol", effort: "xhigh" },
-  overall: "One blocker.",
-  anchored: [],
-  gaps: [
-    {
-      section: "",
-      evidence: { path: "data/wave3.csv", kind: "direct", detail: "12% missing" },
-      comment: "[blocker] No missingness rule. At execution: listwise drops the 2019 wave.",
-    },
-  ],
-  dispositions: [],
-})}
-\`\`\`
-`;
+function auditFence(component: string, version: number, planPath: string): string {
+  return `# Audit\n\n\`\`\`json board-audit\n${JSON.stringify({
+    schemaVersion: 1,
+    component,
+    planVersion: version,
+    planPath,
+    date: "2026-07-25",
+    reviewer: { token: "codex-sol", effort: "xhigh" },
+    overall: "One blocker.",
+    anchored: [],
+    gaps: [
+      {
+        section: "",
+        evidence: { path: "data/wave3.csv", kind: "direct", detail: "12% missing" },
+        comment: "[blocker] No missingness rule. At execution: listwise drops 2019.",
+      },
+    ],
+    dispositions: [],
+  })}\n\`\`\`\n`;
 }
-
-const SCORECARD = `\`\`\`json board-scorecard
-{"schemaVersion":3,"status":"scored","component":"01-x","planVersion":1,"planPath":"${SIGNED_PATH}","rubricVersion":"0.4","date":"2026-07-25","channels":[{"id":"goal","score":3},{"id":"decisions","score":3},{"id":"steps","score":3},{"id":"validation","score":3},{"id":"boundaries","score":3}],"total":15,"max":15,"profile":"G3·D3·S3·V3·B3"}
-\`\`\``;
 
 function data(reviews: { path: string; content: string }[]): BoardData {
   return {
@@ -2051,16 +2428,31 @@ function draw(boardData: BoardData) {
 
 describe("PlanReader audit strip", () => {
   it("renders the strip when an audit matches the open plan", () => {
-    draw(data([{ path: "plans/reviews/01-x-v1-audit.md", content: auditFence(SIGNED_PATH) }]));
+    draw(data([{ path: "plans/reviews/01-x-v1-audit.md", content: auditFence("01-x", 1, SIGNED_PATH) }]));
+    expect(screen.getByText(/audit: 1 blocker/)).toBeTruthy();
+  });
+
+  it("still matches after sign-off, when the audit records the draft path", () => {
+    // audit_plan_hash is trailer-invariant, so a draft's audit stays valid for
+    // the signed version. Exact-path matching would drop it here.
+    draw(
+      data([
+        {
+          path: "plans/reviews/01-x-v1-audit.md",
+          content: auditFence("01-x", 1, "plans/execution/01-x/.draft-v1.md"),
+        },
+      ]),
+    );
     expect(screen.getByText(/audit: 1 blocker/)).toBeTruthy();
   });
 
   it("renders nothing when the audit belongs to another version", () => {
-    draw(
-      data([
-        { path: "plans/reviews/01-x-v9-audit.md", content: auditFence("plans/execution/01-x/v9.md") },
-      ]),
-    );
+    draw(data([{ path: "plans/reviews/01-x-v9-audit.md", content: auditFence("01-x", 9, "plans/execution/01-x/v9.md") }]));
+    expect(screen.queryByText(/audit:/)).toBeNull();
+  });
+
+  it("renders nothing when the audit belongs to another component", () => {
+    draw(data([{ path: "plans/reviews/02-y-v1-audit.md", content: auditFence("02-y", 1, "plans/execution/02-y/v1.md") }]));
     expect(screen.queryByText(/audit:/)).toBeNull();
   });
 
@@ -2069,8 +2461,8 @@ describe("PlanReader audit strip", () => {
     expect(screen.queryByText(/audit:/)).toBeNull();
   });
 
-  it("shows nothing when two audits claim the same plan path", () => {
-    const content = auditFence(SIGNED_PATH);
+  it("shows nothing when two audits claim the same component and version", () => {
+    const content = auditFence("01-x", 1, SIGNED_PATH);
     draw(
       data([
         { path: "plans/reviews/a-audit.md", content },
@@ -2079,64 +2471,50 @@ describe("PlanReader audit strip", () => {
     );
     expect(screen.queryByText(/audit:/)).toBeNull();
   });
-
-  it("still renders the score strip alongside", () => {
-    draw(
-      data([
-        { path: "plans/reviews/01-x-v1-audit.md", content: auditFence(SIGNED_PATH) },
-        { path: "plans/reviews/01-x-v1.md", content: SCORECARD },
-      ]),
-    );
-    expect(screen.getByText(/audit: 1 blocker/)).toBeTruthy();
-    expect(screen.getByTitle("Plan score — click for the full diagnosis")).toBeTruthy();
-  });
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run it to verify it fails**
 
 Run (from `board/`): `npx vitest run src/views/PlanReader.audit.test.tsx`
 Expected: FAIL — no audit strip rendered
 
 - [ ] **Step 3: Add the memo**
 
-In `PlanReader.tsx`, directly after the `scorecard` memo at lines 313-319:
+In `PlanReader.tsx`, after the `scorecard` memo at lines 313-319:
 
 ```tsx
-  // The audit for THIS document, matched the same way the scorecard is: by
-  // exact planPath. A duplicate match is ambiguous — show nothing rather than
-  // the wrong audit.
+  // The audit for THIS document, matched on component and version rather than
+  // exact path. audit_plan_hash is invariant across the sign-off trailer, so a
+  // draft's audit stays valid for the signed version; exact-path matching
+  // would make the strip vanish at sign-off. A duplicate match is ambiguous —
+  // show nothing rather than the wrong audit.
   const auditRecord = useMemo(() => {
     if (!doc || (doc.docKind !== "signed" && doc.docKind !== "workingDraft")) return null;
     const matches = data.files.reviews
       .map((r) => parseAudit(r.content))
-      .filter((a) => a && a.planPath === doc.path);
+      .filter((a) => a && a.component === group.component && a.planVersion === doc.version);
     return matches.length === 1 ? matches[0] : null;
-  }, [doc, data.files.reviews]);
+  }, [doc, group, data.files.reviews]);
 ```
 
 - [ ] **Step 4: Render it**
 
-At `PlanReader.tsx:386`, beside the existing score strip:
+At `PlanReader.tsx:386`:
 
 ```tsx
             {scorecard && <ScorePanel scorecard={scorecard} />}
             {auditRecord && <AuditPanel audit={auditRecord} />}
 ```
 
-Add the two imports: `parseAudit` to the existing `../lib/parse` import, and `AuditPanel` from `../components/AuditPanel`.
+Add `parseAudit` to the existing `../lib/parse` import and `AuditPanel` from `../components/AuditPanel`.
 
-- [ ] **Step 5: Run the tests and type check**
+- [ ] **Step 5: Run the whole board suite**
 
-Run (from `board/`): `npx vitest run src/views/ && npx tsc --noEmit`
+Run (from `board/`): `npm test && npx tsc --noEmit`
 Expected: PASS, including every pre-existing PlanReader test
 
-- [ ] **Step 6: Run the whole board suite**
-
-Run (from `board/`): `npm test`
-Expected: PASS, no regressions
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add board/src/views/PlanReader.tsx board/src/views/PlanReader.audit.test.tsx
@@ -2149,21 +2527,22 @@ git commit -m "board: render the audit strip beside the score strip in PlanReade
 
 **Files:**
 - Modify: `commands/plan.md:4` (frontmatter) and step 6
-- Modify: `skills/managing-planboard/references/planning-doctrine.md` (one paragraph on the two channels)
-- Test: `tests/test_command_docs.py` (extend the existing checks)
+- Modify: `skills/managing-planboard/references/planning-doctrine.md`
+- Modify: `commands/init.md:28`
+- Test: `tests/test_command_docs.py` (new class)
 
 **Interfaces:**
-- Consumes: `audit.py run` (Task 7), `pb-plan-auditor` (Task 3).
+- Consumes: `audit.py run` and `audit.py record-fallback` (Task 7), `pb-plan-auditor` (Task 2).
 - Produces: nothing downstream. Seam 2 adds the gate paths.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_command_docs.py`:
+Append to `tests/test_command_docs.py`. The module's existing constant is `REPO` (`tests/test_command_docs.py:7`) — use it, do not define a new one.
 
 ```python
 class TestAuditWiring(unittest.TestCase):
     def _cmd(self, name):
-        return (ROOT / "commands" / name).read_text(encoding="utf-8")
+        return (REPO / "commands" / name).read_text(encoding="utf-8")
 
     def test_plan_command_can_dispatch_the_fallback_subagent(self):
         head = self._cmd("plan.md").split("---")[1]
@@ -2174,198 +2553,135 @@ class TestAuditWiring(unittest.TestCase):
         self.assertIn("audit.py", body)
         self.assertIn("pb-plan-auditor", body)
 
-    def test_plan_command_documents_the_fallback_exit_code(self):
-        self.assertIn("exit 3", self._cmd("plan.md"))
+    def test_plan_command_documents_every_exit_code(self):
+        body = self._cmd("plan.md")
+        for token in ("Exit 0", "Exit 1", "Exit 3"):
+            self.assertIn(token, body)
+
+    def test_plan_command_records_the_fallback_through_the_cli(self):
+        self.assertIn("record-fallback", self._cmd("plan.md"))
+
+    def test_init_does_not_promise_six_stages(self):
+        self.assertNotIn("six stages", self._cmd("init.md"))
 ```
 
-Read the top of `tests/test_command_docs.py` first and reuse its existing `ROOT` constant and helper style rather than redefining them.
-
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run them to verify they fail**
 
 Run: `python3 -m unittest tests.test_command_docs.TestAuditWiring -v`
 Expected: FAIL — `Task` is not in `plan.md`'s frontmatter
 
 - [ ] **Step 3: Add `Task` to the frontmatter**
 
-`commands/plan.md` line 4 becomes:
+`commands/plan.md:4` becomes:
 
 ```
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*)
 ```
 
-`Task` is the only addition. Codex runs inside `audit.py`, which `Bash(python3:*)` already permits, so no external-command permission is needed. `Task` covers the fallback dispatch.
+`Task` is the only addition. Codex runs inside `audit.py`, which `Bash(python3:*)` already permits, so no external-command permission is needed.
 
 - [ ] **Step 4: Add the audit to step 6**
 
-In `commands/plan.md` step 6, after the sentence that runs the review workflow, add:
+In `commands/plan.md` step 6, after the sentence that runs the review workflow:
 
-> **Dispatch the audit.** Immediately after the review workflow, run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/audit.py run --component <NN-slug> --version <N> --plan <the draft path>` **in the background** and continue without waiting — the reviewer takes minutes and the live board picks the artifact up on auto-refresh. Tell the researcher the audit is running. **Exit 0** means the audit was written or an existing one was still current. **Exit 3** means a fallback is required: dispatch one `pb-plan-auditor` Task with the draft's full content, its on-disk path, the repository root, and the same output contract, then write its JSON through `audit.py` rather than by hand, and relay the fallback reason to the researcher. **Exit 1** is an error: report it and continue — a failed audit never blocks authoring. Never report an audit as clean when it did not run; a silently skipped audit reads as a clean bill of health.
+> **Dispatch the audit.** Immediately after the review workflow, run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/audit.py --root . run --component <NN-slug> --version <N> --plan <the draft path>` **in the background** and continue without waiting — the reviewer takes minutes and the live board picks the artifact up on auto-refresh. Tell the researcher the audit is running.
+>
+> **Exit 0** means the audit was written, or an existing one was still current. **Exit 3** means a fallback is required: dispatch one `pb-plan-auditor` Task with the draft's full content, its on-disk path, and the repository root; write its JSON to a temp file; then record it with `audit.py --root . record-fallback --component <NN-slug> --version <N> --plan <draft path> --json <temp file> --reason "<the exit-3 reason>"`. Never hand-write the artifact — `record-fallback` is what stamps the plan hash and context identity that make it current. Delete the temp file afterward. **Exit 1** is an error: report it and continue, because a failed audit must never block authoring.
+>
+> If `pb-plan-auditor` is not yet loaded in this session (a project that has just been migrated generates it for the first time, and named agents load at session start), say so and spawn an anonymous `Task` subagent carrying the same contract instead, then record it the same way. Never report an audit as clean when it did not run: a silently skipped audit reads as a clean bill of health.
 >
 > The audit answers a different question from the scorecard. The score says whether the plan is a checkable contract; the audit says whether it will work against this repository and data. A plan can score 15/15 and carry blockers, and that is a coherent state, not a contradiction. Report both, and never merge them into one judgment.
 
-- [ ] **Step 5: Document the two channels in the doctrine**
+- [ ] **Step 5: Update the doctrine and `init.md`**
 
-Add to `skills/managing-planboard/references/planning-doctrine.md` a short section titled "Two review channels" carrying the same distinction: the rubric scores control and reads only the plan; the audit checks correctness and reads the repository; neither substitutes for the other; a high score predicts more audit findings, not fewer, because a specific plan is a falsifiable one.
+Add a short "Two review channels" section to `skills/managing-planboard/references/planning-doctrine.md`: the rubric scores control and reads only the plan; the audit checks correctness and reads the repository; neither substitutes for the other; a high score predicts more audit findings, not fewer, because a specific plan is a falsifiable one.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+`commands/init.md:28` says the profile has six stages and generation writes three agents. Update both counts to seven and four.
 
-Run: `python3 -m unittest tests.test_command_docs -v`
+- [ ] **Step 6: Run the full Python suite**
+
+Run: `python3 -m unittest discover -s tests`
 Expected: PASS
 
-- [ ] **Step 7: Run both full suites**
-
-Run: `python3 -m unittest discover -s tests -v 2>&1 | tail -5`
-Run (from `board/`): `npm test && npx tsc --noEmit`
-Expected: PASS on both, no regressions
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add commands/plan.md skills/managing-planboard/references/planning-doctrine.md tests/test_command_docs.py
-git commit -m "plan: dispatch the audit at draft time with a pb-plan-auditor fallback"
+git add commands/plan.md commands/init.md \
+        skills/managing-planboard/references/planning-doctrine.md tests/test_command_docs.py
+git commit -m "plan: dispatch the audit at draft time with a recorded fallback path"
 ```
 
 ---
 
-### Task 12: The Models view tolerates a reviewer row
+### Task 12: Repoint the manual Codex reviewer at the profile row
 
-Without this, a migrated profile breaks the Models tab: `ModelProfileRow.mechanism` is typed `"nudge" | "agent"` (`board/src/lib/types.ts:60`), so the seventh row arrives as a value the union does not admit.
-
-**Files:**
-- Modify: `board/src/lib/types.ts:55-61`
-- Modify: `board/src/views/Models.tsx` (row rendering and the per-row edit gate)
-- Test: `board/src/views/Models.reviewer.test.tsx`
-
-**Interfaces:**
-- Consumes: the profile shape the server sends from Task 2's parser.
-- Produces: nothing downstream.
-
-- [ ] **Step 1: Write the failing test**
-
-Create `board/src/views/Models.reviewer.test.tsx`. Read `board/src/views/Models.test.tsx` first and mirror its existing `BoardData` + `ModelProfile` fixture shape exactly, adding a seventh row:
-
-```tsx
-{ stage: "plan-audit", label: "plan audit (deep)", model: "codex-sol", effort: "xhigh", mechanism: "reviewer" }
-```
-
-Assert four behaviours:
-
-```tsx
-it("renders the reviewer row", () => {
-  // the row's label and its model token both appear
-  expect(screen.getByText("plan audit (deep)")).toBeTruthy();
-  expect(screen.getByText("codex-sol")).toBeTruthy();
-});
-
-it("renders the reviewer row's model as static text, not an editable control", () => {
-  // the six Claude rows expose a model control; this row does not
-  expect(screen.queryByLabelText("model for plan audit (deep)")).toBeNull();
-});
-
-it("explains why the row is not editable", () => {
-  expect(screen.getByTitle(/edited with \/planboard:models/i)).toBeTruthy();
-});
-
-it("still lets the six Claude rows be edited", () => {
-  expect(screen.getByLabelText("model for plan (co-authoring)")).toBeTruthy();
-});
-```
-
-Use whatever accessible name the existing Models editor actually gives its model controls — read `Models.tsx:326-359` and match it rather than inventing `aria-label`s. If the controls have no accessible name today, add one as part of this task; a control a test cannot name is a control a screen reader cannot name either.
-
-- [ ] **Step 2: Run the test to verify it fails**
-
-Run (from `board/`): `npx vitest run src/views/Models.reviewer.test.tsx`
-Expected: FAIL
-
-- [ ] **Step 3: Widen the type**
-
-`board/src/lib/types.ts:60` becomes:
-
-```ts
-  // `reviewer` rows name an auditor token (codex-sol | codex-terra |
-  // codex-luna | subagent) rather than a Claude model, so the board renders
-  // them read-only: its editor's vocabulary is Claude aliases only.
-  mechanism: "nudge" | "agent" | "reviewer";
-```
-
-Update the `stage` comment on line 56 to include `plan-audit`.
-
-- [ ] **Step 4: Render reviewer rows read-only**
-
-In `Models.tsx`, gate the per-row editability on the mechanism as well as the existing `canEdit`:
-
-```tsx
-const rowEditable = canEdit && row.mechanism !== "reviewer";
-```
-
-Render a reviewer row's model and effort as static text carrying `title="Reviewer rows are edited with /planboard:models — the board's editor only knows Claude models."`. Leave `canEdit`, the save path, and the 409 rebase untouched: this is a per-row render gate, not a new permission concept.
-
-- [ ] **Step 5: Run the tests and type check**
-
-Run (from `board/`): `npx vitest run src/views/Models.reviewer.test.tsx src/views/Models.test.tsx && npx tsc --noEmit`
-Expected: PASS, no regressions in the existing Models tests
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add board/src/lib/types.ts board/src/views/Models.tsx board/src/views/Models.reviewer.test.tsx
-git commit -m "board: render the plan-audit reviewer row read-only in the Models view"
-```
-
----
-
-### Task 13: Repoint the manual Codex reviewer at the profile row
-
-The spec's originating complaint: the board's *Review with Codex* is pinned to `gpt-5.5` at default effort while the local `/codex` habit runs `gpt-5.6-sol` at `xhigh`. The menu keeps all four choices; only the Codex choice's model and effort now come from the profile.
+The originating complaint: the board's *Review with Codex* is pinned to `gpt-5.5` at default effort while the local `/codex` habit runs `gpt-5.6-sol` at `xhigh`. The menu keeps all four choices; only the Codex choice's model and effort now come from the profile.
 
 **Files:**
-- Modify: `commands/board.md` step 5 (the `codex` dispatch bullet)
-- Test: `tests/test_command_docs.py`
+- Modify: `commands/board.md` step 5 (the shared contract paragraph and the `codex` dispatch bullet)
+- Test: `tests/test_command_docs.py` (extend `TestAuditWiring`)
 
 **Interfaces:**
-- Consumes: the `plan-audit` row (Task 2), `_contract_text` equivalence (Task 7).
+- Consumes: the `plan-audit` row (Task 1), the contract text (Task 7).
 - Produces: nothing downstream.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-Append to the `TestAuditWiring` class from Task 11:
+Append to `TestAuditWiring`. These assert on the dispatch bullet specifically, not on the whole document, so that deleting the bullet and adding the words elsewhere cannot satisfy them.
 
 ```python
+    def _codex_bullet(self):
+        body = self._cmd("board.md")
+        i = body.index("- **`codex`**")
+        return body[i:body.index("- **`gemini`**", i)]
+
     def test_board_codex_is_not_pinned_to_a_stale_model(self):
-        body = self._cmd("board.md")
-        self.assertNotIn("-m gpt-5.5", body)
+        self.assertNotIn("gpt-5.5", self._codex_bullet())
 
-    def test_board_codex_reads_the_profile_row(self):
-        body = self._cmd("board.md")
-        self.assertIn("plan-audit", body)
+    def test_board_codex_resolves_the_profile_row(self):
+        bullet = self._codex_bullet()
+        self.assertIn("plan-audit", bullet)
+        self.assertIn("model_reasoning_effort", bullet)
 
-    def test_plan_scope_codex_uses_the_gaps_contract(self):
+    def test_board_codex_maps_every_token(self):
+        bullet = self._codex_bullet()
+        for token, model in (("codex-sol", "gpt-5.6-sol"),
+                             ("codex-terra", "gpt-5.6-terra"),
+                             ("codex-luna", "gpt-5.6-luna")):
+            self.assertIn(token, bullet)
+            self.assertIn(model, bullet)
+
+    def test_board_codex_stays_read_only(self):
+        self.assertIn("--sandbox read-only", self._codex_bullet())
+
+    def test_plan_scope_uses_the_gaps_contract(self):
         body = self._cmd("board.md")
-        self.assertIn("gaps", body)
+        self.assertIn("Plan scope uses the audit contract", body)
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run them to verify they fail**
 
 Run: `python3 -m unittest tests.test_command_docs.TestAuditWiring -v`
-Expected: FAIL — `-m gpt-5.5` is still present
+Expected: FAIL — `gpt-5.5` is still in the bullet
 
 - [ ] **Step 3: Rewrite the codex dispatch bullet**
 
-In `commands/board.md` step 5, the `codex` bullet becomes:
+In `commands/board.md` step 5:
 
-> **`codex`** — resolve the model and effort from the profile's audit row (`python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/models.py stage plan-audit`), mapping the token to its model id (`codex-sol` → `gpt-5.6-sol`, `codex-terra` → `gpt-5.6-terra`, `codex-luna` → `gpt-5.6-luna`) and falling back to `codex-sol` at `xhigh` when the row is absent or names `subagent`. Then run `codex exec --sandbox read-only -m <model> -c model_reasoning_effort=<effort> -o plans/.pb-review-out.txt "$(cat plans/.pb-review-<slug>.txt)" < /dev/null` — **read-only** (a review must not mutate the repo), the prompt passed via a shell-safe substitution, the final message saved with `-o`. Parse the LAST balanced JSON object from `plans/.pb-review-out.txt`.
+> **`codex`** — resolve the model and effort from the profile's audit row (`python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/models.py stage plan-audit`), mapping the token to its model id (`codex-sol` → `gpt-5.6-sol`, `codex-terra` → `gpt-5.6-terra`, `codex-luna` → `gpt-5.6-luna`) and falling back to `gpt-5.6-sol` at `xhigh` when the row is absent or names `subagent`. Then run `codex exec --sandbox read-only -m <model> -c model_reasoning_effort=<effort> -o plans/.pb-review-out.txt "$(cat plans/.pb-review-<slug>.txt)" < /dev/null` — **read-only** (a review must not mutate the repo), the prompt passed via a shell-safe substitution, the final message saved with `-o`. Parse the LAST balanced JSON object from `plans/.pb-review-out.txt`.
 
-Then add, immediately after the shared output-contract paragraph:
+- [ ] **Step 4: Add the plan-scope contract paragraph**
 
-> **Plan scope uses the audit contract.** When `reviewRequest.scope` is `plan` and the chosen agent is `codex` or `subagent`, the reviewer returns `{"overall", "anchored", "gaps"}` instead of `{"overall", "comments"}` — identical to the audit channel's contract, including the requirement that every finding name the concrete execution failure it predicts and carry an `evidence` object naming a path the reviewer actually opened. `anchored` findings seed as annotations exactly as `comments` do today; `gaps` carry no quote and are relayed to the researcher in session rather than seeded. `gemini` and `panel` keep the single-bucket `comments` contract: the Gemini path is given no repository access, and the panel's per-seat caps contradict the audit's no-cap rule.
+Immediately after the shared output-contract paragraph in step 5:
 
-- [ ] **Step 4: Run the tests to verify they pass**
+> **Plan scope uses the audit contract.** When `reviewRequest.scope` is `plan` and the chosen agent is `codex` or `subagent`, the reviewer returns `{"overall", "anchored", "gaps"}` instead of `{"overall", "comments"}` — identical to the audit channel's contract, including the requirement that every finding name the concrete execution failure it predicts and carry an `evidence` object naming a path the reviewer actually opened. `anchored` findings seed as annotations exactly as `comments` do today; `gaps` carry no quote, so they are relayed to the researcher in session rather than seeded. `gemini` and `panel` keep the single-bucket `comments` contract: the Gemini path is given no repository access, and the panel's per-seat caps contradict the audit's no-cap rule.
 
-Run: `python3 -m unittest tests.test_command_docs -v`
+- [ ] **Step 5: Run the full Python suite**
+
+Run: `python3 -m unittest discover -s tests`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add commands/board.md tests/test_command_docs.py
@@ -2374,8 +2690,74 @@ git commit -m "board: manual Codex reviewer follows the profile's audit row"
 
 ---
 
+### Task 13: Ship it
+
+`AGENTS.md:31-33` requires the board template to be rebuilt and committed whenever `board/src/` changes, and `AGENTS.md:35-47` makes every behaviour-changing PR a release. Tasks 8-12 deliberately left the template stale; this task closes both.
+
+**Files:**
+- Modify: `skills/managing-planboard/assets/board-template.html` (generated)
+- Modify: `.claude-plugin/plugin.json`, `board/package.json`, `board/package-lock.json`
+- Modify: `CHANGELOG.md`
+- Modify: `skills/managing-planboard/scripts/board.py:514-529` (`agents_gitignored`)
+- Modify: `commands/models.md`
+
+**Interfaces:**
+- Consumes: every prior task.
+- Produces: a releasable tree.
+
+- [ ] **Step 1: Teach `agents_gitignored` about the new agent**
+
+`board.py:514-529` checks only the three original generated agents, so it would miss a gitignored `pb-plan-auditor.md` and show the collaborator notice wrongly. Read it and derive its name list from `models.AGENT_STAGES.values()` rather than a hardcoded triple, so the next agent needs no edit here.
+
+- [ ] **Step 2: Update `/planboard:models`**
+
+`commands/models.md:6-14` advertises two mechanisms, six rows, and Claude-only model values. Add the `reviewer` mechanism, the seventh row, the four reviewer tokens, and one line saying the board renders reviewer rows read-only so this command is where they are changed.
+
+- [ ] **Step 3: Rebuild the board template**
+
+```bash
+cd board && npm run build
+```
+
+Then verify the audit code actually reached the bundle. Source comments are stripped by the bundler, so grep for a user-facing string instead:
+
+```bash
+grep -c "Not stated in the plan" skills/managing-planboard/assets/board-template.html
+```
+
+Expected: at least 1. If it is 0, the build did not pick up `AuditPanel` — stop and diagnose rather than committing.
+
+- [ ] **Step 4: Confirm the build is reproducible**
+
+Run `cd board && npm run build` a second time and confirm `git diff --stat skills/managing-planboard/assets/board-template.html` is empty. `AGENTS.md:33` requires this clean second-build diff.
+
+- [ ] **Step 5: Bump the version**
+
+Keep `.claude-plugin/plugin.json` and `board/package.json` identical, and sync `board/package-lock.json`. This is a feature, so take a minor bump from the current version.
+
+- [ ] **Step 6: Write the changelog entry**
+
+Add a `CHANGELOG.md` section for the new version covering: the audit channel and what it is for; the `plan-audit` profile row and its automatic migration; `pb-plan-auditor`; the audit artifact and its board panel; and the manual Codex reviewer now following the profile. State plainly that nothing is gated yet and that blocker dispositions arrive with seam 2.
+
+- [ ] **Step 7: Run everything one last time**
+
+Run: `python3 -m unittest discover -s tests`
+Run (from `board/`): `npm test && npx tsc --noEmit`
+Expected: PASS on both.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add skills/managing-planboard/assets/board-template.html \
+        skills/managing-planboard/scripts/board.py commands/models.md \
+        .claude-plugin/plugin.json board/package.json board/package-lock.json CHANGELOG.md
+git commit -m "release: the plan audit channel (seam 1)"
+```
+
+---
+
 ## After this plan
 
-The board template is NOT rebuilt by any task here, so a live board still serves the old bundle. Rebuilding (`npm run build`, which rewrites the tracked 460KB `board-template.html`) belongs to the release that ships this, together with seam 2.
+Seam 2, a separate plan: the currency pre-flight in `/sign`, the `/execute` gate and `/sync`; revalidation inside `sign_lock` immediately before `write_ticket`; blocker dispositions with reasons; `resolved` recorded from the `supersedes` pointer; decision-log entries attributing the finding to the reviewer and the decision to the researcher; the draft-to-canonical `planPath` rewrite at sign-off; and the `Task` permission on `/sign` and `/sync`.
 
-Seam 2, a separate plan: the currency pre-flight in `/sign`, the `/execute` gate and `/sync`; revalidation inside `sign_lock` immediately before `write_ticket`; blocker dispositions with reasons; `resolved` recorded from the supersedes pointer; decision-log entries attributing the finding to the reviewer and the decision to the researcher; and the `Task` permission on `/sign` and `/sync`.
+One spec requirement is deliberately deferred there rather than here: the spec's draft-to-canonical audit migration (`docs/specs/2026-07-24-plan-audit-channel-design.md`, section 4). Seam 1 has no sign-off hook to run it in, and Task 10's component-and-version matching makes the strip survive sign-off without it. The rewrite still belongs in seam 2 so the artifact's own `planPath` stops pointing at a deleted draft.
