@@ -21,11 +21,13 @@ Do not hand-write a ticket. Do not edit an existing `v<N>.md`.
 
 Before launch, inspect every selected draft for an old placeholder trailer. If a draft ends with a `Signed off:` placeholder, remove that line and its trailing `---` separator when present. Tell the researcher that you repaired the mutable draft before signing.
 
-Run this command with background Bash when the harness supports it:
+Run this command with the harness's own background Bash when it supports one — never shell backgrounding (`&`, `disown`, `nohup`) inside a foreground call, which returns long before the researcher has decided anything and hides the session's exit summary:
 
 `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/board.py --sign [NN-slug] --no-open`
 
 Follow the live board pattern in `/planboard:board`. Open the printed URL for the researcher. A live persistent board closes automatically before the sign server takes over. Exit 5 from that board is the expected shutdown handoff. The existing board tab may show that it is sleeping.
+
+The sign session has no fixed lifetime. The open tab holds it open for as long as the researcher needs to read the plan, and it shuts down about fifteen minutes after that tab goes away. So never rush the researcher, and never relaunch on the assumption that the session has aged out — check first.
 
 After the sign server exits, enumerate the valid `.import-approved-<slug>-v<N>` tickets and all `.sign-feedback-v<N>.md` files on disk. Those files are the durable record. Do not rely on stdout alone. Apply **The finalization transaction** to each valid approved item. Route each feedback file into draft revision, then delete it only after the feedback has been applied.
 

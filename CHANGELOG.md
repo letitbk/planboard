@@ -6,6 +6,7 @@ A sign session no longer expires while you are looking at it.
 
 ### Fixed
 - **Sign session died after an hour of thinking.** `/planboard:sign` served the approval board on a blind 3600-second wall clock, so a plan left open while you read it could hit a dead port: the browser showed a connection error, which reads as a broken machine or network rather than an expired session. The wait is now keyed on the sign tab itself, which already polls `/api/health` every three seconds — an open tab holds the session open for as long as you need, and a closed one releases the port after fifteen idle minutes instead of squatting for the rest of the hour. Nothing was ever lost when this fired (drafts, valid tickets, and saved feedback survive, and `/planboard:sign` resumes), but the interruption was avoidable. An explicit `--timeout` remains a hard bound, so the blocking sign-off hook keeps its existing behaviour.
+- **Board launch instructions were ambiguous about backgrounding.** Both launch sites said to run the board "in the background" without saying which background, so a session could reach for shell backgrounding (`&`, `disown`, `nohup`) inside a foreground call. That returns the shell's status instead of the board's, which makes the whole exit contract unreadable — the researcher's submitted order goes unrouted until someone thinks to run `--collect`, and a sign session's summary is lost. Both sites now name the harness's own background mode and refuse the shell form explicitly.
 
 ## [1.1.0] - 2026-07-24
 
