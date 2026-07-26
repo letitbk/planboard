@@ -307,6 +307,14 @@ def profile_view(text):
 
 
 def cmd_stage(root, key):
+    # stdout here carries a JSON row that callers parse, so EVERYTHING the
+    # migration produces goes to stderr — including generate()'s "wrote ..."
+    # lines, which would otherwise make the output unparseable.
+    migration = ensure_audit_stage(root)
+    if migration["changed"]:
+        print("model-profile: %s" % migration["reason"], file=sys.stderr)
+        for line in generate(root)["stdout"]:
+            print(line, file=sys.stderr)
     stages, warnings, exists = load_profile(root)
     if not exists:
         return 0
@@ -358,6 +366,63 @@ def atomic_write(target, text):
         except OSError:
             pass
         raise
+
+
+AUDIT_ROW = "| plan audit (deep) | codex-sol | xhigh | reviewer |"
+
+
+def ensure_audit_stage(root):
+    """Splice the plan-audit row into a pre-audit profile, atomically.
+
+    Runs from every audit lookup, not only /planboard:models: an unmigrated
+    profile is non-canonical (so the board's editor goes read-only) and
+    cmd_check cannot report a missing reviewer-only row before its agent exists
+    in the project. An upgraded project must not reach a mandatory audit with
+    no reviewer row.
+
+    Splices ONLY the missing row and preserves every surrounding byte. Refuses
+    an ambiguous file rather than guessing.
+    """
+    path = Path(root) / PROFILE_REL
+    if not path.is_file():
+        return {"changed": False, "reason": "no model-profile.md"}
+    try:
+        # read_bytes().decode(), NOT read_text(): read_text applies universal
+        # newline translation, so a CRLF profile would come back as LF and the
+        # splice would rewrite the whole file's line endings.
+        text = path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        return {"changed": False, "reason": "unreadable model-profile.md (%s)" % e}
+
+    lines = text.splitlines(keepends=True)
+    audit_rows = []
+    for i, ln in enumerate(lines):
+        cells = _row_cells(ln)
+        # _row_cells returns None for any non-table line, so this never indexes
+        # into a prose line. The cell COUNT is deliberately not checked: a
+        # malformed three-cell `plan audit` row must still count as present, or
+        # the splice adds a second one and leaves the profile permanently
+        # non-canonical.
+        if cells and STAGE_LABELS.get(_norm(cells[0])) == "plan-audit":
+            audit_rows.append(i)
+    if len(audit_rows) > 1:
+        return {"changed": False, "reason": "ambiguous: %d plan-audit rows" % len(audit_rows)}
+    if audit_rows:
+        return {"changed": False, "reason": "already present"}
+
+    loc = locate_table(text)
+    if loc is None:
+        return {"changed": False, "reason": "no stage/model/effort/mechanism table found"}
+    # locate_table returns (header_idx, first_data_idx, last_data_idx) as
+    # indices into splitlines(keepends=True), INCLUSIVE of the data range, so
+    # the insertion point is one past the last row.
+    _header, _first, last_data = loc
+
+    last_line = lines[last_data]
+    ending = last_line[len(last_line.rstrip("\r\n")):] or "\n"
+    lines.insert(last_data + 1, AUDIT_ROW + ending)
+    atomic_write(path, "".join(lines))
+    return {"changed": True, "reason": "inserted the plan-audit row"}
 
 
 def _remove_if_marked(target, rel, key, stdout):
@@ -510,6 +575,11 @@ def generate(root):
 
 
 def cmd_generate(root):
+    migration = ensure_audit_stage(root)
+    if migration["changed"]:
+        print("model-profile: %s" % migration["reason"])
+    # No extra generate() call needed here: the one below already runs after
+    # the migration.
     res = generate(root)
     for line in res["stdout"]:
         print(line)
@@ -524,6 +594,13 @@ def cmd_check(root):
     if migrate_legacy_agents(root):
         print(RESTART_HINT)
         return 0
+    # After the legacy-rename early return, so a pre-rename project still gets
+    # its restart hint first. Here stdout IS the hint channel.
+    migration = ensure_audit_stage(root)
+    if migration["changed"]:
+        print("model-profile: %s" % migration["reason"])
+        for line in generate(root)["stdout"]:
+            print(line)
     path = root / PROFILE_REL
     if not path.exists():
         return 0

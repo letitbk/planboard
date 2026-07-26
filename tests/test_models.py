@@ -757,6 +757,134 @@ class TestReviewerMechanism(unittest.TestCase):
             self.assertIn("codex-sol", out.getvalue())
 
 
+SIX_ROW_PROFILE = """# Model profile
+
+<!-- planboard:model-profile -->
+
+Prose that must survive the splice.
+
+| stage | model | effort | mechanism |
+|---|---|---|---|
+| plan (co-authoring) | opus | max | nudge |
+| execute (analysis) | sonnet | — | nudge |
+| sync | inherit | — | nudge |
+| plan review (verdict + grade) | opus | medium | agent |
+| results validation | opus | low | agent |
+| board reviewer panel | opus | low | agent |
+
+Trailing prose that must also survive.
+"""
+
+
+class TestEnsureAuditStage(unittest.TestCase):
+    def test_splices_the_missing_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            self.assertTrue(models.ensure_audit_stage(root)["changed"])
+            text = (root / "plans" / "model-profile.md").read_text()
+            self.assertIn("| plan audit (deep) | codex-sol | xhigh | reviewer |", text)
+
+    def test_result_is_byte_exact(self):
+        # Substring checks would pass a migration that reformatted the file.
+        expected = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | xhigh | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            models.ensure_audit_stage(root)
+            self.assertEqual((root / "plans" / "model-profile.md").read_text(), expected)
+
+    def test_migrated_profile_is_canonical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            models.ensure_audit_stage(root)
+            stages, warnings = models.parse_profile(
+                (root / "plans" / "model-profile.md").read_text())
+            self.assertTrue(models.profile_canonical(stages, warnings))
+
+    def test_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            models.ensure_audit_stage(root)
+            first = (root / "plans" / "model-profile.md").read_text()
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+            self.assertEqual(first, (root / "plans" / "model-profile.md").read_text())
+
+    def test_prose_only_file_does_not_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile="# Model profile\n\nNo table here.\n")
+            result = models.ensure_audit_stage(root)
+            self.assertFalse(result["changed"])
+            self.assertIn("no stage", result["reason"])
+
+    def test_refuses_a_duplicated_audit_row(self):
+        dupe = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | xhigh | reviewer |\n"
+            "| plan audit (deep) | codex-luna | low | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=dupe)
+            before = (root / "plans" / "model-profile.md").read_text()
+            result = models.ensure_audit_stage(root)
+            self.assertFalse(result["changed"])
+            self.assertIn("ambiguous", result["reason"])
+            self.assertEqual(before, (root / "plans" / "model-profile.md").read_text())
+
+    def test_a_malformed_audit_row_counts_as_present(self):
+        # Three cells, not four. If the splice ignored it, a second row would
+        # be inserted and the profile would be permanently non-canonical.
+        malformed = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=malformed)
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+            self.assertEqual(
+                (root / "plans" / "model-profile.md").read_text().count("plan audit (deep)"), 1)
+
+    def test_missing_profile_file_is_not_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=None)
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+
+    def test_crlf_profile_keeps_its_line_endings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=None)
+            (root / "plans" / "model-profile.md").write_bytes(
+                SIX_ROW_PROFILE.replace("\n", "\r\n").encode("utf-8"))
+            models.ensure_audit_stage(root)
+            raw = (root / "plans" / "model-profile.md").read_bytes()
+            self.assertIn(b"| plan audit (deep) | codex-sol | xhigh | reviewer |\r\n", raw)
+            self.assertNotIn(b"reviewer |\n\r", raw)
+
+    def test_migration_regenerates_the_auditor_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertTrue((root / ".claude" / "agents" / "pb-plan-auditor.md").is_file())
+
+    def test_stage_stdout_stays_parseable_after_a_migration(self):
+        # tests/test_models.py's TestStageCommand asserts cmd_stage prints
+        # nothing but its JSON row. generate()'s "wrote ..." lines must not
+        # leak onto stdout.
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertNotIn("wrote", out.getvalue())
+            self.assertEqual(json.loads(out.getvalue())["stage"], "plan-audit")
+
+
 class TestPlanAuditorGeneration(unittest.TestCase):
     def _generate(self, root):
         out, err = io.StringIO(), io.StringIO()
