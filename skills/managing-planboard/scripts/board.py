@@ -570,11 +570,16 @@ def _model_profile_template():
 
 def _validate_profile_rows(rows_in):
     """Validate a POSTed rows list into an edits dict {stage: {model, effort}}.
-    Requires an exact bijection: the six canonical stages, each exactly once,
-    with a valid model and effort. Returns (edits, error_or_None)."""
+    Requires an exact bijection: the six EDITABLE stages, each exactly once,
+    with a valid model and effort. Returns (edits, error_or_None).
+
+    Reviewer-mechanism stages are excluded: their model cell holds an auditor
+    token, not a Claude model, so the board's editor cannot express them.
+    rewrite_rows leaves any stage absent from `edits` byte-identical, so those
+    rows survive every save untouched."""
     if not isinstance(rows_in, list):
         return None, "rows must be a list"
-    canonical = set(models.STAGE_LABELS.values())
+    canonical = set(models.EDITABLE_STAGES)
     edits = {}
     for r in rows_in:
         if not isinstance(r, dict):
@@ -600,7 +605,7 @@ def _validate_profile_rows(rows_in):
                 return None, "invalid effort %r" % (effort_raw,)
         edits[stage] = {"model": model, "effort": effort}
     if set(edits) != canonical:
-        return None, "expected exactly the six canonical stages"
+        return None, "expected exactly the six editable stages"
     return edits, None
 
 

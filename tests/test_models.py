@@ -31,12 +31,13 @@ def make_project(tmp, profile=DEFAULT_PROFILE):
 
 
 class TestParseProfile(unittest.TestCase):
-    def test_default_template_parses_all_six_stages(self):
+    def test_default_template_parses_all_seven_stages(self):
         stages, warnings = models.parse_profile(DEFAULT_PROFILE)
         self.assertEqual(warnings, [])
         self.assertEqual(
             set(stages),
-            {"plan", "execute", "sync", "plan-review", "results-validation", "board-reviewer"},
+            {"plan", "execute", "sync", "plan-review", "results-validation",
+             "board-reviewer", "plan-audit"},
         )
         self.assertEqual(
             stages["plan"],
@@ -417,7 +418,7 @@ class TestLocateTable(unittest.TestCase):
         header, first, last = loc
         lines = DEFAULT_PROFILE.splitlines(keepends=True)
         self.assertIn("stage | model | effort | mechanism", lines[header])
-        self.assertEqual(last - first + 1, 6)
+        self.assertEqual(last - first + 1, 7)
 
     def test_locate_none_when_no_table(self):
         self.assertIsNone(models.locate_table("# just prose\n\nnothing\n"))
@@ -473,7 +474,8 @@ class TestProfileView(unittest.TestCase):
         v = models.profile_view(DEFAULT_PROFILE)
         self.assertEqual(
             [r["stage"] for r in v["rows"]],
-            ["plan", "execute", "sync", "plan-review", "results-validation", "board-reviewer"],
+            ["plan", "execute", "sync", "plan-review", "results-validation",
+             "board-reviewer", "plan-audit"],
         )
         self.assertEqual(v["rows"][0]["label"], "plan (co-authoring)")
         self.assertEqual(v["rows"][0]["model"], "opus")
@@ -690,6 +692,68 @@ class TestCheckTemplateDrift(unittest.TestCase):
             agent = root / ".claude" / "agents" / "pb-plan-reviewer.md"
             agent.write_text("my own reviewer, no marker\n", encoding="utf-8")
             self.assertEqual(self._check_stdout(root), "")
+
+
+class TestReviewerMechanism(unittest.TestCase):
+    def _profile(self, model="codex-sol", effort="xhigh", mech="reviewer"):
+        return DEFAULT_PROFILE.replace(
+            "| plan audit (deep) | codex-sol | xhigh | reviewer |",
+            "| plan audit (deep) | %s | %s | %s |" % (model, effort, mech),
+        )
+
+    def test_default_template_parses_with_seven_stages(self):
+        stages, warnings = models.parse_profile(DEFAULT_PROFILE)
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(stages), 7)
+        self.assertEqual(stages["plan-audit"]["model"], "codex-sol")
+        self.assertEqual(stages["plan-audit"]["effort"], "xhigh")
+        self.assertEqual(stages["plan-audit"]["mechanism"], "reviewer")
+
+    def test_default_template_is_canonical(self):
+        stages, warnings = models.parse_profile(DEFAULT_PROFILE)
+        self.assertTrue(models.profile_canonical(stages, warnings))
+
+    def test_reviewer_row_accepts_every_token(self):
+        for token in sorted(models.REVIEWER_TOKENS):
+            stages, warnings = models.parse_profile(self._profile(model=token))
+            self.assertEqual(warnings, [], token)
+            self.assertEqual(stages["plan-audit"]["model"], token)
+
+    def test_reviewer_row_rejects_a_claude_alias(self):
+        stages, warnings = models.parse_profile(self._profile(model="opus"))
+        self.assertNotIn("plan-audit", stages)
+        self.assertTrue(warnings)
+
+    def test_reviewer_row_rejects_gemini(self):
+        stages, _ = models.parse_profile(self._profile(model="gemini-pro"))
+        self.assertNotIn("plan-audit", stages)
+
+    def test_agent_row_rejects_a_reviewer_token(self):
+        p = DEFAULT_PROFILE.replace(
+            "| plan review (verdict + grade) | opus | medium | agent |",
+            "| plan review (verdict + grade) | codex-sol | medium | agent |",
+        )
+        stages, _ = models.parse_profile(p)
+        self.assertNotIn("plan-review", stages)
+
+    def test_flipped_mechanism_is_non_canonical(self):
+        # model MUST be a valid Claude alias here, or the row is dropped as an
+        # invalid model before profile_canonical ever sees its mechanism.
+        stages, warnings = models.parse_profile(self._profile(model="opus", mech="agent"))
+        self.assertIn("plan-audit", stages)
+        self.assertFalse(models.profile_canonical(stages, warnings))
+
+    def test_editable_stages_excludes_the_reviewer_stage(self):
+        self.assertNotIn("plan-audit", models.EDITABLE_STAGES)
+        self.assertEqual(len(models.EDITABLE_STAGES), 6)
+
+    def test_stage_cli_returns_the_audit_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertIn("codex-sol", out.getvalue())
 
 
 if __name__ == "__main__":

@@ -53,11 +53,14 @@ export interface BoardFile {
 // verbatim display text (e.g. "plan (co-authoring)"); `mechanism` is read-only
 // on the board; `effort` is null when unset (renders as "—").
 export interface ModelProfileRow {
-  stage: string; // canonical key: plan | execute | sync | plan-review | results-validation | board-reviewer
+  stage: string; // canonical key: plan | execute | sync | plan-review | results-validation | board-reviewer | plan-audit
   label: string;
-  model: string; // inherit | opus | sonnet | haiku | fable | claude-* id
+  model: string; // inherit | opus | sonnet | haiku | fable | claude-* id, OR a reviewer token
   effort: string | null; // low | medium | high | xhigh | max | null
-  mechanism: "nudge" | "agent";
+  // `reviewer` rows name an auditor token (codex-sol | codex-terra |
+  // codex-luna | subagent) rather than a Claude model, so the board renders
+  // them read-only: its editor's vocabulary is Claude aliases only.
+  mechanism: "nudge" | "agent" | "reviewer";
 }
 
 // Server-built snapshot of the profile. `baselineHash` is echoed back on Save

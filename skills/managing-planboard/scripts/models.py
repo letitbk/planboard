@@ -27,12 +27,18 @@ STAGE_LABELS = {
     "plan review": "plan-review",
     "results validation": "results-validation",
     "board reviewer panel": "board-reviewer",
+    "plan audit": "plan-audit",
 }
 MODEL_ALIASES = {"inherit", "opus", "sonnet", "haiku", "fable"}
 MODEL_ID_RE = re.compile(r"^claude-[a-z0-9.-]+$")
+# Reviewer tokens name WHO audits, not a Claude model. `gemini-pro` is
+# deliberately absent: the board's Gemini path is self-contained and has no
+# repository access, so it cannot ground an audit, and shipping the token
+# would produce confident ungrounded audits that read like grounded ones.
+REVIEWER_TOKENS = {"codex-sol", "codex-terra", "codex-luna", "subagent"}
 EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
 NO_EFFORT = {"", "-", "—", "–"}  # blank, hyphen, em dash, en dash
-MECHANISMS = {"nudge", "agent"}
+MECHANISMS = {"nudge", "agent", "reviewer"}
 AGENT_STAGES = {
     "plan-review": "pb-plan-reviewer",
     "results-validation": "pb-results-validator",
@@ -55,7 +61,15 @@ EXPECTED_MECHANISM = {
     "plan-review": "agent",
     "results-validation": "agent",
     "board-reviewer": "agent",
+    "plan-audit": "reviewer",
 }
+# Stages the board's Models editor may write. A reviewer row holds a token, not
+# a Claude model, so the editor's vocabulary cannot express it; the server
+# preserves such rows from the base text instead (rewrite_rows skips any stage
+# absent from `edits`).
+EDITABLE_STAGES = frozenset(
+    k for k, m in EXPECTED_MECHANISM.items() if m != "reviewer"
+)
 MARKER_RE = re.compile(
     # Dual-brand, non-capturing group so group(1) stays the checksum. Legacy
     # `research-plans` agents are still recognized as plugin-owned; new agents
@@ -107,8 +121,24 @@ def _add_row(stages, warnings, cells, rownum):
     if key in stages:
         warnings.append(f"model-profile: skipping row {rownum} (duplicate stage {raw_stage!r})")
         return
+    # Mechanism first: it decides WHICH model vocabulary applies. A `reviewer`
+    # row's model cell holds an auditor token, not a Claude model, so a
+    # mechanism-dependent model check cannot run before `mech` is resolved.
+    mech = raw_mech.strip().lower()
+    if mech not in MECHANISMS:
+        warnings.append(
+            f"model-profile: skipping row {rownum} (unknown mechanism {raw_mech!r})"
+        )
+        return
     model = raw_model.strip().lower()
-    if model not in MODEL_ALIASES and not MODEL_ID_RE.match(model):
+    if mech == "reviewer":
+        if model not in REVIEWER_TOKENS:
+            warnings.append(
+                f"model-profile: skipping row {rownum} — {model!r} is not a reviewer "
+                f"token (expected one of {', '.join(sorted(REVIEWER_TOKENS))})"
+            )
+            return
+    elif model not in MODEL_ALIASES and not MODEL_ID_RE.match(model):
         warnings.append(f"model-profile: skipping row {rownum} (unknown model {raw_model!r})")
         return
     effort = raw_effort.strip().lower()
@@ -116,12 +146,6 @@ def _add_row(stages, warnings, cells, rownum):
         effort = None
     elif effort not in EFFORT_LEVELS:
         warnings.append(f"model-profile: skipping row {rownum} (unknown effort {raw_effort!r})")
-        return
-    mech = raw_mech.strip().lower()
-    if mech not in MECHANISMS:
-        warnings.append(
-            f"model-profile: skipping row {rownum} (unknown mechanism {raw_mech!r})"
-        )
         return
     stages[key] = {"stage": key, "model": model, "effort": effort, "mechanism": mech}
 
