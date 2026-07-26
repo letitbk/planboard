@@ -189,14 +189,15 @@ class TestGenerate(unittest.TestCase):
             code = models.main(["--root", str(root), "generate"])
         return code, out.getvalue(), err.getvalue()
 
-    def test_default_profile_writes_three_marked_agents(self):
+    def test_default_profile_writes_four_marked_agents(self):
         import hashlib
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             code, out, err = self._generate(root)
             self.assertEqual(code, 0)
             sha = hashlib.sha256((root / "plans" / "model-profile.md").read_bytes()).hexdigest()
-            for name in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer"):
+            for name in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer",
+                         "pb-plan-auditor"):
                 path = root / ".claude" / "agents" / f"{name}.md"
                 self.assertTrue(path.exists(), name)
                 text = path.read_text(encoding="utf-8")
@@ -500,7 +501,7 @@ class TestGenerateOutcomes(unittest.TestCase):
     def _profile(self, root, text):
         (root / "plans" / "model-profile.md").write_text(text, encoding="utf-8")
 
-    def test_first_generate_creates_all_three(self):
+    def test_first_generate_creates_all_four(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             res = models.generate(root)
@@ -509,7 +510,7 @@ class TestGenerateOutcomes(unittest.TestCase):
             self.assertTrue(res["restartNeeded"])
             self.assertEqual(
                 set(res["changedStages"]),
-                {"plan-review", "results-validation", "board-reviewer"},
+                {"plan-review", "results-validation", "board-reviewer", "plan-audit"},
             )
 
     def test_regenerate_unchanged_profile_no_restart(self):
@@ -754,6 +755,64 @@ class TestReviewerMechanism(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 models.main(["--root", str(root), "stage", "plan-audit"])
             self.assertIn("codex-sol", out.getvalue())
+
+
+class TestPlanAuditorGeneration(unittest.TestCase):
+    def _generate(self, root):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = models.main(["--root", str(root), "generate"])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_auditor_is_generated_from_a_reviewer_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            self.assertTrue((root / ".claude" / "agents" / "pb-plan-auditor.md").is_file())
+
+    def test_auditor_model_is_opus_and_effort_comes_from_the_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            text = (root / ".claude" / "agents" / "pb-plan-auditor.md").read_text()
+            self.assertIn("model: opus", text)
+            self.assertIn("effort: xhigh", text)
+            self.assertNotIn("codex-sol", text)
+
+    def test_auditor_contract_admits_gaps_requires_evidence_and_has_no_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            text = (root / ".claude" / "agents" / "pb-plan-auditor.md").read_text()
+            self.assertIn('"gaps"', text)
+            self.assertIn('"evidence"', text)
+            self.assertNotIn("at most 5", text)
+
+    def test_check_is_silent_after_a_fresh_generation(self):
+        # The regression that matters: cmd_check must accept the reviewer
+        # mechanism and apply the same model override, or every check prints a
+        # false drift hint.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                models.main(["--root", str(root), "check"])
+            self.assertEqual(out.getvalue().strip(), "")
+
+    def test_flipped_mechanism_removes_the_marked_auditor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            agent = root / ".claude" / "agents" / "pb-plan-auditor.md"
+            self.assertTrue(agent.is_file())
+            p = root / "plans" / "model-profile.md"
+            p.write_text(p.read_text().replace(
+                "| plan audit (deep) | codex-sol | xhigh | reviewer |",
+                "| plan audit (deep) | opus | xhigh | agent |",
+            ))
+            self._generate(root)
+            self.assertFalse(agent.is_file())
 
 
 if __name__ == "__main__":

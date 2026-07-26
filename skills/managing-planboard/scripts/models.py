@@ -43,7 +43,13 @@ AGENT_STAGES = {
     "plan-review": "pb-plan-reviewer",
     "results-validation": "pb-results-validator",
     "board-reviewer": "pb-board-reviewer",
+    "plan-audit": "pb-plan-auditor",
 }
+# A `reviewer` row's model cell names WHO audits (a Codex token or `subagent`),
+# so it holds no Claude model for the generated agent. The agent backing the
+# subagent and fallback paths is pinned here; the row's effort still reaches
+# it, because the Codex and Claude effort scales are identical.
+AGENT_MODEL_OVERRIDE = {"plan-audit": "opus"}
 # Pre-rename filenames, migrated in place (new pb-* name -> legacy rp-* name) so
 # projects generated before the planboard rename keep their model/effort pins.
 LEGACY_AGENT_NAMES = {
@@ -456,7 +462,7 @@ def generate(root):
             outcome = _remove_if_marked(target, rel, key, stdout)
             results.append({"agent": agent, "stage": key, "outcome": outcome})
             continue
-        if row["mechanism"] != "agent":
+        if row["mechanism"] != EXPECTED_MECHANISM[key]:
             stderr.append(
                 f"model-profile: '{key}' row has mechanism '{row['mechanism']}' — {agent}.md not regenerated"
             )
@@ -477,7 +483,8 @@ def generate(root):
                 continue
         try:
             template = (_templates_dir() / f"{agent}.md").read_text(encoding="utf-8")
-            rendered = _render(template, row["model"], row["effort"], checksum)
+            model = AGENT_MODEL_OVERRIDE.get(key, row["model"])
+            rendered = _render(template, model, row["effort"], checksum)
             agents_dir.mkdir(parents=True, exist_ok=True)
             atomic_write(target, rendered)
         except (OSError, UnicodeDecodeError) as e:
@@ -544,7 +551,7 @@ def cmd_check(root):
             print(MISMATCH_HINT)
             return 0
         row = stages.get(key)
-        if row is None or row["mechanism"] != "agent":
+        if row is None or row["mechanism"] != EXPECTED_MECHANISM[key]:
             # generate() would REMOVE this marked agent — that is drift too.
             # Report it without rendering a template for a nonexistent row.
             print(MISMATCH_HINT)
@@ -553,7 +560,10 @@ def cmd_check(root):
             template = (_templates_dir() / f"{agent}.md").read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        rendered = _render(template, row["model"], row["effort"], checksum)
+        # Same override generate() applies, or a freshly generated auditor
+        # would compare unequal and every check would print a false hint.
+        rendered = _render(template, AGENT_MODEL_OVERRIDE.get(key, row["model"]),
+                           row["effort"], checksum)
         if _strip_marker(text) != _strip_marker(rendered):
             # The shipped template changed since this agent was generated —
             # the profile checksum alone cannot see this.
