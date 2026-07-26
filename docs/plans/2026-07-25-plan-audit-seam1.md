@@ -10,7 +10,7 @@
 
 **Source spec:** `docs/specs/2026-07-24-plan-audit-channel-design.md` (revised 2026-07-25 after Codex review).
 
-**Revision:** This plan was re-cut on 2026-07-25 after a Codex review of its first draft found 6 crashing defects, 13 weak or failing tests, 19 broken existing tests, and a task order whose suite could not go green. See "Why the task boundaries are cut this way" below.
+**Revision:** Re-cut on 2026-07-25 after a Codex review of the first draft found 6 crashing defects, 13 weak or failing tests, 19 broken existing tests, and a task order whose suite could not go green. Revised again the same day after a second Codex round found 8 more, including an `UnboundLocalError` that would have broken Task 1 at its first step and with it the atomicity the re-cut was built on. See "Why the task boundaries are cut this way" below.
 
 ## Scope
 
@@ -28,7 +28,8 @@ One consequence worth knowing: `rewrite_rows` skips any stage absent from `edits
 
 - **Python: standard library only.** Every existing script in `skills/managing-planboard/scripts/` is stdlib-only. Do not add dependencies.
 - **Board: no new npm dependencies.** Use the existing React + Tailwind idiom.
-- **`npm run build` runs exactly once, in Task 13.** `AGENTS.md:31-33` requires that any change under `board/src/` be followed by `cd board && npm run build` with the regenerated `skills/managing-planboard/assets/board-template.html` committed. Tasks 8-12 therefore leave the template stale on purpose, and Task 13 rebuilds it. Do not run the build in any other task: it rewrites a tracked 460KB artifact and will pollute an unrelated commit.
+- **`npm run build` runs only in Task 13, and twice there.** `AGENTS.md:31-33` requires that any change under `board/src/` be followed by `cd board && npm run build` with the regenerated `skills/managing-planboard/assets/board-template.html` committed, then a second build whose diff for that template must be clean. Tasks 8-12 therefore leave the template stale on purpose. Do not run the build in any other task: it rewrites a tracked 460KB artifact and will pollute an unrelated commit.
+- **The repository's own validation command is `python3 -m pytest tests/ -q`** (`AGENTS.md:23`), which Task 13 runs. Individual tasks may use `python3 -m unittest` for speed while iterating on one module, but a task is not done until the pytest command and both board commands pass.
 - **Explicit `git add <paths>` on every commit.** Never `git add .`, `git add -A`, or `git commit -a`.
 - **The auditor is read-only** against the repository: `codex exec --sandbox read-only`. A review must never mutate the repo.
 - **Reviewer tokens:** `codex-sol`, `codex-terra`, `codex-luna`, `subagent`. `gemini-pro` is deliberately absent (its board path has no repository access).
@@ -171,11 +172,20 @@ EDITABLE_STAGES = frozenset(
 )
 ```
 
-- [ ] **Step 4: Branch model validation on mechanism**
+- [ ] **Step 4: Reorder the row parser, then branch model validation on mechanism**
 
-Read `models.py:103-126` first and preserve its existing warning wording and control flow. The model check becomes mechanism-dependent:
+**The mechanism must be parsed BEFORE the model.** Today the parser assigns `model` at `models.py:110` and validates it at `:111`, but does not assign `mech` until `:120`. A mechanism-dependent model check written in place would reference `mech` before assignment and raise `UnboundLocalError` on the very first recognized row, erroring roughly forty tests across `test_models.py`, `test_board.py`, and `test_results.py`.
+
+So move the mechanism block above the model block. Read `models.py:103-126` first and keep every existing warning string byte-identical; only the order changes. The resulting sequence, after the stage-key and duplicate checks:
 
 ```python
+    mech = raw_mech.strip().lower()
+    if mech not in MECHANISMS:
+        warnings.append(
+            f"model-profile: skipping row {rownum} (unknown mechanism {raw_mech!r})"
+        )
+        return
+    model = raw_model.strip().lower()
     if mech == "reviewer":
         if model not in REVIEWER_TOKENS:
             warnings.append(
@@ -184,9 +194,20 @@ Read `models.py:103-126` first and preserve its existing warning wording and con
             )
             return
     elif model not in MODEL_ALIASES and not MODEL_ID_RE.match(model):
-        warnings.append(f"model-profile: skipping row {rownum} (unknown model {model!r})")
+        warnings.append(f"model-profile: skipping row {rownum} (unknown model {raw_model!r})")
         return
+    effort = raw_effort.strip().lower()
+    if effort in NO_EFFORT:
+        effort = None
+    elif effort not in EFFORT_LEVELS:
+        warnings.append(f"model-profile: skipping row {rownum} (unknown effort {raw_effort!r})")
+        return
+    stages[key] = {"stage": key, "model": model, "effort": effort, "mechanism": mech}
 ```
+
+One behavioural consequence to accept deliberately: a row with BOTH an unknown mechanism and an unknown model now warns about the mechanism rather than the model. No existing test asserts that pairing, but if one surfaces, the new order is correct — the mechanism decides which model vocabulary applies, so it must be resolved first.
+
+Also update `profile_canonical`'s docstring (`models.py:170-176`), which says "exactly the six canonical stages" and describes every stage as a Claude-model stage.
 
 - [ ] **Step 5: Add the row to the template**
 
@@ -291,7 +312,7 @@ In `Models.tsx`, four changes:
 
 4. Gate the per-row controls: `const rowEditable = canEdit && row.mechanism !== "reviewer";`. A non-editable row renders its model and effort as static text with `title="Reviewer rows are edited with /planboard:models — the board's editor only knows Claude models."`. Leave `canEdit`, `changedStages`, the save path, and the 409 rebase untouched; this is a per-row render gate, not a new permission concept.
 
-Also update the notice at `Models.tsx:297` — "canonical six-row form" becomes "canonical form".
+Also update two pieces of stale wording: the notice at `Models.tsx:297` ("canonical six-row form" becomes "canonical form") and the view's header text at `Models.tsx:399-405`, which describes every stage as a Claude-model choice.
 
 - [ ] **Step 13: Exclude reviewer rows from the POST body**
 
@@ -619,6 +640,20 @@ class TestEnsureAuditStage(unittest.TestCase):
             self.assertIn("ambiguous", result["reason"])
             self.assertEqual(before, (root / "plans" / "model-profile.md").read_text())
 
+    def test_a_malformed_audit_row_counts_as_present(self):
+        # Three cells, not four. If the splice ignored it, a second row would
+        # be inserted and the profile would be permanently non-canonical.
+        malformed = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=malformed)
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+            self.assertEqual(
+                (root / "plans" / "model-profile.md").read_text().count("plan audit (deep)"), 1)
+
     def test_missing_profile_file_is_not_an_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp, profile=None)
@@ -662,7 +697,10 @@ def ensure_audit_stage(root):
     if not path.is_file():
         return {"changed": False, "reason": "no model-profile.md"}
     try:
-        text = path.read_text(encoding="utf-8")
+        # read_bytes().decode(), NOT read_text(): read_text applies universal
+        # newline translation, so a CRLF profile would come back as LF and the
+        # splice would rewrite the whole file's line endings.
+        text = path.read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError) as e:
         return {"changed": False, "reason": "unreadable model-profile.md (%s)" % e}
 
@@ -671,8 +709,11 @@ def ensure_audit_stage(root):
     for i, ln in enumerate(lines):
         cells = _row_cells(ln)
         # _row_cells returns None for any non-table line, so this never indexes
-        # into a prose line — the first draft's bug.
-        if cells and len(cells) == 4 and STAGE_LABELS.get(_norm(cells[0])) == "plan-audit":
+        # into a prose line — the first draft's bug. The cell COUNT is not
+        # checked: a malformed three-cell `plan audit` row must still count as
+        # present, or the splice adds a second one and leaves the profile
+        # permanently non-canonical.
+        if cells and STAGE_LABELS.get(_norm(cells[0])) == "plan-audit":
             audit_rows.append(i)
     if len(audit_rows) > 1:
         return {"changed": False, "reason": "ambiguous: %d plan-audit rows" % len(audit_rows)}
@@ -682,6 +723,8 @@ def ensure_audit_stage(root):
     loc = locate_table(text)
     if loc is None:
         return {"changed": False, "reason": "no stage/model/effort/mechanism table found"}
+    # (after the splice below, the caller regenerates — see the note after this
+    # code block on why regeneration cannot live inside this function)
     # locate_table returns (header_idx, first_data_idx, last_data_idx) as
     # indices into splitlines(keepends=True), INCLUSIVE of the data range
     # (models.py:183-187), so the insertion point is one past the last row.
@@ -696,9 +739,9 @@ def ensure_audit_stage(root):
 
 The line ending is copied from the row being followed, not guessed from the file's first line, so a CRLF profile stays CRLF.
 
-- [ ] **Step 4: Call it from all three lookup paths**
+- [ ] **Step 4: Call it from all three lookup paths, and regenerate after a splice**
 
-`cmd_generate`, `cmd_check`, and `cmd_stage` each take `root` and `print()` directly — none of them has a `stdout` list, so use `print`:
+`cmd_generate`, `cmd_check`, and `cmd_stage` each take `root` and `print()` directly — none has a `stdout` list, so use `print`:
 
 ```python
     migration = ensure_audit_stage(root)
@@ -708,11 +751,22 @@ The line ending is copied from the row being followed, not guessed from the file
 
 Place it as the first statement of `cmd_generate` (`models.py:481`) and `cmd_stage` (`models.py:279`). In `cmd_check` (`models.py:490`), place it **after** the `migrate_legacy_agents` early return so a legacy project still gets its rename hint first.
 
-`cmd_stage` must stay silent on stdout apart from its JSON row, since callers parse it — send the migration line to `stderr` there:
+`cmd_stage` must stay silent on stdout apart from its JSON row, since callers parse it — send its migration line to `stderr` instead:
 
 ```python
         print("model-profile: %s" % migration["reason"], file=sys.stderr)
 ```
+
+**A splice must be followed by regeneration.** The spec requires the migration to regenerate affected agents; without it, a project can acquire the row while `.claude/agents/pb-plan-auditor.md` stays absent indefinitely, so every fallback dispatch names an agent that does not exist. Regeneration cannot live inside `ensure_audit_stage` itself — `generate()` calls back into profile parsing, and `cmd_generate` would then run it twice — so the caller does it. In `cmd_check` and `cmd_stage`, after a `changed` migration:
+
+```python
+    if migration["changed"]:
+        res = generate(root)
+        for line in res["stdout"]:
+            print(line)
+```
+
+`cmd_generate` needs nothing extra: its own `generate(root)` call already runs after the migration. Add a test asserting that `models.main(["--root", str(root), "stage", "plan-audit"])` on a six-row project both splices the row and leaves `.claude/agents/pb-plan-auditor.md` on disk.
 
 - [ ] **Step 5: Run the full Python suite**
 
@@ -1072,6 +1126,33 @@ class TestWriteAudit(unittest.TestCase):
             self.assertEqual(
                 audit.read_audit(root, "03-attrition", 2)["auditPlanHash"], "b" * 64)
 
+    def test_replaces_a_disposed_audit_taken_at_a_new_context(self):
+        # Same plan text, new repository state. Comparing the plan hash alone
+        # would wrongly refuse this and leave the stale audit in place.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload(
+                dispositions=[{"finding": "f1", "status": "accepted", "reason": "known"}]))
+            audit.write_audit(root, "03-attrition", 2, payload(
+                contextIdentity={"head": "deadbeef" * 5, "paths": {}}))
+            self.assertEqual(
+                audit.read_audit(root, "03-attrition", 2)["contextIdentity"]["head"],
+                "deadbeef" * 5)
+
+    def test_supersedes_names_the_artifact_actually_replaced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload(auditPlanHash="a" * 64))
+            audit.write_audit(root, "03-attrition", 2, payload(auditPlanHash="b" * 64))
+            self.assertEqual(
+                audit.read_audit(root, "03-attrition", 2)["supersedes"], "a" * 64)
+
+    def test_first_audit_supersedes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload())
+            self.assertIsNone(audit.read_audit(root, "03-attrition", 2)["supersedes"])
+
     def test_read_audit_returns_none_when_absent(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(audit.read_audit(project(tmp), "03-attrition", 2))
@@ -1113,6 +1194,47 @@ class TestLock(unittest.TestCase):
             with audit.audit_lock(root, "03-attrition", 2):
                 with audit.audit_lock(root, "03-attrition", 3):
                     pass
+
+    def test_a_dead_owners_lock_is_reclaimed(self):
+        # Without this, one crashed run locks the component out permanently.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            lock = audit.audit_lock(root, "03-attrition", 2)
+            # PID 2**31-1 is not a running process on any supported platform.
+            lock.path.parent.mkdir(parents=True, exist_ok=True)
+            lock.path.write_text("%d %f\n" % (2 ** 31 - 1, time.time()))
+            with audit.audit_lock(root, "03-attrition", 2):
+                pass
+            self.assertFalse(lock.path.exists())
+
+    def test_a_live_owners_lock_is_respected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            lock = audit.audit_lock(root, "03-attrition", 2)
+            lock.path.parent.mkdir(parents=True, exist_ok=True)
+            lock.path.write_text("%d %f\n" % (os.getpid(), time.time()))
+            with self.assertRaises(audit.AuditLocked):
+                with audit.audit_lock(root, "03-attrition", 2):
+                    pass
+
+    def test_an_ancient_lock_is_reclaimed_even_if_its_pid_is_live(self):
+        # A recycled PID must not hold the component hostage forever.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            lock = audit.audit_lock(root, "03-attrition", 2)
+            lock.path.parent.mkdir(parents=True, exist_ok=True)
+            lock.path.write_text("%d %f\n" % (os.getpid(), time.time() - 7200))
+            with audit.audit_lock(root, "03-attrition", 2):
+                pass
+
+    def test_an_unreadable_lock_is_reclaimed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            lock = audit.audit_lock(root, "03-attrition", 2)
+            lock.path.parent.mkdir(parents=True, exist_ok=True)
+            lock.path.write_text("garbage")
+            with audit.audit_lock(root, "03-attrition", 2):
+                pass
 
 
 class TestIsCurrent(unittest.TestCase):
@@ -1189,22 +1311,58 @@ def audit_path(root, component, version):
 class audit_lock:
     """Exclusive per-component-and-version lock, so two runs for the same plan
     cannot interleave their writes. O_CREAT|O_EXCL is atomic on every platform
-    the board already supports."""
+    the board already supports.
+
+    A crashed writer must not lock the component out forever, so an existing
+    lock is reclaimed when its owner is gone. Liveness mirrors board.py's
+    existing lock recovery: os.kill(pid, 0) to test the process, plus an age
+    ceiling for a stale file whose pid has been recycled.
+    """
+
+    STALE_AFTER = 3600  # a reviewer run is capped at 30 minutes
 
     def __init__(self, root, component, version):
         self.path = Path(root) / "plans" / "reviews" / (
             ".%s-v%d-audit.lock" % (component, version))
 
+    def _owner_is_gone(self):
+        try:
+            pid_s, ts_s = self.path.read_text(encoding="utf-8").split()
+            pid, ts = int(pid_s), float(ts_s)
+        except (OSError, ValueError):
+            return True  # unreadable or truncated — treat as abandoned
+        if time.time() - ts > self.STALE_AFTER:
+            return True
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False  # alive, owned by another user
+        except OSError:
+            return False
+        return False
+
+    def _acquire(self):
+        fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        with os.fdopen(fd, "w") as f:
+            f.write("%d %f\n" % (os.getpid(), time.time()))
+
     def __enter__(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            self._acquire()
         except OSError as e:
-            if e.errno == errno.EEXIST:
+            if e.errno != errno.EEXIST:
+                raise
+            if not self._owner_is_gone():
                 raise AuditLocked("another audit run holds %s" % self.path.name)
-            raise
-        with os.fdopen(fd, "w") as f:
-            f.write("%d %f\n" % (os.getpid(), time.time()))
+            try:
+                self.path.unlink()
+                self._acquire()
+            except OSError:
+                # Another process reclaimed it first — it is live, not stale.
+                raise AuditLocked("another audit run holds %s" % self.path.name)
         return self
 
     def __exit__(self, *exc):
@@ -1232,6 +1390,14 @@ def _validate(payload):
             if not isinstance(ev, dict) or not ev.get("path"):
                 raise ValueError(
                     "finding has no evidence path: %r" % finding["comment"][:60])
+            if ev.get("kind") not in ("direct", "inferred"):
+                # Defaulting a missing kind to "direct" would render an
+                # unverified claim as one the reviewer confirmed by reading.
+                raise ValueError(
+                    "finding evidence has no valid kind: %r" % finding["comment"][:60])
+            if not ev.get("detail"):
+                raise ValueError(
+                    "finding evidence has no detail: %r" % finding["comment"][:60])
             if bucket == "anchored" and not finding.get("quote"):
                 raise ValueError(
                     "anchored finding has no quote: %r" % finding["comment"][:60])
@@ -1313,10 +1479,15 @@ def write_audit(root, component, version, payload):
     the per-component lock.
 
     Validation runs BEFORE any file is touched, so a malformed payload can
-    never leave a partial fence for a reader. An existing audit at the SAME
-    plan hash that already carries dispositions is never replaced: those
-    dispositions were made about exactly this text, and a background run
-    returning late must not silently discard them.
+    never leave a partial fence for a reader. An existing audit with the same
+    FULL identity — plan hash AND context identity — that already carries
+    dispositions is never replaced: those dispositions were made about exactly
+    this text against exactly this repository state, and a background run
+    returning late must not silently discard them. Comparing the plan hash
+    alone would wrongly refuse a genuinely newer audit taken at a new HEAD.
+
+    `supersedes` is stamped from the read INSIDE the lock, so it always names
+    the artifact this write actually replaces.
     """
     payload.setdefault("schemaVersion", SCHEMA_VERSION)
     _validate(payload)
@@ -1324,11 +1495,16 @@ def write_audit(root, component, version, payload):
     target.parent.mkdir(parents=True, exist_ok=True)
     with audit_lock(root, component, version):
         existing = read_audit(root, component, version)
-        if (existing and existing.get("dispositions")
-                and existing.get("auditPlanHash") == payload.get("auditPlanHash")):
-            raise AuditLocked(
-                "audit for %s v%s already carries dispositions at this plan hash"
-                % (component, version))
+        if existing and existing.get("dispositions"):
+            same_identity = (
+                existing.get("auditPlanHash") == payload.get("auditPlanHash")
+                and existing.get("contextIdentity") == payload.get("contextIdentity")
+            )
+            if same_identity:
+                raise AuditLocked(
+                    "audit for %s v%s already carries dispositions at this identity"
+                    % (component, version))
+        payload["supersedes"] = (existing or {}).get("auditPlanHash")
         _atomic_write(target, render_audit(payload))
     return target
 
@@ -1529,6 +1705,42 @@ class TestRunCodexAudit(unittest.TestCase):
             r = audit.run_codex_audit(root, "subagent", "xhigh", self._prompt(root),
                                       root / "out.txt", _which=lambda n: "/usr/bin/codex")
             self.assertFalse(r["ok"])
+
+    def test_parseable_but_contract_violating_output_triggers_the_repair(self):
+        # Well-formed JSON that breaks the contract must get the re-prompt, not
+        # be returned as a success that fails later at write time.
+        calls = []
+        bad = json.dumps({"overall": "x", "anchored": [],
+                          "gaps": [{"section": "", "comment": "no severity tag"}]})
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            Path(kw["cwd"], "out.txt").write_text(bad if len(calls) == 1 else GOOD_JSON)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(r["ok"])
+
+    def test_still_violating_after_the_repair_reports_the_reason(self):
+        bad = json.dumps({"overall": "x", "anchored": [],
+                          "gaps": [{"section": "", "comment": "no severity tag"}]})
+
+        def fake_run(cmd, **kw):
+            Path(kw["cwd"], "out.txt").write_text(bad)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertFalse(r["ok"])
+            self.assertIn("severity", r["reason"])
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -1550,6 +1762,33 @@ REPAIR_SUFFIX = (
     "\n\nYour previous reply could not be parsed. Reply with ONLY the JSON "
     "object described in the output contract — no prose before or after it.\n"
 )
+
+
+def reviewer_payload_problem(payload):
+    """None when a reviewer payload satisfies the three-key contract, else a
+    short reason. Shares its rules with _validate so a payload that passes here
+    cannot fail at write time — the reviewer gets a repair re-prompt instead of
+    a lost audit."""
+    if not isinstance(payload, dict):
+        return "not an object"
+    if not isinstance(payload.get("overall"), str) or not payload["overall"].strip():
+        return "missing 'overall'"
+    for bucket in ("anchored", "gaps"):
+        if not isinstance(payload.get(bucket), list):
+            return "'%s' is not a list" % bucket
+        for finding in payload[bucket]:
+            if not isinstance(finding, dict) or not isinstance(finding.get("comment"), str):
+                return "a finding has no string 'comment'"
+            if not any(finding["comment"].startswith(s) for s in SEVERITIES):
+                return "a finding has no severity tag"
+            ev = finding.get("evidence")
+            if not isinstance(ev, dict) or not ev.get("path") or not ev.get("detail"):
+                return "a finding has no evidence path and detail"
+            if ev.get("kind") not in ("direct", "inferred"):
+                return "a finding's evidence has no valid kind"
+            if bucket == "anchored" and not finding.get("quote"):
+                return "an anchored finding has no quote"
+    return None
 
 
 def build_prompt(plan_text, plan_path, root, contract):
@@ -1660,9 +1899,17 @@ def run_codex_audit(root, token, effort, prompt_path, out_path, _which=None, _ru
             return {"ok": False, "reason": "could not read codex output (%s)" % e,
                     "payload": None}
         payload = parse_reviewer_json(text)
-        if payload is not None:
+        # The repair must fire on a CONTRACT violation, not only on
+        # unparseable text. A well-formed JSON object missing `overall`, or
+        # carrying a finding with no severity tag or no evidence, is exactly
+        # the case one re-prompt is meant to fix; returning ok=True here would
+        # instead surface it later as a write failure and a lost audit.
+        problem = None if payload is None else reviewer_payload_problem(payload)
+        if payload is not None and problem is None:
             return {"ok": True, "reason": "", "payload": payload}
-    return {"ok": False, "reason": "codex output had no parseable JSON after one repair",
+        last = problem or "no parseable JSON object"
+    return {"ok": False,
+            "reason": "codex output did not satisfy the contract after one repair (%s)" % last,
             "payload": None}
 ```
 
@@ -1693,7 +1940,8 @@ git commit -m "audit: codex dispatch with forward-scan JSON recovery and one rep
 - Consumes: Tasks 3-6.
 - Produces:
   - `python3 audit.py --root <root> run --component <NN-slug> --version <N> --plan <path>` — exit 0 written or already current, 3 fallback required, 1 error.
-  - `python3 audit.py --root <root> record-fallback --component <NN-slug> --version <N> --plan <path> --json <file> --reason <text>` — turns a subagent's JSON into the artifact. Task 11 calls it.
+  - `python3 audit.py --root <root> record-fallback --component <NN-slug> --version <N> --plan <path> --json <file> --reason <text> --expected-plan-hash <hex>` — turns a subagent's JSON into the artifact, refusing it when the plan has changed since the subagent saw it. Task 11 calls it.
+  - `--plan` accepts a repo-relative or absolute path on both subcommands.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1773,6 +2021,32 @@ class TestRunCli(unittest.TestCase):
                                      "--version", "2", "--plan", str(root / "nope.md")])
             self.assertEqual(code, 1)
 
+    def test_a_repo_relative_plan_path_works(self):
+        # /planboard:plan passes plans/execution/..., not an absolute path.
+        # Leaving it relative while root is absolute makes relative_to() raise.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = audit_project(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = audit.main(
+                    ["--root", str(root), "run", "--component", "03-attrition",
+                     "--version", "2",
+                     "--plan", "plans/execution/03-attrition/.draft-v2.md"],
+                    _which=lambda n: None)
+            self.assertEqual(code, 3)
+            self.assertNotIn("not found", out.getvalue())
+
+    def test_a_plan_outside_the_repository_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = audit_project(tmp)
+            with tempfile.TemporaryDirectory() as other:
+                stray = Path(other) / "stray.md"
+                stray.write_text(PLAN)
+                code, out = run_cli(root, ["run", "--component", "03-attrition",
+                                           "--version", "2", "--plan", str(stray)])
+                self.assertEqual(code, 1)
+                self.assertIn("outside the repository", out)
+
     def test_a_plan_edited_during_the_run_is_not_published(self):
         # A 30-minute audit must not publish findings about text that changed
         # while it was thinking.
@@ -1781,10 +2055,11 @@ class TestRunCli(unittest.TestCase):
 
             def fake_run(cmd, **kw):
                 plan.write_text(PLAN + "\nA step added mid-run.\n")
-                Path(kw["cwd"], out_name).write_text(GOOD_JSON)
+                # Write to the -o path the implementation actually passed, not
+                # a guessed one: out_path lives under plans/, not root.
+                Path(cmd[cmd.index("-o") + 1]).write_text(GOOD_JSON)
                 return subprocess.CompletedProcess(cmd, 0, "", "")
 
-            out_name = ".pb-audit-out-03-attrition-v2.txt"
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
@@ -1796,7 +2071,7 @@ class TestRunCli(unittest.TestCase):
 
     def test_writes_the_artifact_with_both_identities(self):
         def fake_run(cmd, **kw):
-            Path(kw["cwd"], ".pb-audit-out-03-attrition-v2.txt").write_text(json.dumps({
+            Path(cmd[cmd.index("-o") + 1]).write_text(json.dumps({
                 "overall": "one gap",
                 "anchored": [],
                 "gaps": [FINDING],
@@ -1839,13 +2114,42 @@ class TestRecordFallback(unittest.TestCase):
             code, _ = run_cli(root, ["record-fallback", "--component", "03-attrition",
                                      "--version", "2", "--plan", str(plan),
                                      "--json", str(blob),
-                                     "--reason", "codex is not available on PATH"])
+                                     "--reason", "codex is not available on PATH",
+                                     "--expected-plan-hash", audit.audit_plan_hash(PLAN)])
             self.assertEqual(code, 0)
             rec = audit.read_audit(root, "03-attrition", 2)
             self.assertEqual(rec["reviewer"]["token"], "subagent")
             self.assertEqual(rec["reviewer"]["reviewerFallback"],
                              "codex is not available on PATH")
             self.assertEqual(rec["auditPlanHash"], audit.audit_plan_hash(PLAN))
+
+    def test_a_plan_edited_since_the_subagent_saw_it_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            blob = root / "sub.json"
+            blob.write_text(json.dumps({"overall": "x", "anchored": [], "gaps": []}))
+            stale = audit.audit_plan_hash(PLAN)
+            plan.write_text(PLAN + "\nEdited after the subagent ran.\n")
+            code, out = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan),
+                                       "--json", str(blob), "--reason", "x",
+                                       "--expected-plan-hash", stale])
+            self.assertEqual(code, 1)
+            self.assertIn("changed since", out)
+            self.assertIsNone(audit.read_audit(root, "03-attrition", 2))
+
+    def test_contract_violating_subagent_json_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            blob = root / "sub.json"
+            blob.write_text(json.dumps({"overall": "x", "anchored": [],
+                                        "gaps": [{"section": "", "comment": "no tag"}]}))
+            code, out = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan),
+                                       "--json", str(blob), "--reason", "x",
+                                       "--expected-plan-hash", audit.audit_plan_hash(PLAN)])
+            self.assertEqual(code, 1)
+            self.assertIn("contract", out)
 
     def test_malformed_subagent_json_is_an_error(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1854,7 +2158,8 @@ class TestRecordFallback(unittest.TestCase):
             blob.write_text("{not json")
             code, _ = run_cli(root, ["record-fallback", "--component", "03-attrition",
                                      "--version", "2", "--plan", str(plan),
-                                     "--json", str(blob), "--reason", "x"])
+                                     "--json", str(blob), "--reason", "x",
+                                     "--expected-plan-hash", audit.audit_plan_hash(PLAN)])
             self.assertEqual(code, 1)
 ```
 
@@ -1897,12 +2202,19 @@ def _evidence_paths(payload):
     })
 
 
-def _finalize(root, component, version, plan_file, payload, token, effort,
-              fallback_reason, existing):
-    """Stamp identities onto a reviewer payload and write it."""
+def _finalize(root, component, version, plan_file, plan_text, payload, token, effort,
+              fallback_reason):
+    """Stamp identities onto a reviewer payload and write it.
+
+    `plan_text` is the text the reviewer ACTUALLY audited, passed in by the
+    caller — this function never re-reads the file. A third read would let an
+    edit between the caller's check and this write produce findings about one
+    text stamped with another text's hash, after which is_current() would
+    happily call that audit current. `supersedes` is stamped by write_audit
+    under the lock, not here.
+    """
     payload.setdefault("anchored", [])
     payload.setdefault("gaps", [])
-    plan_text = plan_file.read_text(encoding="utf-8")
     reviewer = {"token": token, "effort": effort}
     if fallback_reason:
         reviewer["reviewerFallback"] = fallback_reason
@@ -1914,7 +2226,6 @@ def _finalize(root, component, version, plan_file, payload, token, effort,
         "reviewer": reviewer,
         "auditPlanHash": audit_plan_hash(plan_text),
         "contextIdentity": context_identity(root, _evidence_paths(payload)),
-        "supersedes": (existing or {}).get("auditPlanHash"),
         "dispositions": [],
     })
     return write_audit(root, component, version, payload)
@@ -1939,32 +2250,53 @@ def main(argv=None, _which=None, _run=None):
         if name == "record-fallback":
             s.add_argument("--json", required=True)
             s.add_argument("--reason", required=True)
+            s.add_argument("--expected-plan-hash", required=True)
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve() if args.root else Path.cwd()
-    plan_file = Path(args.plan)
+    # The trigger commands pass a repo-relative path, so resolve it against
+    # root before any relative_to() call. Leaving it relative while root is
+    # absolute makes plan_file.relative_to(root) raise ValueError.
+    raw_plan = Path(args.plan)
+    plan_file = (raw_plan if raw_plan.is_absolute() else root / raw_plan).resolve()
     if not plan_file.is_file():
         print("audit: plan not found: %s" % args.plan)
         return EXIT_ERROR
+    try:
+        plan_rel = plan_file.relative_to(root)
+    except ValueError:
+        print("audit: plan is outside the repository: %s" % args.plan)
+        return EXIT_ERROR
     plan_text = plan_file.read_text(encoding="utf-8")
-    existing = read_audit(root, args.component, args.version)
 
     if args.cmd == "record-fallback":
+        # The subagent audited whatever the command showed it. Refuse to stamp
+        # this artifact unless that text is still what is on disk, or the
+        # audit would claim currency for text nobody reviewed.
+        if audit_plan_hash(plan_text) != args.expected_plan_hash:
+            print("audit: the plan changed since the fallback reviewer saw it — discarding")
+            return EXIT_ERROR
         try:
             payload = json.loads(Path(args.json).read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
             print("audit: could not read fallback JSON (%s)" % e)
             return EXIT_ERROR
+        problem = reviewer_payload_problem(payload)
+        if problem:
+            print("audit: fallback JSON does not satisfy the contract (%s)" % problem)
+            return EXIT_ERROR
         row = _resolve_row(root)
         try:
-            _finalize(root, args.component, args.version, plan_file, payload,
-                      "subagent", row["effort"], args.reason, existing)
+            _finalize(root, args.component, args.version, plan_file, plan_text, payload,
+                      "subagent", row["effort"], args.reason)
         except (ValueError, AuditLocked) as e:
             print("audit: not written (%s)" % e)
             return EXIT_ERROR
         print("audit: wrote %s v%d from the fallback reviewer"
               % (args.component, args.version))
         return EXIT_OK
+
+    existing = read_audit(root, args.component, args.version)
 
     if existing and is_current(existing, plan_text, root):
         print("audit: current for %s v%d — no reviewer run" % (args.component, args.version))
@@ -1980,8 +2312,7 @@ def main(argv=None, _which=None, _run=None):
     out_path = plans_dir / (".pb-audit-out-%s-v%d.txt" % (args.component, args.version))
     try:
         prompt_path.write_text(
-            build_prompt(plan_text, str(plan_file.relative_to(root)), str(root), CONTRACT),
-            encoding="utf-8")
+            build_prompt(plan_text, str(plan_rel), str(root), CONTRACT), encoding="utf-8")
         result = run_codex_audit(root, row["model"], row["effort"], prompt_path, out_path,
                                  _which=_which, _run=_run)
         if not result["ok"]:
@@ -1989,12 +2320,14 @@ def main(argv=None, _which=None, _run=None):
             return EXIT_FALLBACK
         # Re-read before publishing: a reviewer run takes minutes, and findings
         # about text that has since changed must never be published as current.
+        # `plan_text` — the text actually audited — is what _finalize stamps,
+        # so the artifact and its hash can never describe different bytes.
         if plan_file.read_text(encoding="utf-8") != plan_text:
             print("audit: the plan changed during the reviewer run — discarding this audit")
             return EXIT_ERROR
         try:
-            _finalize(root, args.component, args.version, plan_file, result["payload"],
-                      row["model"], row["effort"], None, existing)
+            _finalize(root, args.component, args.version, plan_file, plan_text,
+                      result["payload"], row["model"], row["effort"], None)
         except (ValueError, AuditLocked) as e:
             print("audit: not written (%s)" % e)
             return EXIT_ERROR
@@ -2015,7 +2348,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Add the temp files to the runtime ignore list**
 
-The `.pb-audit-*` files live under a *user's* `plans/`, not this repository, so the repo `.gitignore` is the wrong place. Add the pattern where the board already ignores its own temp files, `board.py:85-103`, alongside the existing `.pb-review-*` entry. Read that list first and match its exact idiom.
+The `.pb-audit-*` files live under a *user's* `plans/`, not this repository, so the repo `.gitignore` is the wrong place. Add the pattern where the board already ignores its own temp files, `board.py:85-103`, alongside the existing `.pb-review-*` entry. Read that list first and match its exact idiom. Add the lock pattern too — `plans/reviews/.*-audit.lock` — so a lock held during a board export or share never reaches a collaborator.
 
 - [ ] **Step 5: Run the full Python suite**
 
@@ -2389,7 +2722,12 @@ function auditFence(component: string, version: number, planPath: string): strin
   })}\n\`\`\`\n`;
 }
 
-function data(reviews: { path: string; content: string }[]): BoardData {
+const DRAFT_PATH = "plans/execution/01-x/.draft-v2.md";
+
+function data(
+  reviews: { path: string; content: string }[],
+  draft = false,
+): BoardData {
   return {
     schemaVersion: 1,
     generatedAt: "t",
@@ -2404,6 +2742,11 @@ function data(reviews: { path: string; content: string }[]): BoardData {
         {
           component: "01-x",
           versions: [{ version: 1, path: SIGNED_PATH, content: "# Plan v1\n" }],
+          // PlanReader copies proposedVersion into DocRef.version
+          // (PlanReader.tsx:156), which is what the audit matches on.
+          draft: draft
+            ? { path: DRAFT_PATH, content: "# Draft v2\n", proposedVersion: 2 }
+            : undefined,
           results: [],
         },
       ],
@@ -2442,6 +2785,15 @@ describe("PlanReader audit strip", () => {
           content: auditFence("01-x", 1, "plans/execution/01-x/.draft-v1.md"),
         },
       ]),
+    );
+    expect(screen.getByText(/audit: 1 blocker/)).toBeTruthy();
+  });
+
+  it("matches a working draft on its proposed version", () => {
+    // The draft opens by default, and PlanReader gives it version 2 from
+    // proposedVersion. An audit written for v2 must match it.
+    draw(
+      data([{ path: "plans/reviews/01-x-v2-audit.md", content: auditFence("01-x", 2, DRAFT_PATH) }], true),
     );
     expect(screen.getByText(/audit: 1 blocker/)).toBeTruthy();
   });
@@ -2491,11 +2843,14 @@ In `PlanReader.tsx`, after the `scorecard` memo at lines 313-319:
   // show nothing rather than the wrong audit.
   const auditRecord = useMemo(() => {
     if (!doc || (doc.docKind !== "signed" && doc.docKind !== "workingDraft")) return null;
+    // doc.group, not the outer `group`: that one is `... ?? groups[0] ?? null`
+    // (PlanReader.tsx:125-126) and tsc rejects `group.component` with
+    // TS18047. `doc` is already narrowed non-null by the guard above.
     const matches = data.files.reviews
       .map((r) => parseAudit(r.content))
-      .filter((a) => a && a.component === group.component && a.planVersion === doc.version);
+      .filter((a) => a && a.component === doc.group.component && a.planVersion === doc.version);
     return matches.length === 1 ? matches[0] : null;
-  }, [doc, group, data.files.reviews]);
+  }, [doc, data.files.reviews]);
 ```
 
 - [ ] **Step 4: Render it**
@@ -2523,10 +2878,17 @@ git commit -m "board: render the audit strip beside the score strip in PlanReade
 
 ---
 
-### Task 11: Trigger the audit from `/planboard:plan`
+### Task 11: Trigger the audit wherever a draft is reviewed
+
+The spec's rule is "wherever the review workflow runs on a draft", not first authorship only. That is four commands, not one: `/plan` (authoring and revision rounds), `/sign` (feedback applied in a sign session, and amendment re-commitment candidates), `/execute` (its own re-commitment path), and `/sync` (amendment drafts). A trigger missing from any of them is a path to execution with no audit.
+
+This task adds **dispatch** everywhere. It does not add the currency pre-flight, blocker dispositions, or any gating — those are seam 2.
 
 **Files:**
 - Modify: `commands/plan.md:4` (frontmatter) and step 6
+- Modify: `commands/sign.md:4` (frontmatter), step 3, and step 4
+- Modify: `commands/execute.md:4` (frontmatter) and step 1
+- Modify: `commands/sync.md` (frontmatter) and step 6
 - Modify: `skills/managing-planboard/references/planning-doctrine.md`
 - Modify: `commands/init.md:28`
 - Test: `tests/test_command_docs.py` (new class)
@@ -2540,26 +2902,38 @@ git commit -m "board: render the audit strip beside the score strip in PlanReade
 Append to `tests/test_command_docs.py`. The module's existing constant is `REPO` (`tests/test_command_docs.py:7`) — use it, do not define a new one.
 
 ```python
+TRIGGER_COMMANDS = ("plan.md", "sign.md", "execute.md", "sync.md")
+
+
 class TestAuditWiring(unittest.TestCase):
     def _cmd(self, name):
         return (REPO / "commands" / name).read_text(encoding="utf-8")
 
-    def test_plan_command_can_dispatch_the_fallback_subagent(self):
-        head = self._cmd("plan.md").split("---")[1]
-        self.assertIn("Task", head)
+    def test_every_trigger_command_can_dispatch_the_fallback_subagent(self):
+        for name in TRIGGER_COMMANDS:
+            head = self._cmd(name).split("---")[1]
+            self.assertIn("Task", head, name)
 
-    def test_plan_command_runs_the_audit(self):
-        body = self._cmd("plan.md")
-        self.assertIn("audit.py", body)
-        self.assertIn("pb-plan-auditor", body)
+    def test_every_trigger_command_runs_the_audit(self):
+        for name in TRIGGER_COMMANDS:
+            self.assertIn("audit.py", self._cmd(name), name)
+
+    def test_every_trigger_command_names_the_fallback_agent(self):
+        for name in TRIGGER_COMMANDS:
+            self.assertIn("pb-plan-auditor", self._cmd(name), name)
 
     def test_plan_command_documents_every_exit_code(self):
         body = self._cmd("plan.md")
         for token in ("Exit 0", "Exit 1", "Exit 3"):
             self.assertIn(token, body)
 
-    def test_plan_command_records_the_fallback_through_the_cli(self):
-        self.assertIn("record-fallback", self._cmd("plan.md"))
+    def test_the_fallback_is_recorded_through_the_cli_with_a_hash(self):
+        body = self._cmd("plan.md")
+        self.assertIn("record-fallback", body)
+        self.assertIn("--expected-plan-hash", body)
+
+    def test_sign_migrates_the_audit_path_at_finalization(self):
+        self.assertIn("-audit.md", self._cmd("sign.md"))
 
     def test_init_does_not_promise_six_stages(self):
         self.assertNotIn("six stages", self._cmd("init.md"))
@@ -2570,7 +2944,7 @@ class TestAuditWiring(unittest.TestCase):
 Run: `python3 -m unittest tests.test_command_docs.TestAuditWiring -v`
 Expected: FAIL — `Task` is not in `plan.md`'s frontmatter
 
-- [ ] **Step 3: Add `Task` to the frontmatter**
+- [ ] **Step 3: Add `Task` to all four frontmatters**
 
 `commands/plan.md:4` becomes:
 
@@ -2578,37 +2952,57 @@ Expected: FAIL — `Task` is not in `plan.md`'s frontmatter
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(python3:*), Bash(git:*), Bash(ls:*), Bash(date:*), Bash(mkdir:*)
 ```
 
-`Task` is the only addition. Codex runs inside `audit.py`, which `Bash(python3:*)` already permits, so no external-command permission is needed.
+Add `Task` to `commands/sign.md:4` and `commands/sync.md` the same way, preserving each file's existing list verbatim and appending nothing else. `commands/execute.md:4` already has `Task` and needs no change.
 
-- [ ] **Step 4: Add the audit to step 6**
+`Task` is the only addition anywhere. Codex runs inside `audit.py`, which the `Bash(python3:*)` these commands already carry permits, so no external-command permission is needed.
+
+- [ ] **Step 4: Add the audit to `/plan` step 6**
 
 In `commands/plan.md` step 6, after the sentence that runs the review workflow:
 
 > **Dispatch the audit.** Immediately after the review workflow, run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/audit.py --root . run --component <NN-slug> --version <N> --plan <the draft path>` **in the background** and continue without waiting — the reviewer takes minutes and the live board picks the artifact up on auto-refresh. Tell the researcher the audit is running.
 >
-> **Exit 0** means the audit was written, or an existing one was still current. **Exit 3** means a fallback is required: dispatch one `pb-plan-auditor` Task with the draft's full content, its on-disk path, and the repository root; write its JSON to a temp file; then record it with `audit.py --root . record-fallback --component <NN-slug> --version <N> --plan <draft path> --json <temp file> --reason "<the exit-3 reason>"`. Never hand-write the artifact — `record-fallback` is what stamps the plan hash and context identity that make it current. Delete the temp file afterward. **Exit 1** is an error: report it and continue, because a failed audit must never block authoring.
+> **Exit 0** means the audit was written, or an existing one was still current. **Exit 3** means a fallback is required: note the draft's hash first (`python3 -c` over `audit.audit_plan_hash`, or simply pass the value `audit.py` printed), dispatch one `pb-plan-auditor` Task with the draft's full content, its on-disk path, and the repository root; write its JSON to a temp file; then record it with `audit.py --root . record-fallback --component <NN-slug> --version <N> --plan <draft path> --json <temp file> --reason "<the exit-3 reason>" --expected-plan-hash <the hash you noted>`. Never hand-write the artifact — `record-fallback` is what stamps the plan hash and context identity that make it current, and the hash argument is what stops it certifying text the subagent never saw. Delete the temp file afterward. **Exit 1** is an error: report it and continue, because a failed audit must never block authoring.
 >
 > If `pb-plan-auditor` is not yet loaded in this session (a project that has just been migrated generates it for the first time, and named agents load at session start), say so and spawn an anonymous `Task` subagent carrying the same contract instead, then record it the same way. Never report an audit as clean when it did not run: a silently skipped audit reads as a clean bill of health.
 >
 > The audit answers a different question from the scorecard. The score says whether the plan is a checkable contract; the audit says whether it will work against this repository and data. A plan can score 15/15 and carry blockers, and that is a coherent state, not a contradiction. Report both, and never merge them into one judgment.
 
-- [ ] **Step 5: Update the doctrine and `init.md`**
+- [ ] **Step 5: Add the same dispatch to the other three commands**
+
+Each gets the same instruction, phrased for its own trigger. Keep it short — refer back to `/plan` step 6 for the exit-code handling rather than repeating it four times, but state the trigger and the target explicitly in each:
+
+- **`commands/sign.md` step 4** — after applying a feedback file to a draft and re-running the review workflow, dispatch the audit on that draft. **Step 3** — after materializing a re-commitment candidate and running the review workflow on it, dispatch the audit on the candidate.
+- **`commands/execute.md` step 1** — after the re-commitment materialization runs the review workflow, dispatch the audit on the candidate.
+- **`commands/sync.md` step 6** — after the review workflow runs on the amendment draft and before the canonical write, dispatch the audit on the draft.
+
+In every case the dispatch is the same command with that draft's component, version, and path, and a failed audit never blocks the surrounding work.
+
+- [ ] **Step 6: Migrate the audit's path at sign-off**
+
+`/planboard:review` step 4 already rewrites a scorecard's `planPath` from `.draft-v<N>.md` to `v<N>.md` when a draft is finalized. The audit needs the same treatment or its artifact permanently names a deleted file. Add to `commands/sign.md`, in the finalization transaction beside the existing scorecard migration:
+
+> If `plans/reviews/<NN-slug>-v<N>-audit.md` exists and its fence's `planPath` is the draft path, rewrite that value and the prose link to the canonical `plans/execution/<NN-slug>/v<N>.md`. Do not re-run the audit: `auditPlanHash` is computed over the plan with its trailer stripped, so finalization cannot invalidate it.
+
+The board strip does not depend on this — it matches on component and version (Task 10) precisely so a draft's audit survives sign-off — but the artifact should not point at a file that no longer exists.
+
+- [ ] **Step 7: Update the doctrine and `init.md`**
 
 Add a short "Two review channels" section to `skills/managing-planboard/references/planning-doctrine.md`: the rubric scores control and reads only the plan; the audit checks correctness and reads the repository; neither substitutes for the other; a high score predicts more audit findings, not fewer, because a specific plan is a falsifiable one.
 
 `commands/init.md:28` says the profile has six stages and generation writes three agents. Update both counts to seven and four.
 
-- [ ] **Step 6: Run the full Python suite**
+- [ ] **Step 8: Run the full Python suite**
 
 Run: `python3 -m unittest discover -s tests`
-Expected: PASS
+Expected: PASS. `tests/test_command_docs.py` also has existing structural checks over the command inventory — confirm none of them assert a fixed allowed-tools string that the added `Task` would break.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add commands/plan.md commands/init.md \
+git add commands/plan.md commands/sign.md commands/execute.md commands/sync.md commands/init.md \
         skills/managing-planboard/references/planning-doctrine.md tests/test_command_docs.py
-git commit -m "plan: dispatch the audit at draft time with a recorded fallback path"
+git commit -m "commands: dispatch the audit wherever a draft is reviewed"
 ```
 
 ---
@@ -2733,17 +3127,23 @@ Run `cd board && npm run build` a second time and confirm `git diff --stat skill
 
 - [ ] **Step 5: Bump the version**
 
-Keep `.claude-plugin/plugin.json` and `board/package.json` identical, and sync `board/package-lock.json`. This is a feature, so take a minor bump from the current version.
+Keep `.claude-plugin/plugin.json` and `board/package.json` identical, then run `cd board && npm install --package-lock-only` to sync the root package fields in `board/package-lock.json` (`AGENTS.md:40-46`). This is a feature, so take a minor bump from the current version.
 
 - [ ] **Step 6: Write the changelog entry**
 
 Add a `CHANGELOG.md` section for the new version covering: the audit channel and what it is for; the `plan-audit` profile row and its automatic migration; `pb-plan-auditor`; the audit artifact and its board panel; and the manual Codex reviewer now following the profile. State plainly that nothing is gated yet and that blocker dispositions arrive with seam 2.
 
-- [ ] **Step 7: Run everything one last time**
+- [ ] **Step 7: Run the repository's exact validation set**
 
-Run: `python3 -m unittest discover -s tests`
-Run (from `board/`): `npm test && npx tsc --noEmit`
-Expected: PASS on both.
+These are the three commands `AGENTS.md:23-29` requires, verbatim:
+
+```sh
+python3 -m pytest tests/ -q
+(cd board && npm test && npx tsc --noEmit)
+(cd skills/managing-planboard/assets/web-template && npm test)
+```
+
+Expected: PASS on all three. The hosted web-template suite is easy to forget and is required.
 
 - [ ] **Step 8: Commit**
 
@@ -2758,6 +3158,6 @@ git commit -m "release: the plan audit channel (seam 1)"
 
 ## After this plan
 
-Seam 2, a separate plan: the currency pre-flight in `/sign`, the `/execute` gate and `/sync`; revalidation inside `sign_lock` immediately before `write_ticket`; blocker dispositions with reasons; `resolved` recorded from the `supersedes` pointer; decision-log entries attributing the finding to the reviewer and the decision to the researcher; the draft-to-canonical `planPath` rewrite at sign-off; and the `Task` permission on `/sign` and `/sync`.
+Seam 2, a separate plan: the currency pre-flight in `/sign`, the `/execute` gate and `/sync`; revalidation inside `sign_lock` immediately before `write_ticket`; blocker dispositions with reasons; `resolved` recorded from the `supersedes` pointer; and decision-log entries attributing the finding to the reviewer and the decision to the researcher.
 
-One spec requirement is deliberately deferred there rather than here: the spec's draft-to-canonical audit migration (`docs/specs/2026-07-24-plan-audit-channel-design.md`, section 4). Seam 1 has no sign-off hook to run it in, and Task 10's component-and-version matching makes the strip survive sign-off without it. The rewrite still belongs in seam 2 so the artifact's own `planPath` stops pointing at a deleted draft.
+Seam 1 now covers every spec requirement in its scope. The audit dispatches from all four draft-review triggers (Task 11), the migration regenerates its agent (Task 3), and the draft-to-canonical `planPath` rewrite happens at sign-off (Task 11, step 6). What seam 2 adds is not visibility but *consequence*: until it lands, an audit can be full of blockers and nothing stops the plan being signed.
