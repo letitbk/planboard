@@ -640,6 +640,25 @@ class TestEnsureAuditStage(unittest.TestCase):
             self.assertIn("ambiguous", result["reason"])
             self.assertEqual(before, (root / "plans" / "model-profile.md").read_text())
 
+    def test_migration_regenerates_the_auditor_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertTrue((root / ".claude" / "agents" / "pb-plan-auditor.md").is_file())
+
+    def test_stage_stdout_stays_parseable_after_a_migration(self):
+        # tests/test_models.py:150 asserts cmd_stage prints nothing but its JSON
+        # row. generate()'s "wrote ..." lines must not leak onto stdout.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertNotIn("wrote", out.getvalue())
+            self.assertEqual(json.loads(out.getvalue())["stage"], "plan-audit")
+
     def test_a_malformed_audit_row_counts_as_present(self):
         # Three cells, not four. If the splice ignored it, a second row would
         # be inserted and the profile would be permanently non-canonical.
@@ -751,13 +770,15 @@ The line ending is copied from the row being followed, not guessed from the file
 
 Place it as the first statement of `cmd_generate` (`models.py:481`) and `cmd_stage` (`models.py:279`). In `cmd_check` (`models.py:490`), place it **after** the `migrate_legacy_agents` early return so a legacy project still gets its rename hint first.
 
-`cmd_stage` must stay silent on stdout apart from its JSON row, since callers parse it — send its migration line to `stderr` instead:
+**`cmd_stage` must stay silent on stdout apart from its JSON row**, since callers parse it. `tests/test_models.py:150` asserts exactly that with `assertEqual(out, "")`. Send *everything* the migration produces to `stderr` there — the migration line and, per the next paragraph, the regeneration output too:
 
 ```python
         print("model-profile: %s" % migration["reason"], file=sys.stderr)
 ```
 
-**A splice must be followed by regeneration.** The spec requires the migration to regenerate affected agents; without it, a project can acquire the row while `.claude/agents/pb-plan-auditor.md` stays absent indefinitely, so every fallback dispatch names an agent that does not exist. Regeneration cannot live inside `ensure_audit_stage` itself — `generate()` calls back into profile parsing, and `cmd_generate` would then run it twice — so the caller does it. In `cmd_check` and `cmd_stage`, after a `changed` migration:
+**A splice must be followed by regeneration.** The spec requires the migration to regenerate affected agents; without it, a project can acquire the row while `.claude/agents/pb-plan-auditor.md` stays absent indefinitely, so every fallback dispatch names an agent that does not exist. Regeneration cannot live inside `ensure_audit_stage` itself — `generate()` calls back into profile parsing, and `cmd_generate` would then run it twice — so the caller does it.
+
+The output stream differs by caller, and getting it wrong breaks an existing test. In `cmd_check`, stdout is the hint channel, so:
 
 ```python
     if migration["changed"]:
@@ -766,7 +787,18 @@ Place it as the first statement of `cmd_generate` (`models.py:481`) and `cmd_sta
             print(line)
 ```
 
-`cmd_generate` needs nothing extra: its own `generate(root)` call already runs after the migration. Add a test asserting that `models.main(["--root", str(root), "stage", "plan-audit"])` on a six-row project both splices the row and leaves `.claude/agents/pb-plan-auditor.md` on disk.
+In `cmd_stage`, stdout carries a JSON row that callers parse, so the same output goes to stderr:
+
+```python
+    if migration["changed"]:
+        res = generate(root)
+        for line in res["stdout"]:
+            print(line, file=sys.stderr)
+```
+
+`generate()` appends lines like `wrote .claude/agents/pb-plan-auditor.md` to its `stdout` list (`models.py:463`), so routing them to stdout in `cmd_stage` makes `tests/test_models.py:150` fail with `AssertionError: 'wrote .claude/agents/...' != ''`.
+
+`cmd_generate` needs nothing extra: its own `generate(root)` call already runs after the migration.
 
 - [ ] **Step 5: Run the full Python suite**
 
@@ -2226,6 +2258,11 @@ def _finalize(root, component, version, plan_file, plan_text, payload, token, ef
         "reviewer": reviewer,
         "auditPlanHash": audit_plan_hash(plan_text),
         "contextIdentity": context_identity(root, _evidence_paths(payload)),
+        # Present so _validate's required-key check passes; write_audit
+        # overwrites it under the lock with the artifact actually replaced.
+        # Omitting it raises "audit payload missing keys: supersedes" before
+        # the lock is ever taken.
+        "supersedes": None,
         "dispositions": [],
     })
     return write_audit(root, component, version, payload)
