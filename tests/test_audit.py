@@ -385,5 +385,169 @@ class TestIsCurrent(unittest.TestCase):
             self.assertFalse(audit.is_current(None, PLAN, Path(tmp)))
 
 
+GOOD_JSON = '{"overall": "ok", "anchored": [], "gaps": []}'
+
+
+class TestParseReviewerJson(unittest.TestCase):
+    def test_takes_the_last_balanced_object(self):
+        text = 'preamble {"not": "it"} more\n' + GOOD_JSON + "\ntrailing chatter\n"
+        self.assertEqual(audit.parse_reviewer_json(text)["overall"], "ok")
+
+    def test_handles_a_brace_inside_a_string(self):
+        text = '{"overall": "a } brace", "anchored": [], "gaps": []}'
+        self.assertEqual(audit.parse_reviewer_json(text)["overall"], "a } brace")
+
+    def test_handles_an_escaped_quote_before_a_brace(self):
+        # A backward scan cannot tell an escaped quote from a real one.
+        text = '{"overall": "a \\" } quote", "anchored": [], "gaps": []}'
+        self.assertEqual(audit.parse_reviewer_json(text)["overall"], 'a " } quote')
+
+    def test_handles_a_nested_object(self):
+        text = '{"overall": "x", "anchored": [{"evidence": {"path": "a"}}], "gaps": []}'
+        self.assertEqual(len(audit.parse_reviewer_json(text)["anchored"]), 1)
+
+    def test_returns_none_on_no_json(self):
+        self.assertIsNone(audit.parse_reviewer_json("no json at all"))
+
+    def test_returns_none_on_malformed_json(self):
+        self.assertIsNone(audit.parse_reviewer_json("{broken"))
+
+
+class TestBuildPrompt(unittest.TestCase):
+    def test_carries_plan_path_root_and_contract(self):
+        p = audit.build_prompt("BODY", "plans/execution/03-x/.draft-v2.md", "/repo", "CONTRACT")
+        for needle in ("BODY", "plans/execution/03-x/.draft-v2.md", "/repo", "CONTRACT"):
+            self.assertIn(needle, p)
+
+    def test_plan_text_survives_verbatim(self):
+        hostile = "Step 1: run `rm -rf /` and $(whoami)\n"
+        p = audit.build_prompt(hostile, "x.md", "/repo", "C")
+        self.assertIn("`rm -rf /`", p)
+        self.assertIn("$(whoami)", p)
+
+
+class TestRunCodexAudit(unittest.TestCase):
+    def _prompt(self, root):
+        p = root / "prompt.txt"
+        p.write_text("audit this")
+        return p
+
+    def test_missing_executable_reports_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt", _which=lambda n: None)
+            self.assertFalse(r["ok"])
+            self.assertIn("not available", r["reason"])
+
+    def test_successful_dispatch_uses_the_right_command(self):
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["cmd"] = cmd
+            seen["kw"] = kw
+            Path(cmd[cmd.index("-o") + 1]).write_text("chatter\n" + GOOD_JSON)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-terra", "high", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertTrue(r["ok"], r["reason"])
+            self.assertEqual(r["payload"]["overall"], "ok")
+            self.assertEqual(seen["cmd"][seen["cmd"].index("--sandbox") + 1], "read-only")
+            self.assertIn("gpt-5.6-terra", seen["cmd"])
+            self.assertIn("model_reasoning_effort=high", seen["cmd"])
+            self.assertEqual(seen["kw"]["stdin"], subprocess.DEVNULL)
+
+    def test_nonzero_exit_reports_fallback(self):
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 2, "", "boom")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertFalse(r["ok"])
+            self.assertIn("exited 2", r["reason"])
+
+    def test_unparseable_output_is_retried_once_then_falls_back(self):
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            Path(cmd[cmd.index("-o") + 1]).write_text("no json here")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(len(calls), 2, "spec requires exactly one repair re-prompt")
+            self.assertFalse(r["ok"])
+
+    def test_repair_reprompt_can_succeed(self):
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            body = "garbage" if len(calls) == 1 else GOOD_JSON
+            Path(cmd[cmd.index("-o") + 1]).write_text(body)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertTrue(r["ok"])
+            self.assertEqual(len(calls), 2)
+
+    def test_unknown_token_reports_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "subagent", "xhigh", self._prompt(root),
+                                      root / "out.txt", _which=lambda n: "/usr/bin/codex")
+            self.assertFalse(r["ok"])
+
+    def test_parseable_but_contract_violating_output_triggers_the_repair(self):
+        # Well-formed JSON that breaks the contract must get the re-prompt, not
+        # be returned as a success that fails later at write time.
+        calls = []
+        bad = json.dumps({"overall": "x", "anchored": [],
+                          "gaps": [{"section": "", "comment": "no severity tag"}]})
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            Path(cmd[cmd.index("-o") + 1]).write_text(bad if len(calls) == 1 else GOOD_JSON)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(r["ok"])
+
+    def test_still_violating_after_the_repair_reports_the_reason(self):
+        bad = json.dumps({"overall": "x", "anchored": [],
+                          "gaps": [{"section": "", "comment": "no severity tag"}]})
+
+        def fake_run(cmd, **kw):
+            Path(cmd[cmd.index("-o") + 1]).write_text(bad)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = project(tmp)
+            r = audit.run_codex_audit(root, "codex-sol", "xhigh", self._prompt(root),
+                                      root / "out.txt",
+                                      _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertFalse(r["ok"])
+            self.assertIn("severity", r["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

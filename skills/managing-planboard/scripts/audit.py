@@ -10,6 +10,7 @@ import errno
 import hashlib
 import json
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -320,3 +321,167 @@ def is_current(audit_record, plan_text, root):
     fresh = context_identity(root, list((recorded.get("paths") or {}).keys()))
     return ((recorded.get("paths") or {}) == fresh["paths"]
             and recorded.get("head") == fresh["head"])
+
+
+CODEX_MODELS = {
+    "codex-sol": "gpt-5.6-sol",
+    "codex-terra": "gpt-5.6-terra",
+    "codex-luna": "gpt-5.6-luna",
+}
+REPAIR_SUFFIX = (
+    "\n\nYour previous reply could not be used. Reply with ONLY the JSON "
+    "object described in the output contract — no prose before or after it, "
+    "and every finding carrying its severity tag and evidence.\n"
+)
+
+
+def reviewer_payload_problem(payload):
+    """None when a reviewer payload satisfies the three-key contract, else a
+    short reason. Shares its rules with _validate so a payload that passes here
+    cannot fail at write time — the reviewer gets a repair re-prompt instead of
+    a lost audit."""
+    if not isinstance(payload, dict):
+        return "not an object"
+    if not isinstance(payload.get("overall"), str) or not payload["overall"].strip():
+        return "missing 'overall'"
+    for bucket in ("anchored", "gaps"):
+        if not isinstance(payload.get(bucket), list):
+            return "'%s' is not a list" % bucket
+        for finding in payload[bucket]:
+            if not isinstance(finding, dict) or not isinstance(finding.get("comment"), str):
+                return "a finding has no string 'comment'"
+            if not any(finding["comment"].startswith(s) for s in SEVERITIES):
+                return "a finding has no severity tag"
+            ev = finding.get("evidence")
+            if not isinstance(ev, dict) or not ev.get("path") or not ev.get("detail"):
+                return "a finding has no evidence path and detail"
+            if ev.get("kind") not in ("direct", "inferred"):
+                return "a finding's evidence has no valid kind"
+            if bucket == "anchored" and not finding.get("quote"):
+                return "an anchored finding has no quote"
+    return None
+
+
+def build_prompt(plan_text, plan_path, root, contract):
+    """The audit prompt. Written to a FILE by the caller and passed with a
+    shell-safe substitution, never interpolated into a command line — a plan
+    containing backticks or $(...) must not be shell-expanded."""
+    return (
+        "<task>\n"
+        "Audit ONE execution plan for technical correctness against this repository.\n"
+        "You are NOT scoring it. A separate reviewer scores it as a governance\n"
+        "contract. Your question: executed as written, against this repository and\n"
+        "this data, will this plan produce what it claims?\n\n"
+        "Plan path: %s\n"
+        "Repository root: %s\n"
+        "</task>\n\n"
+        "<plan>\n%s\n</plan>\n\n"
+        "%s\n"
+    ) % (plan_path, root, plan_text, contract)
+
+
+def _scan_object(text, end):
+    """Return the balanced object ending at `end`, or None. Scans FORWARD from
+    each candidate start so string and escape state is tracked in the direction
+    the grammar is written — a backward scan cannot tell an escaped quote from
+    a real one."""
+    start = text.rfind("{", 0, end + 1)
+    while start != -1:
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, end + 1):
+            ch = text[i]
+            if esc:
+                esc = False
+            elif in_str:
+                if ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    if i == end:
+                        try:
+                            return json.loads(text[start:end + 1])
+                        except ValueError:
+                            break
+                    break
+        start = text.rfind("{", 0, start)
+    return None
+
+
+def parse_reviewer_json(text):
+    """The LAST balanced JSON object in reviewer output. Reviewers wrap their
+    answer in prose, so a first-match scan picks up the wrong object."""
+    end = text.rfind("}")
+    while end != -1:
+        got = _scan_object(text, end)
+        if got is not None:
+            return got
+        end = text.rfind("}", 0, end)
+    return None
+
+
+def run_codex_audit(root, token, effort, prompt_path, out_path, _which=None, _run=None):
+    """Dispatch Codex read-only, with exactly one repair re-prompt when the
+    reply is unparseable OR violates the contract. Returns ok=False with a
+    reason on every failure mode so the caller can fall back to
+    pb-plan-auditor. The audit is never silently skipped: a skipped audit reads
+    as a clean bill of health."""
+    which = _which or shutil.which
+    runner = _run or subprocess.run
+    if which("codex") is None:
+        return {"ok": False, "reason": "codex is not available on PATH", "payload": None}
+    model = CODEX_MODELS.get(token)
+    if model is None:
+        return {"ok": False, "reason": "%r is not a codex reviewer token" % token,
+                "payload": None}
+
+    prompt = prompt_path.read_text(encoding="utf-8")
+    last = "no parseable JSON object"
+    for attempt in (0, 1):
+        cmd = [
+            "codex", "exec", "--sandbox", "read-only",
+            "-m", model,
+            "-c", "model_reasoning_effort=%s" % effort,
+            "-o", str(out_path),
+            prompt if attempt == 0 else prompt + REPAIR_SUFFIX,
+        ]
+        try:
+            proc = runner(cmd, cwd=str(root), capture_output=True, text=True,
+                          timeout=1800, stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "reason": "codex timed out after 30 minutes",
+                    "payload": None}
+        except OSError as e:
+            return {"ok": False, "reason": "could not launch codex (%s)" % e,
+                    "payload": None}
+        if proc.returncode != 0:
+            return {"ok": False,
+                    "reason": "codex exited %d: %s" % (proc.returncode,
+                                                       (proc.stderr or "")[:200]),
+                    "payload": None}
+        try:
+            text = Path(out_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            return {"ok": False, "reason": "could not read codex output (%s)" % e,
+                    "payload": None}
+        payload = parse_reviewer_json(text)
+        # The repair must fire on a CONTRACT violation, not only on unparseable
+        # text. A well-formed object missing `overall`, or carrying a finding
+        # with no severity tag or no evidence, is exactly what one re-prompt is
+        # meant to fix; returning ok=True here would surface it later as a
+        # write failure and a lost audit.
+        problem = None if payload is None else reviewer_payload_problem(payload)
+        if payload is not None and problem is None:
+            return {"ok": True, "reason": "", "payload": payload}
+        last = problem or "no parseable JSON object"
+    return {"ok": False,
+            "reason": "codex output did not satisfy the contract after one repair (%s)" % last,
+            "payload": None}
