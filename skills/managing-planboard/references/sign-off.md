@@ -11,7 +11,7 @@ Complete this transaction for each approved item:
 3. Write `plans/execution/<NN-slug>/v<N>.md`. The hook validates the ticket for this exact component, version, and content hash.
 4. Delete `plans/execution/<NN-slug>/.draft-v<N>.md`. Keep every `v<N>-draft-<K>.md` snapshot.
 5. Delete `.sign-feedback-v<N>.md` for this item if it exists. The feedback has now been consumed.
-6. Run the review workflow on the signed plan. A scorecard for the matching draft moves to the signed path at the same version. An existing signed scorecard makes this step a no-op.
+6. Run the review workflow on the signed plan. A scorecard for the matching draft moves to the signed path at the same version. An existing signed scorecard makes this step a no-op. If `plans/reviews/<NN-slug>-v<N>-audit.md` exists and its fence's `planPath` is the draft path, rewrite that value and the prose link to the canonical `plans/execution/<NN-slug>/v<N>.md`. Do NOT re-run the audit: `auditPlanHash` is computed over the plan with its trailer stripped, so finalization cannot invalidate it.
 7. Update the tracker plan link to `v<N>.md`. Keep the status set by the caller. A first plan made by `/plan` stays `planned`. `/execute` sets `in progress` when execution begins. `/adopt` leaves the existing status unchanged. Never move a status backward during finalization.
 8. Append the sign decision and its effect to the decision log with the current timestamp.
 

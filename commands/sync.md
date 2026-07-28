@@ -1,6 +1,6 @@
 ---
 description: Post-execution checkpoint — update the tracker, catch unlogged decisions, version the plan if execution deviated
-allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(python3:*), Bash(python:*), Bash(Rscript:*), Bash(bash:*), Bash(tee:*), Bash(mkdir:*), Bash(git:*), Bash(ls:*), Bash(date:*)
+allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(python3:*), Bash(python:*), Bash(Rscript:*), Bash(bash:*), Bash(tee:*), Bash(mkdir:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
 Reconcile the plan artifacts with what actually happened. Skill context: `${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/SKILL.md`. Requires an initialized project (`plans/master-plan.md` with its marker); if absent, say so and stop. This is the MANUAL checkpoint — the primary loop (`/planboard:execute`) runs capture, validation, and bookkeeping itself; `/sync` covers work done outside that loop, crashed sessions, hosted-comment pulls, and adoption-cutoff reconciliation.
@@ -29,7 +29,7 @@ Reconcile the plan artifacts with what actually happened. Skill context: `${CLAU
 
 6. **Version on material deviation.** A recorded revision is an **amendment** to the plan. A silent deviation is a **breach**. If step 2 found a material deviation, copy the current version to `plans/execution/<NN-slug>/.draft-v<N+1>.md`. Resume an existing draft instead of overwriting it. Apply the changes and add `Supersedes: vN — <what changed and why>`. This line records the trigger and the change.
 
-   Update the first line `<!-- pb-model … -->` marker so `reported` names your session model. Keep `prescribed` from the `plan` row returned by `models.py stage plan`. The draft has no trailer. Before each fresh review round, copy it to the next unused `v<N+1>-draft-<K>.md` snapshot. Keep these snapshots as read-only history. Run the `/planboard:review` workflow on the draft.
+   Update the first line `<!-- pb-model … -->` marker so `reported` names your session model. Keep `prescribed` from the `plan` row returned by `models.py stage plan`. The draft has no trailer. Before each fresh review round, copy it to the next unused `v<N+1>-draft-<K>.md` snapshot. Keep these snapshots as read-only history. Run the `/planboard:review` workflow on the draft. After the review workflow, dispatch the audit on that draft: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/managing-planboard/scripts/audit.py --root . run --component <NN-slug> --version <N> --plan <draft path>` — handle its exit codes exactly as `/planboard:plan` step 6 describes, including the `pb-plan-auditor` fallback. A failed audit never blocks the surrounding work.
 
    After the review, append `Amendment recorded, <YYYY-MM-DD>` as the final nonempty line and write `v<N+1>.md` directly. The hook admits this amendment path without a ticket or board action. Delete the ephemeral draft and keep every snapshot. Run the review workflow on the recorded plan so the matching draft scorecard moves to the canonical path. Leave the tracker status unchanged. An in-progress component stays in progress, and sync never moves a status backward or advances it. The board displays this version as `amended △`.
 

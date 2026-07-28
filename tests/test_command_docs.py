@@ -140,3 +140,53 @@ class TestBoardLaunchDocs(unittest.TestCase):
                               % (name, token))
             self.assertIn("harness's own background", text,
                           "%s must point at the harness mechanism" % name)
+
+
+TRIGGER_COMMANDS = ("plan.md", "sign.md", "execute.md", "sync.md")
+
+
+class TestAuditWiring(unittest.TestCase):
+    """The audit must dispatch wherever the review workflow runs on a draft.
+    A trigger missing from any of these is a path to execution with no audit."""
+
+    def _cmd(self, name):
+        return (REPO / "commands" / name).read_text(encoding="utf-8")
+
+    def test_every_trigger_command_can_dispatch_the_fallback_subagent(self):
+        for name in TRIGGER_COMMANDS:
+            head = self._cmd(name).split("---")[1]
+            self.assertIn("Task", head, name)
+
+    def test_every_trigger_command_runs_the_audit(self):
+        for name in TRIGGER_COMMANDS:
+            self.assertIn("audit.py", self._cmd(name), name)
+
+    def test_every_trigger_command_names_the_fallback_agent(self):
+        for name in TRIGGER_COMMANDS:
+            self.assertIn("pb-plan-auditor", self._cmd(name), name)
+
+    def test_plan_command_documents_every_exit_code(self):
+        body = self._cmd("plan.md")
+        for token in ("Exit 0", "Exit 1", "Exit 3"):
+            self.assertIn(token, body)
+
+    def test_the_fallback_is_recorded_through_the_cli_with_a_hash(self):
+        body = self._cmd("plan.md")
+        self.assertIn("record-fallback", body)
+        self.assertIn("--expected-plan-hash", body)
+
+    def test_finalization_migrates_the_audit_path(self):
+        # The finalization transaction is defined in the sign-off reference,
+        # not in commands/sign.md, so that is where the migration belongs.
+        ref = (REPO / "skills" / "managing-planboard" / "references"
+               / "sign-off.md").read_text(encoding="utf-8")
+        self.assertIn("-audit.md", ref)
+        self.assertIn("auditPlanHash", ref)
+
+    def test_sign_audits_a_revised_draft(self):
+        self.assertIn("fresh audit", self._cmd("sign.md"))
+
+    def test_init_does_not_describe_the_profile_as_claude_only(self):
+        # One stage now runs an independent auditor, not a Claude model.
+        self.assertNotIn("which Claude model each stage", self._cmd("init.md"))
+        self.assertIn("plan audit", self._cmd("init.md"))

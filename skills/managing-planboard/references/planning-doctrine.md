@@ -25,3 +25,15 @@ Authoring produces a scored pending draft. The researcher can annotate it on the
 ## Compatibility with other skills
 
 General process skills active in a researcher's setup (brainstorming, test-driven development, worktree discipline) are welcome for the work itself. The plan documents, their locations, their versioning, and their signing flow always follow THIS plugin's template and rubric contract. External planning artifacts such as checkbox task plans or other save locations are not substitutes for `plans/execution/<NN-slug>/vN.md` and the sign workflow.
+
+## Two review channels
+
+A plan is judged on two independent questions, and neither substitutes for the other.
+
+The **rubric score** asks whether the plan is a checkable contract. It reads only the plan text, scores five channels of control, and never opens the repository. Its output is a profile such as `G3·D3·S3·V3·B3 = 15/15`.
+
+The **audit** asks whether the plan will actually work. It reads the plan against this repository and this data, and its output is a list of findings, each naming the concrete failure it predicts at execution time and the evidence path it rests on.
+
+A high score does not predict a quiet audit. Specific steps, named success criteria, and stated boundaries are all falsifiable claims, so a well specified plan gives an auditor more to attack, not less. A vague plan gives it nothing concrete to contradict. "15/15 with two blockers" is therefore a coherent state, not a contradiction: the plan is well governed and technically wrong.
+
+Report both. Never merge them into a single number or a single verdict.
