@@ -519,11 +519,13 @@ def newest_draft(comp_dir):
 
 
 def agents_gitignored(root):
-    """True if any generated rp-* agent path is gitignored, False if none are,
-    None when git is unavailable. Checks the three concrete files (not just the
-    dir) so a rule targeting an individual agent is caught. Boot-time only."""
-    paths = [f".claude/agents/{a}.md"
-             for a in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer")]
+    """True if any generated agent path is gitignored, False if none are, None
+    when git is unavailable. Checks the concrete files (not just the dir) so a
+    rule targeting an individual agent is caught. Boot-time only.
+
+    The list is derived from models.AGENT_STAGES so a newly generated agent is
+    covered without editing this function."""
+    paths = [f".claude/agents/{a}.md" for a in sorted(models.AGENT_STAGES.values())]
     try:
         r = subprocess.run(["git", "-C", str(root), "check-ignore", *paths],
                            capture_output=True, text=True, timeout=5)
