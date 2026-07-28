@@ -619,3 +619,46 @@ export type Annotation =
   | ResultCommentAnnotation
   | ScriptCommentAnnotation
   | DocCommentAnnotation;
+
+// ---- plan audit (the audit channel) ----
+
+export type AuditSeverity = "blocker" | "major" | "minor";
+
+export type AuditEvidence = {
+  path: string;
+  kind: "direct" | "inferred";
+  detail?: string;
+};
+
+export type AuditFinding = {
+  section: string;
+  quote?: string;
+  evidence?: AuditEvidence;
+  comment: string;
+  severity: AuditSeverity;
+};
+
+export type AuditDisposition = {
+  finding?: string;
+  status?: string;
+  reason?: string;
+};
+
+// One `json board-audit` fence as the board sees it. Separate from Scorecard
+// on purpose: the score asks whether a plan is a checkable contract, the audit
+// asks whether it will actually work. They are never merged into one verdict.
+export type Audit = {
+  schemaVersion: number;
+  component: string;
+  planVersion: number;
+  planPath: string;
+  date: string;
+  reviewer: { token: string; effort?: string; reviewerFallback?: string };
+  auditPlanHash?: string;
+  supersedes?: string | null;
+  overall: string;
+  anchored: AuditFinding[];
+  gaps: AuditFinding[];
+  dispositions: AuditDisposition[];
+  counts: Record<AuditSeverity, number>;
+};

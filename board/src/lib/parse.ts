@@ -4,6 +4,9 @@
 // so a template change that breaks parsing fails the test suite.
 
 import type {
+  Audit,
+  AuditFinding,
+  AuditSeverity,
   ParsedExecutionPlan,
   ParsedHistoryEntry,
   ParsedLogEntry,
@@ -497,4 +500,72 @@ export function allFiles(data: {
   // Present-only, same rule: archived master plans (v0.10 renewal record).
   out.push(...(data.files.archives ?? []));
   return out;
+}
+
+const AUDIT_SEVERITIES: AuditSeverity[] = ["blocker", "major", "minor"];
+
+function toAuditFinding(raw: unknown): AuditFinding | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.comment !== "string") return null;
+  const severity = AUDIT_SEVERITIES.find((s) => (r.comment as string).startsWith(`[${s}]`));
+  // A finding with no valid severity tag is dropped rather than shown
+  // unranked: the panel orders by severity and an untagged finding has no
+  // place in that order.
+  if (!severity) return null;
+  const ev = r.evidence as Record<string, unknown> | undefined;
+  return {
+    section: typeof r.section === "string" ? r.section : "",
+    quote: typeof r.quote === "string" ? r.quote : undefined,
+    evidence:
+      ev && typeof ev.path === "string"
+        ? {
+            path: ev.path,
+            kind: ev.kind === "inferred" ? "inferred" : "direct",
+            detail: typeof ev.detail === "string" ? ev.detail : undefined,
+          }
+        : undefined,
+    comment: r.comment,
+    severity,
+  };
+}
+
+// One `json board-audit` fence. Deliberately separate from parseScorecard:
+// audit files live in the same plans/reviews/ directory, and each parser
+// returns null for the other's fence so neither disturbs the other.
+export function parseAudit(raw: string): Audit | null {
+  const m = /```json board-audit\s*\n([\s\S]*?)\n```/.exec(raw);
+  if (!m) return null;
+  try {
+    const parsed = JSON.parse(m[1]);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!Array.isArray(parsed.anchored) || !Array.isArray(parsed.gaps)) return null;
+    if (typeof parsed.overall !== "string") return null;
+    const rank = (f: AuditFinding) => AUDIT_SEVERITIES.indexOf(f.severity);
+    const clean = (xs: unknown[]) =>
+      (xs.map(toAuditFinding).filter(Boolean) as AuditFinding[]).sort(
+        (a, b) => rank(a) - rank(b),
+      );
+    const anchored = clean(parsed.anchored);
+    const gaps = clean(parsed.gaps);
+    const counts: Record<AuditSeverity, number> = { blocker: 0, major: 0, minor: 0 };
+    for (const f of [...anchored, ...gaps]) counts[f.severity] += 1;
+    return {
+      schemaVersion: typeof parsed.schemaVersion === "number" ? parsed.schemaVersion : 1,
+      component: String(parsed.component ?? ""),
+      planVersion: Number(parsed.planVersion ?? 0),
+      planPath: String(parsed.planPath ?? ""),
+      date: String(parsed.date ?? ""),
+      reviewer: parsed.reviewer ?? { token: "unknown" },
+      auditPlanHash: parsed.auditPlanHash,
+      supersedes: parsed.supersedes ?? null,
+      overall: parsed.overall,
+      anchored,
+      gaps,
+      dispositions: Array.isArray(parsed.dispositions) ? parsed.dispositions : [],
+      counts,
+    };
+  } catch {
+    return null;
+  }
 }
