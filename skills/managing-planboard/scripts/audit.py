@@ -550,8 +550,17 @@ def _finalize(root, component, version, plan_file, plan_text, payload, token, ef
 
 
 def _resolve_row(root):
+    """The plan-audit row, migrating a pre-audit profile first.
+
+    A splice must be followed by regeneration here too. This is a FOURTH
+    caller of ensure_audit_stage beside cmd_generate/cmd_check/cmd_stage, and
+    without regenerating, an audit-triggered migration leaves a profile that
+    names pb-plan-auditor while .claude/agents/ has no such file — breaking
+    the exact fallback dispatch the row exists to describe.
+    """
     import models
-    models.ensure_audit_stage(root)
+    if models.ensure_audit_stage(root)["changed"]:
+        models.generate(root)
     stages, _warnings, _exists = models.load_profile(root)
     return stages.get("plan-audit") or {"model": "codex-sol", "effort": "xhigh"}
 

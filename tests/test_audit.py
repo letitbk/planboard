@@ -688,6 +688,22 @@ class TestRunCli(unittest.TestCase):
             self.assertIn("analysis/fit.R", rec["contextIdentity"]["paths"])
             self.assertEqual(rec["reviewer"]["token"], "codex-sol")
 
+    def test_an_audit_triggered_migration_also_generates_the_auditor(self):
+        # Found by an end-to-end smoke run: _resolve_row is a fourth caller of
+        # ensure_audit_stage, so without regenerating here a migrated project
+        # names pb-plan-auditor in its profile while the agent file is absent,
+        # breaking the fallback dispatch the row exists to describe.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            p = root / "plans" / "model-profile.md"
+            p.write_text(p.read_text().replace(
+                "| plan audit (deep) | codex-sol | xhigh | reviewer |\n", ""))
+            with contextlib.redirect_stdout(io.StringIO()):
+                audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                            "--version", "2", "--plan", str(plan)], _which=lambda n: None)
+            self.assertIn("plan audit (deep)", p.read_text())
+            self.assertTrue((root / ".claude" / "agents" / "pb-plan-auditor.md").is_file())
+
     def test_temp_files_are_cleaned_up(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, plan = audit_project(tmp)
