@@ -190,3 +190,30 @@ class TestAuditWiring(unittest.TestCase):
         # One stage now runs an independent auditor, not a Claude model.
         self.assertNotIn("which Claude model each stage", self._cmd("init.md"))
         self.assertIn("plan audit", self._cmd("init.md"))
+
+    def _codex_bullet(self):
+        body = self._cmd("board.md")
+        i = body.index("- **`codex`**")
+        return body[i:body.index("- **`gemini`**", i)]
+
+    def test_board_codex_is_not_pinned_to_a_stale_model(self):
+        self.assertNotIn("gpt-5.5", self._codex_bullet())
+
+    def test_board_codex_resolves_the_profile_row(self):
+        bullet = self._codex_bullet()
+        self.assertIn("plan-audit", bullet)
+        self.assertIn("model_reasoning_effort", bullet)
+
+    def test_board_codex_maps_every_token(self):
+        bullet = self._codex_bullet()
+        for token, model in (("codex-sol", "gpt-5.6-sol"),
+                             ("codex-terra", "gpt-5.6-terra"),
+                             ("codex-luna", "gpt-5.6-luna")):
+            self.assertIn(token, bullet)
+            self.assertIn(model, bullet)
+
+    def test_board_codex_stays_read_only(self):
+        self.assertIn("--sandbox read-only", self._codex_bullet())
+
+    def test_plan_scope_uses_the_gaps_contract(self):
+        self.assertIn("Plan scope uses the audit contract", self._cmd("board.md"))
