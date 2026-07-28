@@ -8,6 +8,7 @@ import {
 } from "react";
 import PlanBody from "../components/PlanBody";
 import ModelChip from "../components/ModelChip";
+import AuditPanel from "../components/AuditPanel";
 import ScorePanel from "../components/ScorePanel";
 import { parsePlanModelMarker } from "../lib/modelUsage";
 import DiffView from "../components/DiffView";
@@ -17,6 +18,7 @@ import { Notice } from "./Tracker";
 import {
   parseExecutionPlan,
   parseMasterPlan,
+  parseAudit,
   parseScorecard,
   parseServes,
 } from "../lib/parse";
@@ -318,6 +320,19 @@ export default function PlanReader({
     return matches.length === 1 ? matches[0] : null;
   }, [doc, data.files.reviews]);
 
+  // The audit for THIS document, matched on component and version rather than
+  // exact path. audit_plan_hash is invariant across the sign-off trailer, so a
+  // draft's audit stays valid for the signed version; exact-path matching
+  // would make the strip vanish at sign-off. A duplicate match is ambiguous —
+  // show nothing rather than the wrong audit.
+  const auditRecord = useMemo(() => {
+    if (!doc || (doc.docKind !== "signed" && doc.docKind !== "workingDraft")) return null;
+    const matches = data.files.reviews
+      .map((r) => parseAudit(r.content))
+      .filter((a) => a && a.component === doc.group.component && a.planVersion === doc.version);
+    return matches.length === 1 ? matches[0] : null;
+  }, [doc, data.files.reviews]);
+
   const [globalOpen, setGlobalOpen] = useState(false);
   const [globalText, setGlobalText] = useState("");
   useEffect(() => {
@@ -384,6 +399,7 @@ export default function PlanReader({
               </button>
             )}
             {scorecard && <ScorePanel scorecard={scorecard} />}
+            {auditRecord && <AuditPanel audit={auditRecord} />}
             {actionsVisible(data) && onRequestReview && doc.docKind !== "draftSnapshot" && (
               <ReviewMenu
                 onPick={(agent) =>
