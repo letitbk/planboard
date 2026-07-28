@@ -549,5 +549,214 @@ class TestRunCodexAudit(unittest.TestCase):
             self.assertIn("severity", r["reason"])
 
 
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+TEMPLATES = SCRIPTS.parent / "templates"
+
+
+def audit_project(tmp, with_profile=True):
+    root = project(tmp)
+    (root / "plans" / "master-plan.md").write_text("<!-- planboard:master-plan -->\n")
+    if with_profile:
+        (root / "plans" / "model-profile.md").write_text(
+            (TEMPLATES / "model-profile.md").read_text(encoding="utf-8"), encoding="utf-8")
+    plan = root / "plans" / "execution" / "03-attrition" / ".draft-v2.md"
+    plan.write_text(PLAN)
+    return root, plan
+
+
+def run_cli(root, argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = audit.main(["--root", str(root)] + argv)
+    return code, out.getvalue()
+
+
+class TestRunCli(unittest.TestCase):
+    def test_skips_when_a_current_audit_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            audit.write_audit(root, "03-attrition", 2, payload(
+                auditPlanHash=audit.audit_plan_hash(PLAN),
+                contextIdentity=audit.context_identity(root, [])))
+            code, out = run_cli(root, ["run", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan)])
+            self.assertEqual(code, 0)
+            self.assertIn("current", out)
+
+    def test_signals_fallback_when_codex_is_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: None)
+            self.assertEqual(code, 3)
+            self.assertIn("fallback", out.getvalue().lower())
+
+    def test_a_project_with_no_profile_does_not_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp, with_profile=False)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: None)
+            self.assertIn(code, (0, 3))
+
+    def test_subagent_token_signals_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            p = root / "plans" / "model-profile.md"
+            p.write_text(p.read_text().replace("codex-sol", "subagent"))
+            code, out = run_cli(root, ["run", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan)])
+            self.assertEqual(code, 3)
+
+    def test_missing_plan_file_is_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = audit_project(tmp)
+            code, _ = run_cli(root, ["run", "--component", "03-attrition",
+                                     "--version", "2", "--plan", str(root / "nope.md")])
+            self.assertEqual(code, 1)
+
+    def test_a_repo_relative_plan_path_works(self):
+        # /planboard:plan passes plans/execution/..., not an absolute path.
+        # Leaving it relative while root is absolute makes relative_to() raise.
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = audit_project(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = audit.main(
+                    ["--root", str(root), "run", "--component", "03-attrition",
+                     "--version", "2",
+                     "--plan", "plans/execution/03-attrition/.draft-v2.md"],
+                    _which=lambda n: None)
+            self.assertEqual(code, 3)
+            self.assertNotIn("not found", out.getvalue())
+
+    def test_a_plan_outside_the_repository_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = audit_project(tmp)
+            with tempfile.TemporaryDirectory() as other:
+                stray = Path(other) / "stray.md"
+                stray.write_text(PLAN)
+                code, out = run_cli(root, ["run", "--component", "03-attrition",
+                                           "--version", "2", "--plan", str(stray)])
+                self.assertEqual(code, 1)
+                self.assertIn("outside the repository", out)
+
+    def test_a_plan_edited_during_the_run_is_not_published(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+
+            def fake_run(cmd, **kw):
+                plan.write_text(PLAN + "\nA step added mid-run.\n")
+                Path(cmd[cmd.index("-o") + 1]).write_text(GOOD_JSON)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(code, 1)
+            self.assertIn("changed during", buf.getvalue())
+            self.assertIsNone(audit.read_audit(root, "03-attrition", 2))
+
+    def test_writes_the_artifact_with_both_identities(self):
+        def fake_run(cmd, **kw):
+            Path(cmd[cmd.index("-o") + 1]).write_text(json.dumps({
+                "overall": "one gap", "anchored": [], "gaps": [FINDING],
+            }))
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            (root / "analysis").mkdir()
+            (root / "analysis" / "fit.R").write_text("fit\n")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                                   "--version", "2", "--plan", str(plan)],
+                                  _which=lambda n: "/usr/bin/codex", _run=fake_run)
+            self.assertEqual(code, 0, buf.getvalue())
+            rec = audit.read_audit(root, "03-attrition", 2)
+            self.assertEqual(rec["auditPlanHash"], audit.audit_plan_hash(PLAN))
+            self.assertIn("analysis/fit.R", rec["contextIdentity"]["paths"])
+            self.assertEqual(rec["reviewer"]["token"], "codex-sol")
+
+    def test_temp_files_are_cleaned_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            with contextlib.redirect_stdout(io.StringIO()):
+                audit.main(["--root", str(root), "run", "--component", "03-attrition",
+                            "--version", "2", "--plan", str(plan)], _which=lambda n: None)
+            self.assertEqual(list((root / "plans").glob(".pb-audit-*")), [])
+
+
+class TestRecordFallback(unittest.TestCase):
+    def test_writes_an_artifact_marked_as_a_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            (root / "analysis").mkdir()
+            (root / "analysis" / "fit.R").write_text("fit\n")
+            blob = root / "sub.json"
+            blob.write_text(json.dumps({"overall": "from the subagent",
+                                        "anchored": [], "gaps": [FINDING]}))
+            code, _ = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                     "--version", "2", "--plan", str(plan),
+                                     "--json", str(blob),
+                                     "--reason", "codex is not available on PATH",
+                                     "--expected-plan-hash", audit.audit_plan_hash(PLAN)])
+            self.assertEqual(code, 0)
+            rec = audit.read_audit(root, "03-attrition", 2)
+            self.assertEqual(rec["reviewer"]["token"], "subagent")
+            self.assertEqual(rec["reviewer"]["reviewerFallback"],
+                             "codex is not available on PATH")
+            self.assertEqual(rec["auditPlanHash"], audit.audit_plan_hash(PLAN))
+
+    def test_a_plan_edited_since_the_subagent_saw_it_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            blob = root / "sub.json"
+            blob.write_text(json.dumps({"overall": "x", "anchored": [], "gaps": []}))
+            stale = audit.audit_plan_hash(PLAN)
+            plan.write_text(PLAN + "\nEdited after the subagent ran.\n")
+            code, out = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan),
+                                       "--json", str(blob), "--reason", "x",
+                                       "--expected-plan-hash", stale])
+            self.assertEqual(code, 1)
+            self.assertIn("changed since", out)
+            self.assertIsNone(audit.read_audit(root, "03-attrition", 2))
+
+    def test_contract_violating_subagent_json_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            blob = root / "sub.json"
+            blob.write_text(json.dumps({"overall": "x", "anchored": [],
+                                        "gaps": [{"section": "", "comment": "no tag"}]}))
+            code, out = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                       "--version", "2", "--plan", str(plan),
+                                       "--json", str(blob), "--reason", "x",
+                                       "--expected-plan-hash", audit.audit_plan_hash(PLAN)])
+            self.assertEqual(code, 1)
+            self.assertIn("contract", out)
+
+    def test_malformed_subagent_json_is_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, plan = audit_project(tmp)
+            blob = root / "sub.json"
+            blob.write_text("{not json")
+            code, _ = run_cli(root, ["record-fallback", "--component", "03-attrition",
+                                     "--version", "2", "--plan", str(plan),
+                                     "--json", str(blob), "--reason", "x",
+                                     "--expected-plan-hash", audit.audit_plan_hash(PLAN)])
+            self.assertEqual(code, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

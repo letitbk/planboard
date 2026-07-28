@@ -6,6 +6,7 @@ repository, separately from the rubric scorecard, which answers "is this a
 checkable contract?" from the plan text alone. See
 docs/specs/2026-07-24-plan-audit-channel-design.md.
 """
+import datetime
 import errno
 import hashlib
 import json
@@ -485,3 +486,179 @@ def run_codex_audit(root, token, effort, prompt_path, out_path, _which=None, _ru
     return {"ok": False,
             "reason": "codex output did not satisfy the contract after one repair (%s)" % last,
             "payload": None}
+
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_FALLBACK = 3  # caller must dispatch pb-plan-auditor via Task
+
+CONTRACT = (
+    "<output_contract>\n"
+    'Return strict JSON with exactly three keys: {"overall": "<one paragraph>", '
+    '"anchored": [...], "gaps": [...]}.\n'
+    "An `anchored` finding is about text IN the plan and carries a short verbatim "
+    "`quote` with markdown stripped. A `gap` is about something the plan NEVER says "
+    "and carries no quote. Do not force a gap into an anchor.\n"
+    "There is no cap on findings. Every finding must (1) name the concrete failure it "
+    "predicts at execution time, and (2) carry an `evidence` object "
+    '{"path", "kind": "direct"|"inferred", "detail"} naming a repository or data path '
+    "you actually opened. Drop any finding failing either test.\n"
+    "Begin each comment with exactly one of [blocker], [major], [minor]. "
+    "Order most severe first.\n"
+    "</output_contract>\n"
+)
+
+
+def _evidence_paths(payload):
+    return sorted({
+        (f.get("evidence") or {}).get("path")
+        for f in list(payload.get("anchored") or []) + list(payload.get("gaps") or [])
+        if (f.get("evidence") or {}).get("path")
+    })
+
+
+def _finalize(root, component, version, plan_file, plan_text, payload, token, effort,
+              fallback_reason):
+    """Stamp identities onto a reviewer payload and write it.
+
+    `plan_text` is the text the reviewer ACTUALLY audited, passed in by the
+    caller — this function never re-reads the file. A third read would let an
+    edit between the caller's check and this write produce findings about one
+    text stamped with another text's hash, after which is_current() would
+    happily call that audit current. `supersedes` is stamped by write_audit
+    under the lock, not here.
+    """
+    payload.setdefault("anchored", [])
+    payload.setdefault("gaps", [])
+    reviewer = {"token": token, "effort": effort}
+    if fallback_reason:
+        reviewer["reviewerFallback"] = fallback_reason
+    payload.update({
+        "component": component,
+        "planVersion": version,
+        "planPath": str(plan_file.relative_to(root)),
+        "date": datetime.date.today().isoformat(),
+        "reviewer": reviewer,
+        "auditPlanHash": audit_plan_hash(plan_text),
+        "contextIdentity": context_identity(root, _evidence_paths(payload)),
+        # Present so _validate's required-key check passes; write_audit
+        # overwrites it under the lock with the artifact actually replaced.
+        "supersedes": None,
+        "dispositions": [],
+    })
+    return write_audit(root, component, version, payload)
+
+
+def _resolve_row(root):
+    import models
+    models.ensure_audit_stage(root)
+    stages, _warnings, _exists = models.load_profile(root)
+    return stages.get("plan-audit") or {"model": "codex-sol", "effort": "xhigh"}
+
+
+def main(argv=None, _which=None, _run=None):
+    import argparse
+    parser = argparse.ArgumentParser(prog="audit.py")
+    parser.add_argument("--root", default=None)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    for name in ("run", "record-fallback"):
+        s = sub.add_parser(name)
+        s.add_argument("--component", required=True)
+        s.add_argument("--version", type=int, required=True)
+        s.add_argument("--plan", required=True)
+        if name == "record-fallback":
+            s.add_argument("--json", required=True)
+            s.add_argument("--reason", required=True)
+            s.add_argument("--expected-plan-hash", required=True)
+    args = parser.parse_args(argv)
+
+    root = Path(args.root).resolve() if args.root else Path.cwd()
+    # The trigger commands pass a repo-relative path, so resolve it against
+    # root before any relative_to() call. Leaving it relative while root is
+    # absolute makes plan_file.relative_to(root) raise ValueError.
+    raw_plan = Path(args.plan)
+    plan_file = (raw_plan if raw_plan.is_absolute() else root / raw_plan).resolve()
+    if not plan_file.is_file():
+        print("audit: plan not found: %s" % args.plan)
+        return EXIT_ERROR
+    try:
+        plan_rel = plan_file.relative_to(root)
+    except ValueError:
+        print("audit: plan is outside the repository: %s" % args.plan)
+        return EXIT_ERROR
+    plan_text = plan_file.read_text(encoding="utf-8")
+
+    if args.cmd == "record-fallback":
+        # The subagent audited whatever the command showed it. Refuse to stamp
+        # this artifact unless that text is still what is on disk, or the audit
+        # would claim currency for text nobody reviewed.
+        if audit_plan_hash(plan_text) != args.expected_plan_hash:
+            print("audit: the plan changed since the fallback reviewer saw it — discarding")
+            return EXIT_ERROR
+        try:
+            payload = json.loads(Path(args.json).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print("audit: could not read fallback JSON (%s)" % e)
+            return EXIT_ERROR
+        problem = reviewer_payload_problem(payload)
+        if problem:
+            print("audit: fallback JSON does not satisfy the contract (%s)" % problem)
+            return EXIT_ERROR
+        row = _resolve_row(root)
+        try:
+            _finalize(root, args.component, args.version, plan_file, plan_text, payload,
+                      "subagent", row["effort"], args.reason)
+        except (ValueError, AuditLocked) as e:
+            print("audit: not written (%s)" % e)
+            return EXIT_ERROR
+        print("audit: wrote %s v%d from the fallback reviewer"
+              % (args.component, args.version))
+        return EXIT_OK
+
+    existing = read_audit(root, args.component, args.version)
+    if existing and is_current(existing, plan_text, root):
+        print("audit: current for %s v%d — no reviewer run" % (args.component, args.version))
+        return EXIT_OK
+
+    row = _resolve_row(root)
+    if row["model"] not in CODEX_MODELS:
+        print("audit: profile selects %r — fallback dispatch required" % row["model"])
+        return EXIT_FALLBACK
+
+    plans_dir = root / "plans"
+    prompt_path = plans_dir / (".pb-audit-%s-v%d.txt" % (args.component, args.version))
+    out_path = plans_dir / (".pb-audit-out-%s-v%d.txt" % (args.component, args.version))
+    try:
+        prompt_path.write_text(
+            build_prompt(plan_text, str(plan_rel), str(root), CONTRACT), encoding="utf-8")
+        result = run_codex_audit(root, row["model"], row["effort"], prompt_path, out_path,
+                                 _which=_which, _run=_run)
+        if not result["ok"]:
+            print("audit: %s — fallback dispatch required" % result["reason"])
+            return EXIT_FALLBACK
+        # Re-read before publishing: a reviewer run takes minutes, and findings
+        # about text that has since changed must never be published as current.
+        # `plan_text` — the text actually audited — is what _finalize stamps,
+        # so the artifact and its hash can never describe different bytes.
+        if plan_file.read_text(encoding="utf-8") != plan_text:
+            print("audit: the plan changed during the reviewer run — discarding this audit")
+            return EXIT_ERROR
+        try:
+            _finalize(root, args.component, args.version, plan_file, plan_text,
+                      result["payload"], row["model"], row["effort"], None)
+        except (ValueError, AuditLocked) as e:
+            print("audit: not written (%s)" % e)
+            return EXIT_ERROR
+        n = len(result["payload"]["anchored"]) + len(result["payload"]["gaps"])
+        print("audit: wrote %s v%d — %d findings" % (args.component, args.version, n))
+        return EXIT_OK
+    finally:
+        for p in (prompt_path, out_path):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

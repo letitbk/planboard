@@ -92,6 +92,8 @@ GITIGNORE_LINES = [
     "/.board-feedback.md.tmp",
     "/.pb-seed-*.json",
     "/.pb-review-*.txt",
+    "/.pb-audit-*.txt",        # audit prompt + reviewer output, deleted after each run
+    "/reviews/.*-audit.lock",  # held only while an audit writes its artifact
     "/.rp-seed-*.json",   # legacy temp patterns — kept so a pre-rename leftover
     "/.rp-review-*.txt",  # from an interrupted run stays ignored
     "/.board.lock",
