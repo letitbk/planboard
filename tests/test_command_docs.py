@@ -321,3 +321,51 @@ class TestClaudeMdBlock(unittest.TestCase):
 
     def test_target_journal_placeholder_survives(self):
         self.assertIn("<target journal>", self.text)
+
+
+class TestRuleReferencesAreNamed(unittest.TestCase):
+    # split-criteria.md's "rule 1" is split-criteria's OWN rule, not a
+    # CLAUDE.md rule. It is the only legitimate numbered rule reference.
+    ALLOWED = {"skills/managing-planboard/references/split-criteria.md"}
+
+    def test_no_markdown_refers_to_a_claude_md_rule_by_number(self):
+        import re
+        pattern = re.compile(r"rule \d+", re.IGNORECASE)
+        offenders = []
+        for root in (REPO / "commands", REPO / "skills"):
+            for path in sorted(root.rglob("*.md")):
+                rel = path.relative_to(REPO).as_posix()
+                if rel in self.ALLOWED:
+                    continue
+                text = path.read_text(encoding="utf-8")
+                for match in pattern.finditer(text):
+                    start = max(0, match.start() - 50)
+                    offenders.append("%s: ...%s..." %
+                                     (rel, text[start:match.end() + 50]))
+        self.assertEqual([], offenders)
+
+    def test_the_named_references_landed(self):
+        checks = {
+            "commands/init.md": ["**Evidence before claims**",
+                                 "**Output conventions**"],
+            "commands/renew.md": ["**Output conventions**"],
+            "commands/plan.md": ["**Output conventions**"],
+            "commands/results.md": ["**Output conventions**"],
+            "skills/managing-planboard/SKILL.md": ["**Output conventions**"],
+            "skills/managing-planboard/templates/execution-plan.md":
+                ["**Output conventions**"],
+            "skills/managing-planboard/references/planning-doctrine.md":
+                ["**Evidence before claims**"],
+            "skills/managing-planboard/references/execution-loop.md":
+                ["**Interpretive choices are the researcher's**",
+                 "**Evidence before claims**"],
+        }
+        for rel, needles in checks.items():
+            text = (REPO / rel).read_text(encoding="utf-8")
+            for needle in needles:
+                self.assertIn(needle, text, "%s: %s" % (rel, needle))
+
+    def test_split_criteria_own_rule_is_untouched(self):
+        text = (REPO / "skills" / "managing-planboard" / "references" /
+                "split-criteria.md").read_text(encoding="utf-8")
+        self.assertIn("a new component by rule 1", text)
