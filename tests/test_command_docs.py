@@ -369,3 +369,11 @@ class TestRuleReferencesAreNamed(unittest.TestCase):
         text = (REPO / "skills" / "managing-planboard" / "references" /
                 "split-criteria.md").read_text(encoding="utf-8")
         self.assertIn("a new component by rule 1", text)
+
+
+class TestPushBackIsScoped(unittest.TestCase):
+    def test_push_back_is_bounded_to_plan_authoring(self):
+        text = (REPO / "commands" / "plan.md").read_text(encoding="utf-8")
+        self.assertIn("push back on a bare pick on a consequential fork", text)
+        self.assertIn("only while authoring a plan", text)
+        self.assertIn("never to an ordinary work request", text)
