@@ -377,3 +377,10 @@ class TestPushBackIsScoped(unittest.TestCase):
         self.assertIn("push back on a bare pick on a consequential fork", text)
         self.assertIn("only while authoring a plan", text)
         self.assertIn("never to an ordinary work request", text)
+
+
+class TestBlockRefreshIsAnnounced(unittest.TestCase):
+    def test_update_mode_says_the_block_changed(self):
+        text = (REPO / "commands" / "init.md").read_text(encoding="utf-8")
+        self.assertIn("upgrade the CLAUDE.md section (step 6)", text)
+        self.assertIn("the standing rules changed", text)
