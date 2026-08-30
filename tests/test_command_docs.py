@@ -265,3 +265,59 @@ class TestActivationContract(unittest.TestCase):
         self.assertNotIn("when executing analysis or data work", frontmatter)
         self.assertIn("when a planboard command runs", frontmatter)
         self.assertIn("signed execution plan", frontmatter)
+
+
+class TestClaudeMdBlock(unittest.TestCase):
+    BLOCK = (REPO / "skills" / "managing-planboard" / "templates" /
+             "claude-md-section.md")
+
+    RULE_NAMES = (
+        "Read the governing plan first",
+        "Plan versions are immutable",
+        "Log decisions in real time",
+        "Interpretive choices are the researcher's",
+        "Output conventions",
+        "Evidence before claims",
+        "Assumptions and restraint",
+    )
+
+    def setUp(self):
+        self.text = self.BLOCK.read_text(encoding="utf-8")
+
+    def test_markers_are_intact(self):
+        self.assertTrue(self.text.startswith("<!-- planboard:start -->"))
+        self.assertIn("<!-- planboard:end -->", self.text)
+
+    def test_seven_named_rules_in_order(self):
+        positions = []
+        for name in self.RULE_NAMES:
+            self.assertIn(name, self.text, name)
+            positions.append(self.text.index(name))
+        self.assertEqual(positions, sorted(positions))
+
+    def test_exactly_seven_numbered_rules(self):
+        import re
+        numbered = re.findall(r"^(\d+)\. \*\*", self.text, re.MULTILINE)
+        self.assertEqual(["1", "2", "3", "4", "5", "6", "7"], numbered)
+
+    def test_the_ambient_preamble_is_gone(self):
+        self.assertNotIn("These rules apply to every session in this "
+                         "repository", self.text)
+
+    def test_already_decided_clause_is_present(self):
+        self.assertIn("already stated a decision", self.text)
+        self.assertIn("rather than asking again", self.text)
+
+    def test_pause_when_exceeding_the_plan_is_deleted(self):
+        self.assertNotIn("about to exceed what the current execution plan "
+                         "covers", self.text)
+
+    def test_tracker_update_rule_is_deleted(self):
+        self.assertNotIn("After execution work, update the Components table",
+                         self.text)
+
+    def test_plan_authoring_standard_is_deleted(self):
+        self.assertNotIn("read cold by a coauthor", self.text)
+
+    def test_target_journal_placeholder_survives(self):
+        self.assertIn("<target journal>", self.text)
