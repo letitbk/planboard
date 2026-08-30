@@ -301,7 +301,7 @@ git commit -m "template: ten standing rules to seven, each with a stable name"
 
 ### Task 3: Dereference the numbered rules across the plugin
 
-Twelve places in eight files point at CLAUDE.md rules **by number**. Deleting three rules silently repoints every one of them, so the references must become names in the same change.
+Thirteen places in eight files point at CLAUDE.md rules **by number**. Deleting three rules silently repoints every one of them, so the references must become names in the same change.
 
 **Files:**
 - Modify: `commands/init.md:14,21,37`

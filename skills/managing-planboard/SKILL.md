@@ -22,7 +22,7 @@ If either is absent this workflow does not apply at all. Stay silent about it, n
 
 When both markers are present, the **planning and bookkeeping discipline** applies in exactly two situations:
 
-- **An activating command is running.** `/planboard:plan`, `/planboard:execute`, `/planboard:sign`, `/planboard:sync`, `/planboard:results`, `/planboard:review`, `/planboard:adopt` and `/planboard:renew` activate it. `/planboard:board`, `/planboard:report` and `/planboard:models` **do not activate** it — reading a board, generating a report and editing a model profile are not governed work. Activation lasts while that command runs and reaches only the components it names; it does not persist for the rest of the session.
+- **An activating command is running.** `/planboard:plan`, `/planboard:execute`, `/planboard:sign`, `/planboard:sync`, `/planboard:results`, `/planboard:review`, `/planboard:adopt` and `/planboard:renew` activate it. `/planboard:board`, `/planboard:report` and `/planboard:models` **do not activate** it for the rest of the session — reading a board, generating a report and editing a model profile do not switch on execution discipline. Each still does the bookkeeping its own command document specifies; `/planboard:board` logs the feedback it routes. Activation lasts while that command runs and reaches only the components it names; it does not persist for the rest of the session. (`/planboard:init` and `/planboard:handoff` set the workflow up rather than run governed work.)
 - **Work touches a component that already has a signed execution plan.** A component whose only plan is an unsigned `.draft-v<N>.md` **governs nothing** — a draft is what the researcher is still authoring, not a commitment that can be exceeded.
 
 Outside both, work normally: do not open the master plan, do not ask the researcher to scope the request first, and do not tell them the work exceeds a plan.
@@ -37,7 +37,7 @@ Outside both, work normally: do not open the master plan, do not ask the researc
 
 **Mid-session adoption.** The workflow can be adopted mid-session, after exploratory work has begun (`/planboard:init` works either way). What the session already established feeds the plan — context, research questions, goals, scope reasons — never the log. The log starts at the master plan's `Initialized:` timestamp; nothing before it is loggable or counts as a deviation.
 
-**During work.**
+**During governed work.**
 - Surface interpretive choices (variable selection, case exclusions, coding rules, model specification) to the researcher *before* acting. Do not decide research questions, analytical choices, or interpretation on the researcher's behalf.
 - Append to `plans/decision-log.md` **as decisions happen** — when you ask a clarifying question, when the researcher sets or changes scope, when you make a non-trivial interpretive call (flag it), or when a surprising result changes what happens next. Use the entry format in `templates/decision-log.md`, with a real timestamp (`date +"%Y-%m-%d %H:%M"`). If unsure whether to log: log it.
 - If work is about to exceed what the current plan covers, pause and say so. Either the researcher rescopes the task, or you draft a new plan version. Do not drift.

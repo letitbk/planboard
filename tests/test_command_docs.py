@@ -225,24 +225,30 @@ class TestActivationContract(unittest.TestCase):
     def setUp(self):
         self.text = self.SKILL.read_text(encoding="utf-8")
 
+    def _activation_section(self):
+        start = self.text.index("## When this applies")
+        return self.text[start:self.text.index("## Core pattern", start)]
+
     def test_both_markers_still_gate_applicability(self):
         self.assertIn("<!-- planboard:master-plan -->", self.text)
         self.assertIn("<!-- planboard:start -->", self.text)
         self.assertIn("legacy", self.text)
 
     def test_activating_commands_are_named(self):
+        section = self._activation_section()
         for cmd in ("/planboard:plan", "/planboard:execute", "/planboard:sign",
                     "/planboard:sync", "/planboard:results",
                     "/planboard:review", "/planboard:adopt",
                     "/planboard:renew"):
-            self.assertIn(cmd, self.text, cmd)
-        self.assertIn("An activating command is running", self.text)
+            self.assertIn(cmd, section, cmd)
+        self.assertIn("An activating command is running", section)
 
     def test_read_only_commands_do_not_activate(self):
-        self.assertIn("do not activate", self.text)
+        section = self._activation_section()
+        self.assertIn("do not activate", section)
         for cmd in ("/planboard:board", "/planboard:report",
                     "/planboard:models"):
-            self.assertIn(cmd, self.text, cmd)
+            self.assertIn(cmd, section, cmd)
 
     def test_activation_is_scoped_not_sticky(self):
         self.assertIn("does not persist for the rest of the session",
@@ -334,6 +340,8 @@ class TestRuleReferencesAreNamed(unittest.TestCase):
         offenders = []
         for root in (REPO / "commands", REPO / "skills"):
             for path in sorted(root.rglob("*.md")):
+                if "node_modules" in path.parts:
+                    continue
                 rel = path.relative_to(REPO).as_posix()
                 if rel in self.ALLOWED:
                     continue
