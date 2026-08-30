@@ -1,6 +1,6 @@
 ---
 name: managing-planboard
-description: Use when working in a research repository initialized for the planboard workflow (plans/master-plan.md exists AND the repo's CLAUDE.md contains the planboard marker) — when a session starts there, when the researcher asks to adopt the workflow mid-session after exploratory work has begun, when executing analysis or data work, when a decision point arises with the researcher, when work deviates from an execution plan, or when the researcher mentions the master plan, an execution plan, or the decision log. Not for software project planning, and not for repositories without both markers.
+description: Use when working in a research repository initialized for the planboard workflow (plans/master-plan.md exists AND the repo's CLAUDE.md contains the planboard marker) — specifically when a planboard command runs (/planboard:plan, :execute, :sign, :sync, :results, :review, :adopt, :renew), when work touches a component that already has a signed execution plan, when the researcher asks to adopt the workflow mid-session after exploratory work has begun, or when the researcher mentions the master plan, an execution plan, or the decision log. Not on session start alone, not for ordinary work outside a signed component, not for software project planning, and not for repositories without both markers.
 ---
 
 # Managing Planboard
@@ -11,18 +11,27 @@ Dual-tracking: **the researcher plans and decides; you carry the bookkeeping.** 
 
 Artifacts are organized around **the research project and its questions**: the master plan carries numbered research questions (RQ1, RQ2, …) and every component serves one or more of them (the Serves column; `—` for genuine infrastructure). Components are research activities, never a history of repository actions — what exists in the repo informs status, never structure.
 
-## When NOT to use (hard gate)
+## When this applies
 
-This skill applies only when **both** opt-in markers exist:
+Two markers decide whether planboard **may** apply to a repository:
 
 1. `plans/master-plan.md` containing `<!-- planboard:master-plan -->` (or the legacy `<!-- research-plans:master-plan -->`)
 2. The repo's `CLAUDE.md` containing `<!-- planboard:start -->` (or the legacy `<!-- research-plans:start -->`)
 
-If either is absent, this workflow does not apply. Stay silent about it, never create `plans/` uninvited, and never suggest initializing unless the researcher asks. A stray copied `master-plan.md` without the CLAUDE.md marker does not count as opt-in. For software implementation plans, use superpowers writing-plans instead.
+If either is absent this workflow does not apply at all. Stay silent about it, never create `plans/` uninvited, and never suggest initializing unless the researcher asks. A stray copied `master-plan.md` without the CLAUDE.md marker does not count as opt-in. For software implementation plans, use superpowers writing-plans instead.
+
+When both markers are present, the **planning and bookkeeping discipline** applies in exactly two situations:
+
+- **An activating command is running.** `/planboard:plan`, `/planboard:execute`, `/planboard:sign`, `/planboard:sync`, `/planboard:results`, `/planboard:review`, `/planboard:adopt` and `/planboard:renew` activate it. `/planboard:board`, `/planboard:report` and `/planboard:models` **do not activate** it — reading a board, generating a report and editing a model profile are not governed work. Activation lasts while that command runs and reaches only the components it names; it does not persist for the rest of the session.
+- **Work touches a component that already has a signed execution plan.** A component whose only plan is an unsigned `.draft-v<N>.md` **governs nothing** — a draft is what the researcher is still authoring, not a commitment that can be exceeded.
+
+Outside both, work normally: do not open the master plan, do not ask the researcher to scope the request first, and do not tell them the work exceeds a plan.
+
+**Artifact integrity is not activation.** Finalized results bundles, archived master plans and existing canonical plan versions stay immutable whenever the two markers exist, **invoked or not**. The hook enforces that as file policy and knows nothing about which command ran. Working normally never makes those writable.
 
 ## Core pattern
 
-**Session start.** Read `plans/master-plan.md`, then the latest version of the execution plan for whichever component the work touches (`plans/execution/<NN-slug>/`, highest `vN.md`).
+**Before governed work.** When an activating command runs, or when the work touches a component that already has a signed plan, read `plans/master-plan.md` and then that component's latest `vN.md` in `plans/execution/<NN-slug>/` before changing anything. This is no longer a session-start ritual: a session that never touches governed work never reads them.
 
 **Model nudge (execution).** If the project has `plans/model-profile.md`, execution work honors its `execute` row: run `python3 <this skill's directory>/scripts/models.py stage execute` once at the start of execution work. Empty output → say nothing (relay any stderr warning once — `/planboard:models` fixes a malformed row). In the `/planboard:execute` prompt, pre-select that row only when the stage yields a usable non-`inherit` row; on any non-`inherit` selection print the one-line `/model` nudge and wait for the switch — never compare against your own identity. Outside that prompt, the nudge stays advisory and never repeats in a session.
 

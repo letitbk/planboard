@@ -217,3 +217,51 @@ class TestAuditWiring(unittest.TestCase):
 
     def test_plan_scope_uses_the_gaps_contract(self):
         self.assertIn("Plan scope uses the audit contract", self._cmd("board.md"))
+
+
+class TestActivationContract(unittest.TestCase):
+    SKILL = REPO / "skills" / "managing-planboard" / "SKILL.md"
+
+    def setUp(self):
+        self.text = self.SKILL.read_text(encoding="utf-8")
+
+    def test_both_markers_still_gate_applicability(self):
+        self.assertIn("<!-- planboard:master-plan -->", self.text)
+        self.assertIn("<!-- planboard:start -->", self.text)
+        self.assertIn("legacy", self.text)
+
+    def test_activating_commands_are_named(self):
+        for cmd in ("/planboard:plan", "/planboard:execute", "/planboard:sign",
+                    "/planboard:sync", "/planboard:results",
+                    "/planboard:review", "/planboard:adopt",
+                    "/planboard:renew"):
+            self.assertIn(cmd, self.text, cmd)
+        self.assertIn("An activating command is running", self.text)
+
+    def test_read_only_commands_do_not_activate(self):
+        self.assertIn("do not activate", self.text)
+        for cmd in ("/planboard:board", "/planboard:report",
+                    "/planboard:models"):
+            self.assertIn(cmd, self.text, cmd)
+
+    def test_activation_is_scoped_not_sticky(self):
+        self.assertIn("does not persist for the rest of the session",
+                      self.text)
+
+    def test_an_unsigned_draft_governs_nothing(self):
+        self.assertIn("governs nothing", self.text)
+
+    def test_artifact_integrity_is_separate_from_activation(self):
+        self.assertIn("Artifact integrity is not activation", self.text)
+        self.assertIn("invoked or not", self.text)
+
+    def test_the_ambient_session_start_rule_is_gone(self):
+        self.assertNotIn("**Session start.** Read `plans/master-plan.md`",
+                         self.text)
+
+    def test_frontmatter_no_longer_triggers_on_session_start(self):
+        frontmatter = self.text.split("---")[1]
+        self.assertNotIn("when a session starts there", frontmatter)
+        self.assertNotIn("when executing analysis or data work", frontmatter)
+        self.assertIn("when a planboard command runs", frontmatter)
+        self.assertIn("signed execution plan", frontmatter)
