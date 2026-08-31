@@ -31,12 +31,13 @@ def make_project(tmp, profile=DEFAULT_PROFILE):
 
 
 class TestParseProfile(unittest.TestCase):
-    def test_default_template_parses_all_six_stages(self):
+    def test_default_template_parses_all_seven_stages(self):
         stages, warnings = models.parse_profile(DEFAULT_PROFILE)
         self.assertEqual(warnings, [])
         self.assertEqual(
             set(stages),
-            {"plan", "execute", "sync", "plan-review", "results-validation", "board-reviewer"},
+            {"plan", "execute", "sync", "plan-review", "results-validation",
+             "board-reviewer", "plan-audit"},
         )
         self.assertEqual(
             stages["plan"],
@@ -188,14 +189,15 @@ class TestGenerate(unittest.TestCase):
             code = models.main(["--root", str(root), "generate"])
         return code, out.getvalue(), err.getvalue()
 
-    def test_default_profile_writes_three_marked_agents(self):
+    def test_default_profile_writes_four_marked_agents(self):
         import hashlib
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             code, out, err = self._generate(root)
             self.assertEqual(code, 0)
             sha = hashlib.sha256((root / "plans" / "model-profile.md").read_bytes()).hexdigest()
-            for name in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer"):
+            for name in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer",
+                         "pb-plan-auditor"):
                 path = root / ".claude" / "agents" / f"{name}.md"
                 self.assertTrue(path.exists(), name)
                 text = path.read_text(encoding="utf-8")
@@ -417,7 +419,7 @@ class TestLocateTable(unittest.TestCase):
         header, first, last = loc
         lines = DEFAULT_PROFILE.splitlines(keepends=True)
         self.assertIn("stage | model | effort | mechanism", lines[header])
-        self.assertEqual(last - first + 1, 6)
+        self.assertEqual(last - first + 1, 7)
 
     def test_locate_none_when_no_table(self):
         self.assertIsNone(models.locate_table("# just prose\n\nnothing\n"))
@@ -473,7 +475,8 @@ class TestProfileView(unittest.TestCase):
         v = models.profile_view(DEFAULT_PROFILE)
         self.assertEqual(
             [r["stage"] for r in v["rows"]],
-            ["plan", "execute", "sync", "plan-review", "results-validation", "board-reviewer"],
+            ["plan", "execute", "sync", "plan-review", "results-validation",
+             "board-reviewer", "plan-audit"],
         )
         self.assertEqual(v["rows"][0]["label"], "plan (co-authoring)")
         self.assertEqual(v["rows"][0]["model"], "opus")
@@ -498,7 +501,7 @@ class TestGenerateOutcomes(unittest.TestCase):
     def _profile(self, root, text):
         (root / "plans" / "model-profile.md").write_text(text, encoding="utf-8")
 
-    def test_first_generate_creates_all_three(self):
+    def test_first_generate_creates_all_four(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)
             res = models.generate(root)
@@ -507,7 +510,7 @@ class TestGenerateOutcomes(unittest.TestCase):
             self.assertTrue(res["restartNeeded"])
             self.assertEqual(
                 set(res["changedStages"]),
-                {"plan-review", "results-validation", "board-reviewer"},
+                {"plan-review", "results-validation", "board-reviewer", "plan-audit"},
             )
 
     def test_regenerate_unchanged_profile_no_restart(self):
@@ -690,6 +693,254 @@ class TestCheckTemplateDrift(unittest.TestCase):
             agent = root / ".claude" / "agents" / "pb-plan-reviewer.md"
             agent.write_text("my own reviewer, no marker\n", encoding="utf-8")
             self.assertEqual(self._check_stdout(root), "")
+
+
+class TestReviewerMechanism(unittest.TestCase):
+    def _profile(self, model="codex-sol", effort="xhigh", mech="reviewer"):
+        return DEFAULT_PROFILE.replace(
+            "| plan audit (deep) | codex-sol | xhigh | reviewer |",
+            "| plan audit (deep) | %s | %s | %s |" % (model, effort, mech),
+        )
+
+    def test_default_template_parses_with_seven_stages(self):
+        stages, warnings = models.parse_profile(DEFAULT_PROFILE)
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(stages), 7)
+        self.assertEqual(stages["plan-audit"]["model"], "codex-sol")
+        self.assertEqual(stages["plan-audit"]["effort"], "xhigh")
+        self.assertEqual(stages["plan-audit"]["mechanism"], "reviewer")
+
+    def test_default_template_is_canonical(self):
+        stages, warnings = models.parse_profile(DEFAULT_PROFILE)
+        self.assertTrue(models.profile_canonical(stages, warnings))
+
+    def test_reviewer_row_accepts_every_token(self):
+        for token in sorted(models.REVIEWER_TOKENS):
+            stages, warnings = models.parse_profile(self._profile(model=token))
+            self.assertEqual(warnings, [], token)
+            self.assertEqual(stages["plan-audit"]["model"], token)
+
+    def test_reviewer_row_rejects_a_claude_alias(self):
+        stages, warnings = models.parse_profile(self._profile(model="opus"))
+        self.assertNotIn("plan-audit", stages)
+        self.assertTrue(warnings)
+
+    def test_reviewer_row_rejects_gemini(self):
+        stages, _ = models.parse_profile(self._profile(model="gemini-pro"))
+        self.assertNotIn("plan-audit", stages)
+
+    def test_agent_row_rejects_a_reviewer_token(self):
+        p = DEFAULT_PROFILE.replace(
+            "| plan review (verdict + grade) | opus | medium | agent |",
+            "| plan review (verdict + grade) | codex-sol | medium | agent |",
+        )
+        stages, _ = models.parse_profile(p)
+        self.assertNotIn("plan-review", stages)
+
+    def test_flipped_mechanism_is_non_canonical(self):
+        # model MUST be a valid Claude alias here, or the row is dropped as an
+        # invalid model before profile_canonical ever sees its mechanism.
+        stages, warnings = models.parse_profile(self._profile(model="opus", mech="agent"))
+        self.assertIn("plan-audit", stages)
+        self.assertFalse(models.profile_canonical(stages, warnings))
+
+    def test_editable_stages_excludes_the_reviewer_stage(self):
+        self.assertNotIn("plan-audit", models.EDITABLE_STAGES)
+        self.assertEqual(len(models.EDITABLE_STAGES), 6)
+
+    def test_stage_cli_returns_the_audit_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertIn("codex-sol", out.getvalue())
+
+
+SIX_ROW_PROFILE = """# Model profile
+
+<!-- planboard:model-profile -->
+
+Prose that must survive the splice.
+
+| stage | model | effort | mechanism |
+|---|---|---|---|
+| plan (co-authoring) | opus | max | nudge |
+| execute (analysis) | sonnet | — | nudge |
+| sync | inherit | — | nudge |
+| plan review (verdict + grade) | opus | medium | agent |
+| results validation | opus | low | agent |
+| board reviewer panel | opus | low | agent |
+
+Trailing prose that must also survive.
+"""
+
+
+class TestEnsureAuditStage(unittest.TestCase):
+    def test_splices_the_missing_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            self.assertTrue(models.ensure_audit_stage(root)["changed"])
+            text = (root / "plans" / "model-profile.md").read_text()
+            self.assertIn("| plan audit (deep) | codex-sol | xhigh | reviewer |", text)
+
+    def test_result_is_byte_exact(self):
+        # Substring checks would pass a migration that reformatted the file.
+        expected = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | xhigh | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            models.ensure_audit_stage(root)
+            self.assertEqual((root / "plans" / "model-profile.md").read_text(), expected)
+
+    def test_migrated_profile_is_canonical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            models.ensure_audit_stage(root)
+            stages, warnings = models.parse_profile(
+                (root / "plans" / "model-profile.md").read_text())
+            self.assertTrue(models.profile_canonical(stages, warnings))
+
+    def test_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            models.ensure_audit_stage(root)
+            first = (root / "plans" / "model-profile.md").read_text()
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+            self.assertEqual(first, (root / "plans" / "model-profile.md").read_text())
+
+    def test_prose_only_file_does_not_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile="# Model profile\n\nNo table here.\n")
+            result = models.ensure_audit_stage(root)
+            self.assertFalse(result["changed"])
+            self.assertIn("no stage", result["reason"])
+
+    def test_refuses_a_duplicated_audit_row(self):
+        dupe = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | xhigh | reviewer |\n"
+            "| plan audit (deep) | codex-luna | low | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=dupe)
+            before = (root / "plans" / "model-profile.md").read_text()
+            result = models.ensure_audit_stage(root)
+            self.assertFalse(result["changed"])
+            self.assertIn("ambiguous", result["reason"])
+            self.assertEqual(before, (root / "plans" / "model-profile.md").read_text())
+
+    def test_a_malformed_audit_row_counts_as_present(self):
+        # Three cells, not four. If the splice ignored it, a second row would
+        # be inserted and the profile would be permanently non-canonical.
+        malformed = SIX_ROW_PROFILE.replace(
+            "| board reviewer panel | opus | low | agent |\n",
+            "| board reviewer panel | opus | low | agent |\n"
+            "| plan audit (deep) | codex-sol | reviewer |\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=malformed)
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+            self.assertEqual(
+                (root / "plans" / "model-profile.md").read_text().count("plan audit (deep)"), 1)
+
+    def test_missing_profile_file_is_not_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=None)
+            self.assertFalse(models.ensure_audit_stage(root)["changed"])
+
+    def test_crlf_profile_keeps_its_line_endings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=None)
+            (root / "plans" / "model-profile.md").write_bytes(
+                SIX_ROW_PROFILE.replace("\n", "\r\n").encode("utf-8"))
+            models.ensure_audit_stage(root)
+            raw = (root / "plans" / "model-profile.md").read_bytes()
+            self.assertIn(b"| plan audit (deep) | codex-sol | xhigh | reviewer |\r\n", raw)
+            self.assertNotIn(b"reviewer |\n\r", raw)
+
+    def test_migration_regenerates_the_auditor_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertTrue((root / ".claude" / "agents" / "pb-plan-auditor.md").is_file())
+
+    def test_stage_stdout_stays_parseable_after_a_migration(self):
+        # tests/test_models.py's TestStageCommand asserts cmd_stage prints
+        # nothing but its JSON row. generate()'s "wrote ..." lines must not
+        # leak onto stdout.
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp, profile=SIX_ROW_PROFILE)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                models.main(["--root", str(root), "stage", "plan-audit"])
+            self.assertNotIn("wrote", out.getvalue())
+            self.assertEqual(json.loads(out.getvalue())["stage"], "plan-audit")
+
+
+class TestPlanAuditorGeneration(unittest.TestCase):
+    def _generate(self, root):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = models.main(["--root", str(root), "generate"])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_auditor_is_generated_from_a_reviewer_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            self.assertTrue((root / ".claude" / "agents" / "pb-plan-auditor.md").is_file())
+
+    def test_auditor_model_is_opus_and_effort_comes_from_the_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            text = (root / ".claude" / "agents" / "pb-plan-auditor.md").read_text()
+            self.assertIn("model: opus", text)
+            self.assertIn("effort: xhigh", text)
+            self.assertNotIn("codex-sol", text)
+
+    def test_auditor_contract_admits_gaps_requires_evidence_and_has_no_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            text = (root / ".claude" / "agents" / "pb-plan-auditor.md").read_text()
+            self.assertIn('"gaps"', text)
+            self.assertIn('"evidence"', text)
+            self.assertNotIn("at most 5", text)
+
+    def test_check_is_silent_after_a_fresh_generation(self):
+        # The regression that matters: cmd_check must accept the reviewer
+        # mechanism and apply the same model override, or every check prints a
+        # false drift hint.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                models.main(["--root", str(root), "check"])
+            self.assertEqual(out.getvalue().strip(), "")
+
+    def test_flipped_mechanism_removes_the_marked_auditor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            self._generate(root)
+            agent = root / ".claude" / "agents" / "pb-plan-auditor.md"
+            self.assertTrue(agent.is_file())
+            p = root / "plans" / "model-profile.md"
+            p.write_text(p.read_text().replace(
+                "| plan audit (deep) | codex-sol | xhigh | reviewer |",
+                "| plan audit (deep) | opus | xhigh | agent |",
+            ))
+            self._generate(root)
+            self.assertFalse(agent.is_file())
 
 
 if __name__ == "__main__":

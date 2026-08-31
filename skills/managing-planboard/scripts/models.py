@@ -27,17 +27,29 @@ STAGE_LABELS = {
     "plan review": "plan-review",
     "results validation": "results-validation",
     "board reviewer panel": "board-reviewer",
+    "plan audit": "plan-audit",
 }
 MODEL_ALIASES = {"inherit", "opus", "sonnet", "haiku", "fable"}
 MODEL_ID_RE = re.compile(r"^claude-[a-z0-9.-]+$")
+# Reviewer tokens name WHO audits, not a Claude model. `gemini-pro` is
+# deliberately absent: the board's Gemini path is self-contained and has no
+# repository access, so it cannot ground an audit, and shipping the token
+# would produce confident ungrounded audits that read like grounded ones.
+REVIEWER_TOKENS = {"codex-sol", "codex-terra", "codex-luna", "subagent"}
 EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
 NO_EFFORT = {"", "-", "—", "–"}  # blank, hyphen, em dash, en dash
-MECHANISMS = {"nudge", "agent"}
+MECHANISMS = {"nudge", "agent", "reviewer"}
 AGENT_STAGES = {
     "plan-review": "pb-plan-reviewer",
     "results-validation": "pb-results-validator",
     "board-reviewer": "pb-board-reviewer",
+    "plan-audit": "pb-plan-auditor",
 }
+# A `reviewer` row's model cell names WHO audits (a Codex token or `subagent`),
+# so it holds no Claude model for the generated agent. The agent backing the
+# subagent and fallback paths is pinned here; the row's effort still reaches
+# it, because the Codex and Claude effort scales are identical.
+AGENT_MODEL_OVERRIDE = {"plan-audit": "opus"}
 # Pre-rename filenames, migrated in place (new pb-* name -> legacy rp-* name) so
 # projects generated before the planboard rename keep their model/effort pins.
 LEGACY_AGENT_NAMES = {
@@ -55,7 +67,15 @@ EXPECTED_MECHANISM = {
     "plan-review": "agent",
     "results-validation": "agent",
     "board-reviewer": "agent",
+    "plan-audit": "reviewer",
 }
+# Stages the board's Models editor may write. A reviewer row holds a token, not
+# a Claude model, so the editor's vocabulary cannot express it; the server
+# preserves such rows from the base text instead (rewrite_rows skips any stage
+# absent from `edits`).
+EDITABLE_STAGES = frozenset(
+    k for k, m in EXPECTED_MECHANISM.items() if m != "reviewer"
+)
 MARKER_RE = re.compile(
     # Dual-brand, non-capturing group so group(1) stays the checksum. Legacy
     # `research-plans` agents are still recognized as plugin-owned; new agents
@@ -107,8 +127,24 @@ def _add_row(stages, warnings, cells, rownum):
     if key in stages:
         warnings.append(f"model-profile: skipping row {rownum} (duplicate stage {raw_stage!r})")
         return
+    # Mechanism first: it decides WHICH model vocabulary applies. A `reviewer`
+    # row's model cell holds an auditor token, not a Claude model, so a
+    # mechanism-dependent model check cannot run before `mech` is resolved.
+    mech = raw_mech.strip().lower()
+    if mech not in MECHANISMS:
+        warnings.append(
+            f"model-profile: skipping row {rownum} (unknown mechanism {raw_mech!r})"
+        )
+        return
     model = raw_model.strip().lower()
-    if model not in MODEL_ALIASES and not MODEL_ID_RE.match(model):
+    if mech == "reviewer":
+        if model not in REVIEWER_TOKENS:
+            warnings.append(
+                f"model-profile: skipping row {rownum} — {model!r} is not a reviewer "
+                f"token (expected one of {', '.join(sorted(REVIEWER_TOKENS))})"
+            )
+            return
+    elif model not in MODEL_ALIASES and not MODEL_ID_RE.match(model):
         warnings.append(f"model-profile: skipping row {rownum} (unknown model {raw_model!r})")
         return
     effort = raw_effort.strip().lower()
@@ -116,12 +152,6 @@ def _add_row(stages, warnings, cells, rownum):
         effort = None
     elif effort not in EFFORT_LEVELS:
         warnings.append(f"model-profile: skipping row {rownum} (unknown effort {raw_effort!r})")
-        return
-    mech = raw_mech.strip().lower()
-    if mech not in MECHANISMS:
-        warnings.append(
-            f"model-profile: skipping row {rownum} (unknown mechanism {raw_mech!r})"
-        )
         return
     stages[key] = {"stage": key, "model": model, "effort": effort, "mechanism": mech}
 
@@ -277,6 +307,14 @@ def profile_view(text):
 
 
 def cmd_stage(root, key):
+    # stdout here carries a JSON row that callers parse, so EVERYTHING the
+    # migration produces goes to stderr — including generate()'s "wrote ..."
+    # lines, which would otherwise make the output unparseable.
+    migration = ensure_audit_stage(root)
+    if migration["changed"]:
+        print("model-profile: %s" % migration["reason"], file=sys.stderr)
+        for line in generate(root)["stdout"]:
+            print(line, file=sys.stderr)
     stages, warnings, exists = load_profile(root)
     if not exists:
         return 0
@@ -328,6 +366,63 @@ def atomic_write(target, text):
         except OSError:
             pass
         raise
+
+
+AUDIT_ROW = "| plan audit (deep) | codex-sol | xhigh | reviewer |"
+
+
+def ensure_audit_stage(root):
+    """Splice the plan-audit row into a pre-audit profile, atomically.
+
+    Runs from every audit lookup, not only /planboard:models: an unmigrated
+    profile is non-canonical (so the board's editor goes read-only) and
+    cmd_check cannot report a missing reviewer-only row before its agent exists
+    in the project. An upgraded project must not reach a mandatory audit with
+    no reviewer row.
+
+    Splices ONLY the missing row and preserves every surrounding byte. Refuses
+    an ambiguous file rather than guessing.
+    """
+    path = Path(root) / PROFILE_REL
+    if not path.is_file():
+        return {"changed": False, "reason": "no model-profile.md"}
+    try:
+        # read_bytes().decode(), NOT read_text(): read_text applies universal
+        # newline translation, so a CRLF profile would come back as LF and the
+        # splice would rewrite the whole file's line endings.
+        text = path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        return {"changed": False, "reason": "unreadable model-profile.md (%s)" % e}
+
+    lines = text.splitlines(keepends=True)
+    audit_rows = []
+    for i, ln in enumerate(lines):
+        cells = _row_cells(ln)
+        # _row_cells returns None for any non-table line, so this never indexes
+        # into a prose line. The cell COUNT is deliberately not checked: a
+        # malformed three-cell `plan audit` row must still count as present, or
+        # the splice adds a second one and leaves the profile permanently
+        # non-canonical.
+        if cells and STAGE_LABELS.get(_norm(cells[0])) == "plan-audit":
+            audit_rows.append(i)
+    if len(audit_rows) > 1:
+        return {"changed": False, "reason": "ambiguous: %d plan-audit rows" % len(audit_rows)}
+    if audit_rows:
+        return {"changed": False, "reason": "already present"}
+
+    loc = locate_table(text)
+    if loc is None:
+        return {"changed": False, "reason": "no stage/model/effort/mechanism table found"}
+    # locate_table returns (header_idx, first_data_idx, last_data_idx) as
+    # indices into splitlines(keepends=True), INCLUSIVE of the data range, so
+    # the insertion point is one past the last row.
+    _header, _first, last_data = loc
+
+    last_line = lines[last_data]
+    ending = last_line[len(last_line.rstrip("\r\n")):] or "\n"
+    lines.insert(last_data + 1, AUDIT_ROW + ending)
+    atomic_write(path, "".join(lines))
+    return {"changed": True, "reason": "inserted the plan-audit row"}
 
 
 def _remove_if_marked(target, rel, key, stdout):
@@ -432,7 +527,7 @@ def generate(root):
             outcome = _remove_if_marked(target, rel, key, stdout)
             results.append({"agent": agent, "stage": key, "outcome": outcome})
             continue
-        if row["mechanism"] != "agent":
+        if row["mechanism"] != EXPECTED_MECHANISM[key]:
             stderr.append(
                 f"model-profile: '{key}' row has mechanism '{row['mechanism']}' — {agent}.md not regenerated"
             )
@@ -453,7 +548,8 @@ def generate(root):
                 continue
         try:
             template = (_templates_dir() / f"{agent}.md").read_text(encoding="utf-8")
-            rendered = _render(template, row["model"], row["effort"], checksum)
+            model = AGENT_MODEL_OVERRIDE.get(key, row["model"])
+            rendered = _render(template, model, row["effort"], checksum)
             agents_dir.mkdir(parents=True, exist_ok=True)
             atomic_write(target, rendered)
         except (OSError, UnicodeDecodeError) as e:
@@ -479,6 +575,11 @@ def generate(root):
 
 
 def cmd_generate(root):
+    migration = ensure_audit_stage(root)
+    if migration["changed"]:
+        print("model-profile: %s" % migration["reason"])
+    # No extra generate() call needed here: the one below already runs after
+    # the migration.
     res = generate(root)
     for line in res["stdout"]:
         print(line)
@@ -493,6 +594,13 @@ def cmd_check(root):
     if migrate_legacy_agents(root):
         print(RESTART_HINT)
         return 0
+    # After the legacy-rename early return, so a pre-rename project still gets
+    # its restart hint first. Here stdout IS the hint channel.
+    migration = ensure_audit_stage(root)
+    if migration["changed"]:
+        print("model-profile: %s" % migration["reason"])
+        for line in generate(root)["stdout"]:
+            print(line)
     path = root / PROFILE_REL
     if not path.exists():
         return 0
@@ -520,7 +628,7 @@ def cmd_check(root):
             print(MISMATCH_HINT)
             return 0
         row = stages.get(key)
-        if row is None or row["mechanism"] != "agent":
+        if row is None or row["mechanism"] != EXPECTED_MECHANISM[key]:
             # generate() would REMOVE this marked agent — that is drift too.
             # Report it without rendering a template for a nonexistent row.
             print(MISMATCH_HINT)
@@ -529,7 +637,10 @@ def cmd_check(root):
             template = (_templates_dir() / f"{agent}.md").read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        rendered = _render(template, row["model"], row["effort"], checksum)
+        # Same override generate() applies, or a freshly generated auditor
+        # would compare unequal and every check would print a false hint.
+        rendered = _render(template, AGENT_MODEL_OVERRIDE.get(key, row["model"]),
+                           row["effort"], checksum)
         if _strip_marker(text) != _strip_marker(rendered):
             # The shipped template changed since this agent was generated —
             # the profile checksum alone cannot see this.

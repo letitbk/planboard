@@ -140,3 +140,80 @@ class TestBoardLaunchDocs(unittest.TestCase):
                               % (name, token))
             self.assertIn("harness's own background", text,
                           "%s must point at the harness mechanism" % name)
+
+
+TRIGGER_COMMANDS = ("plan.md", "sign.md", "execute.md", "sync.md")
+
+
+class TestAuditWiring(unittest.TestCase):
+    """The audit must dispatch wherever the review workflow runs on a draft.
+    A trigger missing from any of these is a path to execution with no audit."""
+
+    def _cmd(self, name):
+        return (REPO / "commands" / name).read_text(encoding="utf-8")
+
+    def test_every_trigger_command_can_dispatch_the_fallback_subagent(self):
+        for name in TRIGGER_COMMANDS:
+            head = self._cmd(name).split("---")[1]
+            self.assertIn("Task", head, name)
+
+    def test_every_trigger_command_runs_the_audit(self):
+        for name in TRIGGER_COMMANDS:
+            self.assertIn("audit.py", self._cmd(name), name)
+
+    def test_every_trigger_command_names_the_fallback_agent(self):
+        for name in TRIGGER_COMMANDS:
+            self.assertIn("pb-plan-auditor", self._cmd(name), name)
+
+    def test_plan_command_documents_every_exit_code(self):
+        body = self._cmd("plan.md")
+        for token in ("Exit 0", "Exit 1", "Exit 3"):
+            self.assertIn(token, body)
+
+    def test_the_fallback_is_recorded_through_the_cli_with_a_hash(self):
+        body = self._cmd("plan.md")
+        self.assertIn("record-fallback", body)
+        self.assertIn("--expected-plan-hash", body)
+
+    def test_finalization_migrates_the_audit_path(self):
+        # The finalization transaction is defined in the sign-off reference,
+        # not in commands/sign.md, so that is where the migration belongs.
+        ref = (REPO / "skills" / "managing-planboard" / "references"
+               / "sign-off.md").read_text(encoding="utf-8")
+        self.assertIn("-audit.md", ref)
+        self.assertIn("auditPlanHash", ref)
+
+    def test_sign_audits_a_revised_draft(self):
+        self.assertIn("fresh audit", self._cmd("sign.md"))
+
+    def test_init_does_not_describe_the_profile_as_claude_only(self):
+        # One stage now runs an independent auditor, not a Claude model.
+        self.assertNotIn("which Claude model each stage", self._cmd("init.md"))
+        self.assertIn("plan audit", self._cmd("init.md"))
+
+    def _codex_bullet(self):
+        body = self._cmd("board.md")
+        i = body.index("- **`codex`**")
+        return body[i:body.index("- **`gemini`**", i)]
+
+    def test_board_codex_is_not_pinned_to_a_stale_model(self):
+        self.assertNotIn("gpt-5.5", self._codex_bullet())
+
+    def test_board_codex_resolves_the_profile_row(self):
+        bullet = self._codex_bullet()
+        self.assertIn("plan-audit", bullet)
+        self.assertIn("model_reasoning_effort", bullet)
+
+    def test_board_codex_maps_every_token(self):
+        bullet = self._codex_bullet()
+        for token, model in (("codex-sol", "gpt-5.6-sol"),
+                             ("codex-terra", "gpt-5.6-terra"),
+                             ("codex-luna", "gpt-5.6-luna")):
+            self.assertIn(token, bullet)
+            self.assertIn(model, bullet)
+
+    def test_board_codex_stays_read_only(self):
+        self.assertIn("--sandbox read-only", self._codex_bullet())
+
+    def test_plan_scope_uses_the_gaps_contract(self):
+        self.assertIn("Plan scope uses the audit contract", self._cmd("board.md"))

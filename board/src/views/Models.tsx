@@ -37,7 +37,18 @@ interface DraftRow {
   label: string;
   model: string;
   effort: string | null;
-  mechanism: "nudge" | "agent";
+  // Kept in lockstep with the source type so the two cannot drift.
+  mechanism: ModelProfileRow["mechanism"];
+}
+
+// A reviewer row's model cell holds an auditor token, not a Claude model, so
+// this editor cannot express it. Such rows render read-only and are excluded
+// from the POST; the server preserves them from the base text.
+const REVIEWER_ONLY_TITLE =
+  "Reviewer rows are edited with /planboard:models — the board's editor only knows Claude models.";
+
+function isEditableRow(row: { mechanism: DraftRow["mechanism"] }): boolean {
+  return row.mechanism !== "reviewer";
 }
 
 function toDraft(rows: ModelProfileRow[]): DraftRow[] {
@@ -59,15 +70,27 @@ function stripLeadingH1(md: string): string {
   return md.replace(/^\s*#\s+.*(?:\r?\n|$)/, "");
 }
 
-function MechChip({ mechanism }: { mechanism: "nudge" | "agent" }) {
-  const cls =
-    mechanism === "agent"
-      ? "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300"
-      : "border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300";
+const MECH_STYLE: Record<ModelProfileRow["mechanism"], { cls: string; title: string }> = {
+  agent: {
+    cls: "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300",
+    title: "Delegated to a generated review agent",
+  },
+  nudge: {
+    cls: "border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300",
+    title: "Claude suggests /model; you decide",
+  },
+  reviewer: {
+    cls: "border-violet-300 dark:border-violet-800 bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-300",
+    title: "Runs an independent auditor — edit with /planboard:models",
+  },
+};
+
+function MechChip({ mechanism }: { mechanism: ModelProfileRow["mechanism"] }) {
+  const { cls, title } = MECH_STYLE[mechanism];
   return (
     <span
       className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}
-      title={mechanism === "agent" ? "Delegated to a generated review agent" : "Claude suggests /model; you decide"}
+      title={title}
     >
       {mechanism}
     </span>
@@ -170,7 +193,9 @@ export default function Models({
     return () => onOutline?.([]);
   }, [onOutline, outlineEntries]);
 
-  const allValid = draft.every((r) => modelValid(r.model));
+  // Reviewer rows carry an auditor token, which the Claude model validator
+  // would reject — running it over them would permanently disable Save.
+  const allValid = draft.every((r) => !isEditableRow(r) || modelValid(r.model));
   const canSave = canEdit && dirty && allValid && !saving;
 
   function setRow(stage: string, patch: Partial<DraftRow>) {
@@ -232,7 +257,11 @@ export default function Models({
     post({
       boardToken: data.boardToken,
       baselineHash: modelProfile?.baselineHash,
-      rows: draft.map((r) => ({ stage: r.stage, model: r.model, effort: r.effort })),
+      // Reviewer rows are excluded: the server validates the six editable
+      // stages and preserves the rest from the base text byte-for-byte.
+      rows: draft
+        .filter(isEditableRow)
+        .map((r) => ({ stage: r.stage, model: r.model, effort: r.effort })),
     });
   const createDefaults = () => post({ boardToken: data.boardToken, create: true });
   const chooseModels = () => {
@@ -297,7 +326,7 @@ export default function Models({
       {!modelProfile.editable && (
         <Notice
           text={
-            "This profile isn't in the canonical six-row form, so it's read-only here — edit it with /planboard:models." +
+            "This profile isn't in the canonical form, so it's read-only here — edit it with /planboard:models." +
             (modelProfile.warnings.length ? " (" + modelProfile.warnings.join("; ") + ")" : "")
           }
         />
@@ -331,14 +360,19 @@ export default function Models({
               >
                 <td className="px-4 py-2 text-stone-800 dark:text-stone-200">{r.label}</td>
                 <td className="px-4 py-2">
-                  {canEdit ? (
+                  {canEdit && isEditableRow(r) ? (
                     <ModelCell row={r as DraftRow} onChange={(patch) => setRow(r.stage, patch)} />
                   ) : (
-                    <span className="font-mono text-stone-700 dark:text-stone-300">{r.model}</span>
+                    <span
+                      className="font-mono text-stone-700 dark:text-stone-300"
+                      title={isEditableRow(r) ? undefined : REVIEWER_ONLY_TITLE}
+                    >
+                      {r.model}
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-2">
-                  {canEdit ? (
+                  {canEdit && isEditableRow(r) ? (
                     <select
                       className={SELECT_CLS}
                       value={r.effort ?? ""}
@@ -351,7 +385,12 @@ export default function Models({
                       ))}
                     </select>
                   ) : (
-                    <span className="text-stone-700 dark:text-stone-300">{r.effort ?? "—"}</span>
+                    <span
+                      className="text-stone-700 dark:text-stone-300"
+                      title={isEditableRow(r) ? undefined : REVIEWER_ONLY_TITLE}
+                    >
+                      {r.effort ?? "—"}
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-2">

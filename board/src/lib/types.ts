@@ -53,11 +53,14 @@ export interface BoardFile {
 // verbatim display text (e.g. "plan (co-authoring)"); `mechanism` is read-only
 // on the board; `effort` is null when unset (renders as "—").
 export interface ModelProfileRow {
-  stage: string; // canonical key: plan | execute | sync | plan-review | results-validation | board-reviewer
+  stage: string; // canonical key: plan | execute | sync | plan-review | results-validation | board-reviewer | plan-audit
   label: string;
-  model: string; // inherit | opus | sonnet | haiku | fable | claude-* id
+  model: string; // inherit | opus | sonnet | haiku | fable | claude-* id, OR a reviewer token
   effort: string | null; // low | medium | high | xhigh | max | null
-  mechanism: "nudge" | "agent";
+  // `reviewer` rows name an auditor token (codex-sol | codex-terra |
+  // codex-luna | subagent) rather than a Claude model, so the board renders
+  // them read-only: its editor's vocabulary is Claude aliases only.
+  mechanism: "nudge" | "agent" | "reviewer";
 }
 
 // Server-built snapshot of the profile. `baselineHash` is echoed back on Save
@@ -616,3 +619,46 @@ export type Annotation =
   | ResultCommentAnnotation
   | ScriptCommentAnnotation
   | DocCommentAnnotation;
+
+// ---- plan audit (the audit channel) ----
+
+export type AuditSeverity = "blocker" | "major" | "minor";
+
+export type AuditEvidence = {
+  path: string;
+  kind: "direct" | "inferred";
+  detail?: string;
+};
+
+export type AuditFinding = {
+  section: string;
+  quote?: string;
+  evidence?: AuditEvidence;
+  comment: string;
+  severity: AuditSeverity;
+};
+
+export type AuditDisposition = {
+  finding?: string;
+  status?: string;
+  reason?: string;
+};
+
+// One `json board-audit` fence as the board sees it. Separate from Scorecard
+// on purpose: the score asks whether a plan is a checkable contract, the audit
+// asks whether it will actually work. They are never merged into one verdict.
+export type Audit = {
+  schemaVersion: number;
+  component: string;
+  planVersion: number;
+  planPath: string;
+  date: string;
+  reviewer: { token: string; effort?: string; reviewerFallback?: string };
+  auditPlanHash?: string;
+  supersedes?: string | null;
+  overall: string;
+  anchored: AuditFinding[];
+  gaps: AuditFinding[];
+  dispositions: AuditDisposition[];
+  counts: Record<AuditSeverity, number>;
+};

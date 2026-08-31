@@ -92,6 +92,8 @@ GITIGNORE_LINES = [
     "/.board-feedback.md.tmp",
     "/.pb-seed-*.json",
     "/.pb-review-*.txt",
+    "/.pb-audit-*.txt",        # audit prompt + reviewer output, deleted after each run
+    "/reviews/.*-audit.lock",  # held only while an audit writes its artifact
     "/.rp-seed-*.json",   # legacy temp patterns — kept so a pre-rename leftover
     "/.rp-review-*.txt",  # from an interrupted run stays ignored
     "/.board.lock",
@@ -517,11 +519,13 @@ def newest_draft(comp_dir):
 
 
 def agents_gitignored(root):
-    """True if any generated rp-* agent path is gitignored, False if none are,
-    None when git is unavailable. Checks the three concrete files (not just the
-    dir) so a rule targeting an individual agent is caught. Boot-time only."""
-    paths = [f".claude/agents/{a}.md"
-             for a in ("pb-plan-reviewer", "pb-results-validator", "pb-board-reviewer")]
+    """True if any generated agent path is gitignored, False if none are, None
+    when git is unavailable. Checks the concrete files (not just the dir) so a
+    rule targeting an individual agent is caught. Boot-time only.
+
+    The list is derived from models.AGENT_STAGES so a newly generated agent is
+    covered without editing this function."""
+    paths = [f".claude/agents/{a}.md" for a in sorted(models.AGENT_STAGES.values())]
     try:
         r = subprocess.run(["git", "-C", str(root), "check-ignore", *paths],
                            capture_output=True, text=True, timeout=5)
@@ -570,11 +574,16 @@ def _model_profile_template():
 
 def _validate_profile_rows(rows_in):
     """Validate a POSTed rows list into an edits dict {stage: {model, effort}}.
-    Requires an exact bijection: the six canonical stages, each exactly once,
-    with a valid model and effort. Returns (edits, error_or_None)."""
+    Requires an exact bijection: the six EDITABLE stages, each exactly once,
+    with a valid model and effort. Returns (edits, error_or_None).
+
+    Reviewer-mechanism stages are excluded: their model cell holds an auditor
+    token, not a Claude model, so the board's editor cannot express them.
+    rewrite_rows leaves any stage absent from `edits` byte-identical, so those
+    rows survive every save untouched."""
     if not isinstance(rows_in, list):
         return None, "rows must be a list"
-    canonical = set(models.STAGE_LABELS.values())
+    canonical = set(models.EDITABLE_STAGES)
     edits = {}
     for r in rows_in:
         if not isinstance(r, dict):
@@ -600,7 +609,7 @@ def _validate_profile_rows(rows_in):
                 return None, "invalid effort %r" % (effort_raw,)
         edits[stage] = {"model": model, "effort": effort}
     if set(edits) != canonical:
-        return None, "expected exactly the six canonical stages"
+        return None, "expected exactly the six editable stages"
     return edits, None
 
 

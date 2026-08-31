@@ -2833,7 +2833,7 @@ def add_profile(root, profile=DEFAULT_PROFILE):
 
 
 class TestModelProfileRead(unittest.TestCase):
-    def test_present_with_six_rows_when_file_exists(self):
+    def test_present_with_seven_rows_when_file_exists(self):
         import hashlib
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); make_project(root); add_profile(root)
@@ -2844,7 +2844,7 @@ class TestModelProfileRead(unittest.TestCase):
             self.assertTrue(mp["editable"])
             self.assertEqual([r["stage"] for r in mp["rows"]],
                              ["plan", "execute", "sync", "plan-review",
-                              "results-validation", "board-reviewer"])
+                              "results-validation", "board-reviewer", "plan-audit"])
             sha = hashlib.sha256((root / "plans" / "model-profile.md").read_bytes()).hexdigest()
             self.assertEqual(mp["baselineHash"], sha)
 
@@ -2879,7 +2879,7 @@ class TestModelProfileRead(unittest.TestCase):
             add_profile(root, DEFAULT_PROFILE.replace("| sync | inherit | — | nudge |\n", ""))
             mp = board.collect_payload(root, "live", None)["modelProfile"]
             self.assertFalse(mp["editable"])
-            self.assertEqual(len(mp["rows"]), 5)
+            self.assertEqual(len(mp["rows"]), 6)
 
     def test_get_endpoint_returns_fresh_disk_state(self):
         with tempfile.TemporaryDirectory() as d:

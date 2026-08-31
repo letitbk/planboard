@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.0] - 2026-07-27
+
+Plans now get a second review that asks whether they will actually work.
+
+### Added
+- **The plan audit channel.** A plan can score 15/15 on the rubric and still produce output that does not match it, because the rubric only measures whether a plan is a well-formed governance contract. It reads the plan text and never opens the repository. Nothing on the path from draft to execution asked whether the plan was technically right. The audit does: it reads the plan against the repository and the data and returns findings, each naming the concrete failure it predicts at execution time and the evidence path it rests on. The two channels stay separate everywhere. A high score does not predict a quiet audit — a specific plan is a falsifiable one, so it gives an auditor more to attack, not less. "15/15 with two blockers" is a coherent state.
+- **`plan audit` profile stage and the `reviewer` mechanism.** `plans/model-profile.md` gains a seventh row whose model cell holds an auditor token (`codex-sol`, `codex-terra`, `codex-luna`, or `subagent`) rather than a Claude model, defaulting to `codex-sol` at `xhigh`. The audit is the one stage deliberately run by a different model family: its value is that an independent auditor sees what the model that wrote the plan cannot. Existing profiles migrate themselves on first use, from every lookup rather than only `/planboard:models`, so an upgraded project cannot reach an audit with no reviewer row.
+- **`pb-plan-auditor`.** A fourth generated agent carrying the audit contract, used when the profile names `subagent` and whenever Codex is unavailable, exits nonzero, times out, or returns output that still breaks the contract after one repair. It is deliberately not `pb-board-reviewer`, which caps at five comments and requires a verbatim quote on every finding — reusing it would have made the fallback structurally unable to report a missing missingness rule, and a clean-looking audit reads as safety.
+- **Audit findings on the board.** The plan header shows an audit strip beside the score strip, expanding to the findings list with each finding's evidence path. Findings that quote the plan are separated from gaps, which are findings about what the plan never says — the class a quote-anchored contract cannot express, and where plans and outputs most often diverge.
+
+### Changed
+- **The board's Review with Codex follows the profile.** It was pinned to `gpt-5.5` at default effort, a stale pin rather than a calibration choice. Model and effort now come from the audit row, so the manual button and the automatic audit share one reviewer definition. The menu keeps all four choices; clicking Gemini still runs Gemini. Plan-scope Codex and subagent reviews use the audit contract, so the manual button can surface gaps too.
+- **`/planboard:models` is where reviewer rows change.** The board's Models tab renders them read-only, because its editor's vocabulary is Claude model aliases and a reviewer row holds a token.
+
+### Notes
+- Nothing is gated yet. An audit can be full of blockers and the plan will still sign. Required dispositions for blockers arrive in the next release.
+
 ## [1.1.1] - 2026-07-24
 
 A sign session no longer expires while you are looking at it.
