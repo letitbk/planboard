@@ -64,7 +64,7 @@ Stopping rule: <only for an iterated component — a collection round, a pilot/r
 
 ## Verification
 
-<How the researcher (or the agent) will TEST that the success criteria above were actually met — validation, not "review the results". Name the concrete checks: executable tests, data audits, citation validation, and the deliverable files a human will review. For an analysis component, name the journal-ready figure(s) and typeset table(s) (.png + .tex) this component will produce, per the project's output conventions (CLAUDE.md rule 7). A plan with no test of whether it hit its goal is not done here.>
+<How the researcher (or the agent) will TEST that the success criteria above were actually met — validation, not "review the results". Name the concrete checks: executable tests, data audits, citation validation, and the deliverable files a human will review. For an analysis component, name the journal-ready figure(s) and typeset table(s) (.png + .tex) this component will produce, per the project's output conventions (the CLAUDE.md **Output conventions** rule). A plan with no test of whether it hit its goal is not done here.>
 
 ## Out of scope
 

@@ -1,6 +1,6 @@
 ---
 name: managing-planboard
-description: Use when working in a research repository initialized for the planboard workflow (plans/master-plan.md exists AND the repo's CLAUDE.md contains the planboard marker) — when a session starts there, when the researcher asks to adopt the workflow mid-session after exploratory work has begun, when executing analysis or data work, when a decision point arises with the researcher, when work deviates from an execution plan, or when the researcher mentions the master plan, an execution plan, or the decision log. Not for software project planning, and not for repositories without both markers.
+description: Use when working in a research repository initialized for the planboard workflow (plans/master-plan.md exists AND the repo's CLAUDE.md contains the planboard marker) — specifically when a planboard command runs (/planboard:plan, :execute, :sign, :sync, :results, :review, :adopt, :renew), when work touches a component that already has a signed execution plan, when the researcher asks to adopt the workflow mid-session after exploratory work has begun, or when the researcher mentions the master plan, an execution plan, or the decision log. Not on session start alone, not for ordinary work outside a signed component, not for software project planning, and not for repositories without both markers.
 ---
 
 # Managing Planboard
@@ -11,24 +11,33 @@ Dual-tracking: **the researcher plans and decides; you carry the bookkeeping.** 
 
 Artifacts are organized around **the research project and its questions**: the master plan carries numbered research questions (RQ1, RQ2, …) and every component serves one or more of them (the Serves column; `—` for genuine infrastructure). Components are research activities, never a history of repository actions — what exists in the repo informs status, never structure.
 
-## When NOT to use (hard gate)
+## When this applies
 
-This skill applies only when **both** opt-in markers exist:
+Two markers decide whether planboard **may** apply to a repository:
 
 1. `plans/master-plan.md` containing `<!-- planboard:master-plan -->` (or the legacy `<!-- research-plans:master-plan -->`)
 2. The repo's `CLAUDE.md` containing `<!-- planboard:start -->` (or the legacy `<!-- research-plans:start -->`)
 
-If either is absent, this workflow does not apply. Stay silent about it, never create `plans/` uninvited, and never suggest initializing unless the researcher asks. A stray copied `master-plan.md` without the CLAUDE.md marker does not count as opt-in. For software implementation plans, use superpowers writing-plans instead.
+If either is absent this workflow does not apply at all. Stay silent about it, never create `plans/` uninvited, and never suggest initializing unless the researcher asks. A stray copied `master-plan.md` without the CLAUDE.md marker does not count as opt-in. For software implementation plans, use superpowers writing-plans instead.
+
+When both markers are present, the **planning and bookkeeping discipline** applies in exactly two situations:
+
+- **An activating command is running.** `/planboard:plan`, `/planboard:execute`, `/planboard:sign`, `/planboard:sync`, `/planboard:results`, `/planboard:review`, `/planboard:adopt` and `/planboard:renew` activate it. `/planboard:board`, `/planboard:report` and `/planboard:models` **do not activate** it for the rest of the session — reading a board, generating a report and editing a model profile do not switch on execution discipline. Each still does the bookkeeping its own command document specifies; `/planboard:board` logs the feedback it routes. Activation lasts while that command runs and reaches only the components it names; it does not persist for the rest of the session. (`/planboard:init` and `/planboard:handoff` set the workflow up rather than run governed work.)
+- **Work touches a component that already has a signed execution plan.** A component whose only plan is an unsigned `.draft-v<N>.md` **governs nothing** — a draft is what the researcher is still authoring, not a commitment that can be exceeded.
+
+Outside both, work normally: do not open the master plan, do not ask the researcher to scope the request first, and do not tell them the work exceeds a plan.
+
+**Artifact integrity is not activation.** Finalized results bundles, archived master plans and existing canonical plan versions stay immutable whenever the two markers exist, **invoked or not**. The hook enforces that as file policy and knows nothing about which command ran. Working normally never makes those writable.
 
 ## Core pattern
 
-**Session start.** Read `plans/master-plan.md`, then the latest version of the execution plan for whichever component the work touches (`plans/execution/<NN-slug>/`, highest `vN.md`).
+**Before governed work.** When an activating command runs, or when the work touches a component that already has a signed plan, read `plans/master-plan.md` and then that component's latest `vN.md` in `plans/execution/<NN-slug>/` before changing anything. This is no longer a session-start ritual: a session that never touches governed work never reads them.
 
 **Model nudge (execution).** If the project has `plans/model-profile.md`, execution work honors its `execute` row: run `python3 <this skill's directory>/scripts/models.py stage execute` once at the start of execution work. Empty output → say nothing (relay any stderr warning once — `/planboard:models` fixes a malformed row). In the `/planboard:execute` prompt, pre-select that row only when the stage yields a usable non-`inherit` row; on any non-`inherit` selection print the one-line `/model` nudge and wait for the switch — never compare against your own identity. Outside that prompt, the nudge stays advisory and never repeats in a session.
 
 **Mid-session adoption.** The workflow can be adopted mid-session, after exploratory work has begun (`/planboard:init` works either way). What the session already established feeds the plan — context, research questions, goals, scope reasons — never the log. The log starts at the master plan's `Initialized:` timestamp; nothing before it is loggable or counts as a deviation.
 
-**During work.**
+**During governed work.**
 - Surface interpretive choices (variable selection, case exclusions, coding rules, model specification) to the researcher *before* acting. Do not decide research questions, analytical choices, or interpretation on the researcher's behalf.
 - Append to `plans/decision-log.md` **as decisions happen** — when you ask a clarifying question, when the researcher sets or changes scope, when you make a non-trivial interpretive call (flag it), or when a surprising result changes what happens next. Use the entry format in `templates/decision-log.md`, with a real timestamp (`date +"%Y-%m-%d %H:%M"`). If unsure whether to log: log it.
 - If work is about to exceed what the current plan covers, pause and say so. Either the researcher rescopes the task, or you draft a new plan version. Do not drift.
@@ -50,7 +59,7 @@ If either is absent, this workflow does not apply. Stay silent about it, never c
 - **Pre-adoption history is a record, not the log.** Decisions predating `Initialized:` go in `plans/history.md`: reconstructed, evidence-cited, date-granularity, appendable anytime but scoped strictly to pre-adoption events. The decision log stays real-time; `history.md` never fabricates a clock time.
 - **Retrospective work is retrofit, never planned.** A results bundle backfilled under a retrospective plan is `provenance: retrofit` (the plan links it via `planVersion` without claiming to have governed it). Stamping `planned` is the results-layer version of undeclared retrospection — and it is permanent.
 - **Renewal (v0.10).** When the project changes direction, `/planboard:renew` archives the master plan to `plans/archive/master-plan-<date>.md` (immutable — hook-enforced), writes a fresh one (new context and RQs; carried rows keep their numbers, slugs, and dirs; new components take next-available numbers across all archives), preserves `Initialized:` unchanged (the honesty cutoff never moves), adds a `Renewed:` line and a `Foundations` section, and keeps ONE continuous decision log — the renewal is an entry, not a new log. Pre-renewal components stay browsable on the board (Archive view, quiet badges) and are never flagged as drift.
-- **Output conventions (v0.10).** CLAUDE.md rule 7 names the target journal; analysis deliverables are journal-ready figures (vector PDF + PNG) and typeset tables (.png + .tex) — a CSV of estimates is an intermediate, never the deliverable or the board display.
+- **Output conventions (v0.10).** The CLAUDE.md **Output conventions** rule names the target journal; analysis deliverables are journal-ready figures (vector PDF + PNG) and typeset tables (.png + .tex) — a CSV of estimates is an intermediate, never the deliverable or the board display.
 - **Model profiles (v0.14).** `plans/model-profile.md` maps stages to models: interactive stages get a one-line nudge (you decide), delegated stages run in generated `rp-*` project agents pinning model + effort (best-effort — platform overrides win). No profile → zero behavior change. Hand-edits are validated by `/planboard:models`, which regenerates the agents; it refuses to overwrite a same-named agent the researcher owns.
 - **The master plan stays light.** One line of outcome per component; detail lives in execution plans and the log. Do not let sync bloat it.
 - **The plan is not a preregistration — it is a contract with a built-in amendment process.** A recorded revision is an amendment: legitimate, expected. A silent deviation is a breach. Preregistration freezes the contract; this workflow keeps it amendable and treats only undisclosed change as deviation.

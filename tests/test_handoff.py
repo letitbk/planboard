@@ -63,6 +63,31 @@ class TestGenerate(unittest.TestCase):
             self.assertNotIn("{{", text)
             self.assertIn("wrote AGENTS.md", out)
 
+    def test_generated_block_carries_the_activation_boundary(self):
+        """The handoff block must scope the discipline the way the skill does.
+
+        v1.3.0 made the workflow invoked rather than ambient. If this template
+        keeps the old always-on posture, a project that reruns the migration
+        gets invoked behaviour in Claude and ambient behaviour in Codex.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_project(tmp)
+            code, _out, _err = run_generate(root)
+            self.assertEqual(code, 0)
+            text = (root / "AGENTS.md").read_text()
+
+            self.assertIn("governed work", text)
+            self.assertIn("under a planboard command", text)
+            self.assertIn("already has a signed execution plan", text)
+            self.assertIn("governs nothing", text)
+            self.assertIn("do the work normally", text)
+            # Immutability is file policy and must survive the narrowing.
+            self.assertIn("stay immutable either way", text)
+            # The ambient phrasings must be gone.
+            self.assertNotIn("Follow planboard's discipline: plan before "
+                             "executing", text)
+            self.assertNotIn("by absolute path before working", text)
+
     def test_appends_to_markerless_file_preserving_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_project(tmp)

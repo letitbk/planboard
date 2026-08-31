@@ -152,7 +152,7 @@ plans/
             └── r2/             a redo; r1 is never edited
 ```
 
-Plus a short marked section in your project's `CLAUDE.md` so every future session follows the conventions, and `./pb-board` in the project root — the machine-specific board launcher, excluded from git through `.git/info/exclude`. Unsigned working drafts (`.draft-vN.md`), sign feedback (`.sign-feedback-vN.md`), results staging directories (`.staging-*`), and board bookkeeping files are gitignored automatically.
+Plus a short marked section in your project's `CLAUDE.md` so planboard commands and signed components follow the same conventions, and `./pb-board` in the project root — the machine-specific board launcher, excluded from git through `.git/info/exclude`. Unsigned working drafts (`.draft-vN.md`), sign feedback (`.sign-feedback-vN.md`), results staging directories (`.staging-*`), and board bookkeeping files are gitignored automatically.
 
 ## Install, updating, and pinning
 

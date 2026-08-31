@@ -1,8 +1,10 @@
 ## Planboard workflow (codex handoff)
 
-You are operating in a project that uses the **planboard** research workflow. Follow planboard's discipline: plan before executing, one committed execution plan per component, honest provenance. You are trusted to follow these rules — nothing here is a security boundary; the enforced sign gate runs in a Claude session (below).
+You are operating in a project that uses the **planboard** research workflow. Its discipline — plan before executing, one committed execution plan per component, honest provenance — applies to **governed work**, and only to that: work you are doing under a planboard command, or work that touches a component which already has a signed execution plan (`plans/execution/<NN-slug>/v<N>.md`). A component whose only plan is an unsigned `.draft-v<N>.md` governs nothing.
 
-Read these planboard reference files by absolute path before working (if any is missing, STOP and tell the researcher to rerun `/planboard:handoff` — your paths are stale):
+Outside those two cases, do the work normally: do not open the master plan, do not ask the researcher to scope the request first, and do not tell them it exceeds a plan. Finalized plan versions, results bundles and archived master plans stay immutable either way — that is file policy, not a workflow rule, and it never lifts. You are trusted to follow these rules — nothing here is a security boundary; the enforced sign gate runs in a Claude session (below).
+
+Read these planboard reference files by absolute path before governed work (if any is missing, STOP and tell the researcher to rerun `/planboard:handoff` — your paths are stale):
 - Planning doctrine: `{{SKILL_DIR}}/references/planning-doctrine.md`
 - Plan template: `{{SKILL_DIR}}/templates/execution-plan.md`
 - Execution loop: `{{SKILL_DIR}}/references/execution-loop.md`
