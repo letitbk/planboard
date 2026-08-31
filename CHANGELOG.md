@@ -7,6 +7,7 @@
 - The standing CLAUDE.md rules go from ten to seven. Removed: the post-execution tracker update (the execution loop and `/sync` already do it), the plan authoring standard (`/planboard:plan` carries it), and "pause when work exceeds the plan". Rule 4 gains: when the researcher has already stated a decision, record it and act on it rather than asking again.
 - Rules are now referenced by name rather than by number throughout the plugin, so the block can be renumbered without silently repointing thirteen references.
 - `/planboard:plan`'s bare-pick push-back is bounded to plan authoring and no longer applies to ordinary work requests.
+- The Codex handoff block (`/planboard:handoff`) carries the same activation boundary. It previously told Codex to plan before executing and to read the workflow references before any work, so a handoff-enabled project would have kept the old always-on behaviour in Codex while Claude got the new one.
 
 ### Unchanged
 - Immutability of finalized plan versions, results bundles and archived master plans is enforced whenever the project markers exist, invoked or not.
