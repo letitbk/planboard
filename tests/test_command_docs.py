@@ -117,3 +117,26 @@ class TestSignTransactionDocs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBoardLaunchDocs(unittest.TestCase):
+    """Every board launch is a foreground-or-harness-background choice. Shell
+    backgrounding is a third option that looks equivalent and is not: it hands
+    back the shell's status instead of the board's, so board.md step 4's exit
+    contract goes unread. Both launch sites must name and refuse it."""
+
+    LAUNCH_DOCS = (
+        ("commands/board.md", ("commands", "board.md")),
+        ("references/sign-off.md",
+         ("skills", "managing-planboard", "references", "sign-off.md")),
+    )
+
+    def test_launch_sites_refuse_shell_backgrounding(self):
+        for name, parts in self.LAUNCH_DOCS:
+            text = REPO.joinpath(*parts).read_text(encoding="utf-8")
+            for token in ("disown", "nohup"):
+                self.assertIn(token, text,
+                              "%s must name %s as a launch to avoid"
+                              % (name, token))
+            self.assertIn("harness's own background", text,
+                          "%s must point at the harness mechanism" % name)
