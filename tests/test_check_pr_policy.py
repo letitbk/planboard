@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -38,7 +39,15 @@ class TemporaryPolicyRepo:
         self.git("tag", "-a", "v1.0.0", "-m", "v1.0.0")
 
     def cleanup(self):
-        self._temp.cleanup()
+        # Teardown must not fail a test whose assertions already passed.
+        # Removing a temp git repository has raced with the filesystem on CI
+        # (OSError 39 on `.git/objects`) while the test itself had succeeded.
+        # Python 3.10 offers TemporaryDirectory(ignore_cleanup_errors=True);
+        # CI pins 3.9, so fall back to a forgiving rmtree instead.
+        try:
+            self._temp.cleanup()
+        except OSError:
+            shutil.rmtree(self.root, ignore_errors=True)
 
     def git(self, *args):
         process = subprocess.run(
@@ -236,3 +245,30 @@ class CheckPullRequestPolicy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TemporaryRepoTeardown(unittest.TestCase):
+    def test_cleanup_survives_a_racing_filesystem(self):
+        """A teardown race must not fail a test whose assertions passed.
+
+        Simulates the CI failure directly: TemporaryDirectory.cleanup() raising
+        OSError 39 on `.git/objects` mid-removal. The repo must still come down.
+        """
+        repo = TemporaryPolicyRepo()
+        root = repo.root
+        self.assertTrue(root.exists())
+
+        def racing_cleanup():
+            raise OSError(39, "Directory not empty", "objects")
+
+        repo._temp.cleanup = racing_cleanup
+        repo.cleanup()
+
+        self.assertFalse(root.exists())
+
+        # The stub bypassed TemporaryDirectory's own bookkeeping, so retire its
+        # finalizer rather than let it fire at GC against an absent directory.
+        finalizer = getattr(repo._temp, "_finalizer", None)
+        if finalizer is not None:
+            finalizer.detach()
+
