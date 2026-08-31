@@ -328,6 +328,17 @@ class TestClaudeMdBlock(unittest.TestCase):
     def test_target_journal_placeholder_survives(self):
         self.assertIn("<target journal>", self.text)
 
+    def test_preamble_names_the_non_activating_commands(self):
+        for cmd in ("/planboard:board", "/planboard:report",
+                    "/planboard:models"):
+            self.assertIn(cmd, self.text, cmd)
+        self.assertIn("do not switch them on", self.text)
+
+    def test_settled_decisions_still_go_through_a_plan_revision(self):
+        self.assertIn("the decision stands but the plan still governs",
+                      self.text)
+        self.assertIn("carry it into a plan revision", self.text)
+
 
 class TestRuleReferencesAreNamed(unittest.TestCase):
     # split-criteria.md's "rule 1" is split-criteria's OWN rule, not a
@@ -392,3 +403,8 @@ class TestBlockRefreshIsAnnounced(unittest.TestCase):
         text = (REPO / "commands" / "init.md").read_text(encoding="utf-8")
         self.assertIn("upgrade the CLAUDE.md section (step 6)", text)
         self.assertIn("the standing rules changed", text)
+
+    def test_migration_offer_points_at_the_codex_handoff(self):
+        text = (REPO / "commands" / "init.md").read_text(encoding="utf-8")
+        self.assertIn("/planboard:handoff", text)
+        self.assertIn("Codex keeps the old always-on behaviour", text)

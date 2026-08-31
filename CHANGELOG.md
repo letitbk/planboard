@@ -14,6 +14,7 @@
 
 ### Migration
 - Existing projects keep the ten-rule block until `/planboard:init` is re-run **and** its CLAUDE.md refresh is accepted. The refresh is offered, not automatic.
+- A project with a generated `AGENTS.md` handoff block should also rerun `/planboard:handoff`. `/planboard:init` refreshes only the CLAUDE.md block, so without it Codex keeps the previous always-on behaviour while Claude gets the invoked one.
 
 ## [1.2.0] - 2026-07-27
 
