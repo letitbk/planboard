@@ -217,3 +217,194 @@ class TestAuditWiring(unittest.TestCase):
 
     def test_plan_scope_uses_the_gaps_contract(self):
         self.assertIn("Plan scope uses the audit contract", self._cmd("board.md"))
+
+
+class TestActivationContract(unittest.TestCase):
+    SKILL = REPO / "skills" / "managing-planboard" / "SKILL.md"
+
+    def setUp(self):
+        self.text = self.SKILL.read_text(encoding="utf-8")
+
+    def _activation_section(self):
+        start = self.text.index("## When this applies")
+        return self.text[start:self.text.index("## Core pattern", start)]
+
+    def test_both_markers_still_gate_applicability(self):
+        self.assertIn("<!-- planboard:master-plan -->", self.text)
+        self.assertIn("<!-- planboard:start -->", self.text)
+        self.assertIn("legacy", self.text)
+
+    def test_activating_commands_are_named(self):
+        section = self._activation_section()
+        for cmd in ("/planboard:plan", "/planboard:execute", "/planboard:sign",
+                    "/planboard:sync", "/planboard:results",
+                    "/planboard:review", "/planboard:adopt",
+                    "/planboard:renew"):
+            self.assertIn(cmd, section, cmd)
+        self.assertIn("An activating command is running", section)
+
+    def test_read_only_commands_do_not_activate(self):
+        section = self._activation_section()
+        self.assertIn("do not activate", section)
+        for cmd in ("/planboard:board", "/planboard:report",
+                    "/planboard:models"):
+            self.assertIn(cmd, section, cmd)
+
+    def test_activation_is_scoped_not_sticky(self):
+        self.assertIn("does not persist for the rest of the session",
+                      self.text)
+
+    def test_an_unsigned_draft_governs_nothing(self):
+        self.assertIn("governs nothing", self.text)
+
+    def test_artifact_integrity_is_separate_from_activation(self):
+        self.assertIn("Artifact integrity is not activation", self.text)
+        self.assertIn("invoked or not", self.text)
+
+    def test_the_ambient_session_start_rule_is_gone(self):
+        self.assertNotIn("**Session start.** Read `plans/master-plan.md`",
+                         self.text)
+
+    def test_frontmatter_no_longer_triggers_on_session_start(self):
+        frontmatter = self.text.split("---")[1]
+        self.assertNotIn("when a session starts there", frontmatter)
+        self.assertNotIn("when executing analysis or data work", frontmatter)
+        self.assertIn("when a planboard command runs", frontmatter)
+        self.assertIn("signed execution plan", frontmatter)
+
+
+class TestClaudeMdBlock(unittest.TestCase):
+    BLOCK = (REPO / "skills" / "managing-planboard" / "templates" /
+             "claude-md-section.md")
+
+    RULE_NAMES = (
+        "Read the governing plan first",
+        "Plan versions are immutable",
+        "Log decisions in real time",
+        "Interpretive choices are the researcher's",
+        "Output conventions",
+        "Evidence before claims",
+        "Assumptions and restraint",
+    )
+
+    def setUp(self):
+        self.text = self.BLOCK.read_text(encoding="utf-8")
+
+    def test_markers_are_intact(self):
+        self.assertTrue(self.text.startswith("<!-- planboard:start -->"))
+        self.assertIn("<!-- planboard:end -->", self.text)
+
+    def test_seven_named_rules_in_order(self):
+        positions = []
+        for name in self.RULE_NAMES:
+            self.assertIn(name, self.text, name)
+            positions.append(self.text.index(name))
+        self.assertEqual(positions, sorted(positions))
+
+    def test_exactly_seven_numbered_rules(self):
+        import re
+        numbered = re.findall(r"^(\d+)\. \*\*", self.text, re.MULTILINE)
+        self.assertEqual(["1", "2", "3", "4", "5", "6", "7"], numbered)
+
+    def test_the_ambient_preamble_is_gone(self):
+        self.assertNotIn("These rules apply to every session in this "
+                         "repository", self.text)
+
+    def test_already_decided_clause_is_present(self):
+        self.assertIn("already stated a decision", self.text)
+        self.assertIn("rather than asking again", self.text)
+
+    def test_pause_when_exceeding_the_plan_is_deleted(self):
+        self.assertNotIn("about to exceed what the current execution plan "
+                         "covers", self.text)
+
+    def test_tracker_update_rule_is_deleted(self):
+        self.assertNotIn("After execution work, update the Components table",
+                         self.text)
+
+    def test_plan_authoring_standard_is_deleted(self):
+        self.assertNotIn("read cold by a coauthor", self.text)
+
+    def test_target_journal_placeholder_survives(self):
+        self.assertIn("<target journal>", self.text)
+
+    def test_preamble_names_the_non_activating_commands(self):
+        for cmd in ("/planboard:board", "/planboard:report",
+                    "/planboard:models"):
+            self.assertIn(cmd, self.text, cmd)
+        self.assertIn("do not switch them on", self.text)
+
+    def test_settled_decisions_still_go_through_a_plan_revision(self):
+        self.assertIn("the decision stands but the plan still governs",
+                      self.text)
+        self.assertIn("carry it into a plan revision", self.text)
+
+
+class TestRuleReferencesAreNamed(unittest.TestCase):
+    # split-criteria.md's "rule 1" is split-criteria's OWN rule, not a
+    # CLAUDE.md rule. It is the only legitimate numbered rule reference.
+    ALLOWED = {"skills/managing-planboard/references/split-criteria.md"}
+
+    def test_no_markdown_refers_to_a_claude_md_rule_by_number(self):
+        import re
+        pattern = re.compile(r"rule \d+", re.IGNORECASE)
+        offenders = []
+        for root in (REPO / "commands", REPO / "skills"):
+            for path in sorted(root.rglob("*.md")):
+                if "node_modules" in path.parts:
+                    continue
+                rel = path.relative_to(REPO).as_posix()
+                if rel in self.ALLOWED:
+                    continue
+                text = path.read_text(encoding="utf-8")
+                for match in pattern.finditer(text):
+                    start = max(0, match.start() - 50)
+                    offenders.append("%s: ...%s..." %
+                                     (rel, text[start:match.end() + 50]))
+        self.assertEqual([], offenders)
+
+    def test_the_named_references_landed(self):
+        checks = {
+            "commands/init.md": ["**Evidence before claims**",
+                                 "**Output conventions**"],
+            "commands/renew.md": ["**Output conventions**"],
+            "commands/plan.md": ["**Output conventions**"],
+            "commands/results.md": ["**Output conventions**"],
+            "skills/managing-planboard/SKILL.md": ["**Output conventions**"],
+            "skills/managing-planboard/templates/execution-plan.md":
+                ["**Output conventions**"],
+            "skills/managing-planboard/references/planning-doctrine.md":
+                ["**Evidence before claims**"],
+            "skills/managing-planboard/references/execution-loop.md":
+                ["**Interpretive choices are the researcher's**",
+                 "**Evidence before claims**"],
+        }
+        for rel, needles in checks.items():
+            text = (REPO / rel).read_text(encoding="utf-8")
+            for needle in needles:
+                self.assertIn(needle, text, "%s: %s" % (rel, needle))
+
+    def test_split_criteria_own_rule_is_untouched(self):
+        text = (REPO / "skills" / "managing-planboard" / "references" /
+                "split-criteria.md").read_text(encoding="utf-8")
+        self.assertIn("a new component by rule 1", text)
+
+
+class TestPushBackIsScoped(unittest.TestCase):
+    def test_push_back_is_bounded_to_plan_authoring(self):
+        text = (REPO / "commands" / "plan.md").read_text(encoding="utf-8")
+        self.assertIn("push back on a bare pick on a consequential fork", text)
+        self.assertIn("only while authoring a plan", text)
+        self.assertIn("never to an ordinary work request", text)
+
+
+class TestBlockRefreshIsAnnounced(unittest.TestCase):
+    def test_update_mode_says_the_block_changed(self):
+        text = (REPO / "commands" / "init.md").read_text(encoding="utf-8")
+        self.assertIn("upgrade the CLAUDE.md section (step 6)", text)
+        self.assertIn("the standing rules changed", text)
+
+    def test_migration_offer_points_at_the_codex_handoff(self):
+        text = (REPO / "commands" / "init.md").read_text(encoding="utf-8")
+        self.assertIn("/planboard:handoff", text)
+        self.assertIn("Codex keeps the old always-on behaviour", text)

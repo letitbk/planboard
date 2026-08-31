@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.3.0] - 2026-08-30
+
+### Changed
+- The workflow no longer governs every session in an initialized repository. It applies while an activating command runs (`/plan`, `/execute`, `/sign`, `/sync`, `/results`, `/review`, `/adopt`, `/renew`) or when work touches a component with a signed execution plan. `/board`, `/report` and `/models` do not activate it. Activation reaches only the components the command names and does not persist for the rest of the session.
+- The standing CLAUDE.md rules go from ten to seven. Removed: the post-execution tracker update (the execution loop and `/sync` already do it), the plan authoring standard (`/planboard:plan` carries it), and "pause when work exceeds the plan". Rule 4 gains: when the researcher has already stated a decision, record it and act on it rather than asking again.
+- Rules are now referenced by name rather than by number throughout the plugin, so the block can be renumbered without silently repointing thirteen references.
+- `/planboard:plan`'s bare-pick push-back is bounded to plan authoring and no longer applies to ordinary work requests.
+
+### Unchanged
+- Immutability of finalized plan versions, results bundles and archived master plans is enforced whenever the project markers exist, invoked or not.
+- Work inside a component with a signed plan is governed exactly as before: an in-plan change still takes an amendment version through `/planboard:sync`.
+
+### Migration
+- Existing projects keep the ten-rule block until `/planboard:init` is re-run **and** its CLAUDE.md refresh is accepted. The refresh is offered, not automatic.
+- A project with a generated `AGENTS.md` handoff block should also rerun `/planboard:handoff`. `/planboard:init` refreshes only the CLAUDE.md block, so without it Codex keeps the previous always-on behaviour while Claude gets the invoked one.
+
 ## [1.2.0] - 2026-07-27
 
 Plans now get a second review that asks whether they will actually work.
